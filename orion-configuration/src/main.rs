@@ -20,7 +20,7 @@
 //
 
 use orion_configuration::{config::Config, options::Options, Result};
-use orion_error::ResultExtension;
+use orion_error::Context;
 
 fn main() -> Result<()> {
     let config = Config::new(&Options::from_path("bootstrap.yaml"))?;

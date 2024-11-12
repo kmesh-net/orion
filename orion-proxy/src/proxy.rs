@@ -25,7 +25,7 @@ use crate::{
 };
 use futures::future::join_all;
 use orion_configuration::config::{bootstrap::Node, Bootstrap};
-use orion_error::ResultExtension;
+use orion_error::Context;
 use orion_lib::{
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
     ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,

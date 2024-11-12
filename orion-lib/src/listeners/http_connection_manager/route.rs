@@ -32,7 +32,7 @@ use orion_configuration::config::network_filters::http_connection_manager::{
     route::{RouteAction, RouteMatchResult},
     VirtualHost,
 };
-use orion_error::ResultExtension;
+use orion_error::Context;
 use std::net::SocketAddr;
 use tracing::debug;
 
