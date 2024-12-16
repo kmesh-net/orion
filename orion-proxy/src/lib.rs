@@ -18,13 +18,8 @@
 //
 //
 
-use orion_configuration::{
-    config::{Config, Log as LogConf},
-    options::Options,
-};
+use orion_configuration::{config::Config, options::Options};
 use orion_lib::{Result, RUNTIME_CONFIG};
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 #[macro_use]
 mod core_affinity;
@@ -33,37 +28,104 @@ mod runtime;
 mod xds_configurator;
 
 pub fn run() -> Result<()> {
+    let mut tracing_manager = proxy_tracing::TracingManager::new();
+
     let options = Options::parse_options();
     let Config { runtime, logging, bootstrap } = Config::new(&options)?;
     RUNTIME_CONFIG.set(runtime).map_err(|_| "runtime config was somehow set before we had a chance to set it")?;
-    let _guard = init_tracing(logging);
+
+    tracing_manager.update(logging)?;
+
     #[cfg(target_os = "linux")]
     if !(caps::has_cap(None, caps::CapSet::Permitted, caps::Capability::CAP_NET_RAW)?) {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
     }
+
     proxy::run_proxy(bootstrap)
 }
 
-#[cfg(feature = "console")]
-use console_subscriber;
-
-#[cfg(feature = "console")]
-fn init_tracing(_conf: LogConf) -> WorkerGuard {
-    let (_non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-    console_subscriber::init();
-    guard
-}
-
 #[cfg(not(feature = "console"))]
-fn init_tracing(log_conf: LogConf) -> WorkerGuard {
-    let env_filter = EnvFilter::try_from_default_env().ok().or(log_conf.log_level).unwrap_or_else(|| {
-        EnvFilter::builder()
-            .with_default_directive(tracing_subscriber::filter::LevelFilter::ERROR.into())
-            .parse_lossy("")
-    });
+mod proxy_tracing {
+    use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+    use tracing_subscriber::fmt::format::{DefaultFields, Format};
+    use tracing_subscriber::layer::Layered;
+    use tracing_subscriber::{fmt, reload};
+    use tracing_subscriber::{reload::Handle, EnvFilter, Registry};
 
-    match log_conf.log_file.as_ref() {
-        None => {
+    use orion_configuration::config::Log as LogConf;
+    use orion_lib::Result;
+
+    type RegistryLayer =
+        fmt::Layer<Layered<reload::Layer<EnvFilter, Registry>, Registry>, DefaultFields, Format, NonBlocking>;
+    type FilterReloadHandle = Handle<EnvFilter, Registry>;
+    type LayerReloadHandle = Handle<
+        fmt::Layer<Layered<reload::Layer<EnvFilter, Registry>, Registry>, DefaultFields, Format, NonBlocking>,
+        Layered<reload::Layer<EnvFilter, Registry>, Registry>,
+    >;
+
+    pub struct TracingManager {
+        guard: WorkerGuard,
+        layer_reload_handle: LayerReloadHandle,
+        filter_reload_handle: FilterReloadHandle,
+    }
+
+    impl TracingManager {
+        pub fn new() -> Self {
+            let level = EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .parse_lossy("");
+            let (guard, layer_reload_handle, filter_reload_handle) = Self::init_tracing(Registry::default(), level);
+            TracingManager { guard, filter_reload_handle, layer_reload_handle }
+        }
+
+        pub fn update(&mut self, log_conf: LogConf) -> Result<()> {
+            // Update log level
+            self.filter_reload_handle.modify(|filter| {
+                *filter = EnvFilter::try_from_default_env().ok().or(log_conf.log_level).unwrap_or_else(|| {
+                    EnvFilter::builder()
+                        .with_default_directive(tracing_subscriber::filter::LevelFilter::ERROR.into())
+                        .parse_lossy("")
+                });
+            })?;
+
+            // Update tracing layer if necessary (stdout -> file)
+            if let Some(log_file) = log_conf.log_file {
+                self.layer_reload_handle.modify(|layer| {
+                    let (new_guard, new_layer) = Self::file_layer(&log_file, log_conf.log_directory);
+                    *layer = new_layer;
+                    self.guard = new_guard;
+                })?;
+            }
+
+            Ok(())
+        }
+
+        #[cfg(not(feature = "console"))]
+        fn init_tracing(
+            registry: Registry,
+            log_level: EnvFilter,
+        ) -> (WorkerGuard, LayerReloadHandle, FilterReloadHandle) {
+            use tracing_subscriber::layer::SubscriberExt as _;
+            use tracing_subscriber::util::SubscriberInitExt as _;
+
+            let env_filter = EnvFilter::try_from_default_env().ok().or(Some(log_level)).unwrap_or_else(|| {
+                EnvFilter::builder()
+                    .with_default_directive(tracing_subscriber::filter::LevelFilter::ERROR.into())
+                    .parse_lossy("")
+            });
+
+            // Start as an stdout layer by default, after reading the configuration this can be upgraded to a file layer
+            let (guard, layer) = Self::stdout_layer();
+            let (layer, layer_reload_handle) = reload::Layer::new(layer);
+
+            let (env_filter, filter_reload_handle) = reload::Layer::new(env_filter);
+
+            registry.with(env_filter).with(layer).init();
+            (guard, layer_reload_handle, filter_reload_handle)
+        }
+
+        #[cfg(not(feature = "console"))]
+        fn stdout_layer() -> (WorkerGuard, RegistryLayer) {
             let out = std::io::stdout();
             let is_terminal = std::io::IsTerminal::is_terminal(&out);
             let (non_blocking, guard) = tracing_appender::non_blocking(out);
@@ -73,16 +135,44 @@ fn init_tracing(log_conf: LogConf) -> WorkerGuard {
                 std_layer = std_layer.with_ansi(false);
             }
 
-            Registry::default().with(env_filter).with(std_layer).init();
-            guard
-        },
-        Some(filename) => {
+            (guard, std_layer)
+        }
+
+        #[cfg(not(feature = "console"))]
+        fn file_layer(filename: &str, log_directory: Option<String>) -> (WorkerGuard, RegistryLayer) {
             let file_appender =
-                tracing_appender::rolling::hourly(log_conf.log_directory.as_ref().unwrap_or(&".".into()), filename);
+                tracing_appender::rolling::hourly(log_directory.as_ref().unwrap_or(&".".into()), filename);
             let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
             let file_layer = fmt::layer().with_ansi(false).with_writer(non_blocking).with_thread_names(true);
-            Registry::default().with(env_filter).with(file_layer).init();
-            guard
-        },
+
+            (guard, file_layer)
+        }
+    }
+}
+
+#[cfg(feature = "console")]
+mod proxy_tracing {
+    #[cfg(feature = "console")]
+    use console_subscriber;
+
+    use tracing_appender::non_blocking::WorkerGuard;
+
+    use orion_configuration::config::Log as LogConf;
+    use orion_lib::Result;
+
+    pub struct TracingManager {
+        _guard: WorkerGuard,
+    }
+
+    impl TracingManager {
+        pub fn new() -> Self {
+            let (_non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+            console_subscriber::init();
+            TracingManager { _guard: guard }
+        }
+
+        pub fn update(&mut self, _log_conf: LogConf) -> Result<()> {
+            Ok(())
+        }
     }
 }
