@@ -343,79 +343,94 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         let nonce = response.nonce.clone();
         info!(type_url = type_url.to_string(), size = response.resources.len(), "received config resources from xDS");
 
-        let (updates, mut pending_update_versions) = Self::map_updates(state, response, type_url);
-        let (internal_ack_tx, internal_ack_rx) = oneshot::channel::<Vec<RejectedConfig>>();
-        let notification = XdsUpdateEvent { updates, ack_channel: internal_ack_tx };
-        self.resources_tx
-            .send(notification)
-            .await
-            .map_err(|e: mpsc::error::SendError<XdsUpdateEvent>| XdsError::InternalProcessingError(e.to_string()))?;
+        let (updates, mut pending_update_versions, decoding_errors) = Self::map_updates(state, response, type_url);
 
-        tokio::select! {
-            ack = internal_ack_rx => {
-                match ack {
-                    Ok(rejected_configs) => {
-                        let error = if rejected_configs.is_empty() {
-                            debug!(
-                                type_url = type_url.to_string(),
-                                nonce,
-                                "sending ack response after processing",
-                            );
-                            let tracked_resources = state.tracked.entry(type_url).or_default();
-                            for (resource_id, resource_version) in pending_update_versions.drain() {
-                                tracked_resources.insert(resource_id, resource_version);
-                            }
-                            None
-                        } else {
-                            let error = rejected_configs
-                                    .into_iter()
-                                    .map(|reject| reject.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join("; ");
-                            debug!(
-                                type_url = type_url.to_string(),
-                                error,
-                                nonce,
-                                "rejecting configs with nack response",
-                            );
-                            Some(Status {
-                                message: error,
-                                code: tonic::Code::InvalidArgument.into(),
+        if decoding_errors.is_empty() {
+            let (internal_ack_tx, internal_ack_rx) = oneshot::channel::<Vec<RejectedConfig>>();
+            let notification = XdsUpdateEvent { updates, ack_channel: internal_ack_tx };
+            self.resources_tx.send(notification).await.map_err(|e: mpsc::error::SendError<XdsUpdateEvent>| {
+                XdsError::InternalProcessingError(e.to_string())
+            })?;
+            tokio::select! {
+                ack = internal_ack_rx => {
+                    match ack {
+                        Ok(rejected_configs) => {
+                            let error = if rejected_configs.is_empty() {
+                                debug!(
+                                    type_url = type_url.to_string(),
+                                    nonce,
+                                    "sending ack response after processing",
+                                );
+                                let tracked_resources = state.tracked.entry(type_url).or_default();
+                                for (resource_id, resource_version) in pending_update_versions.drain() {
+                                    tracked_resources.insert(resource_id, resource_version);
+                                }
+                                None
+                            } else {
+                                let error = rejected_configs
+                                        .into_iter()
+                                        .map(|reject| reject.to_string())
+                                        .collect::<Vec<String>>()
+                                        .join("; ");
+                                debug!(
+                                    type_url = type_url.to_string(),
+                                    error,
+                                    nonce,
+                                    "rejecting configs with nack response",
+                                );
+                                Some(Status {
+                                    message: error,
+                                    code: tonic::Code::InvalidArgument.into(),
+                                    ..Default::default()
+                                })
+                            };
+                            if let Err(err) = acknowledgments_tx.send(DeltaDiscoveryRequest {
+                                type_url: type_url.to_string(),
+                                response_nonce: nonce,
+                                error_detail: error,
                                 ..Default::default()
-                            })
-                        };
-                        if let Err(err) = acknowledgments_tx.send(DeltaDiscoveryRequest {
-                            type_url: type_url.to_string(),
-                            response_nonce: nonce,
-                            error_detail: error,
+                            }).await {
+                                warn!("error in send xDS ack/nack upstream {:?}", err);
+                            }
+                        },
+                        Err(err) => {
+                            warn!("error in reading internal ack/nack {:?}", err);
+                        },
+                    }
+                }
+                () = time::sleep(ACK_TIMEOUT) => {
+                    warn!("timed out while waiting to acknowledge config updates");
+                    let error = pending_update_versions.into_keys()
+                            .collect::<Vec<String>>()
+                            .join("; ");
+                    let _ = acknowledgments_tx.send(DeltaDiscoveryRequest {
+                        type_url: type_url.to_string(),
+                        response_nonce: nonce,
+                        error_detail: Some(Status {
+                            message: error,
                             ..Default::default()
-                        })
-                        .await
-                        {
-                            warn!("error in send xDS ack/nack upstream {:?}", err);
-                        }
-                    },
-                    Err(err) => {
-                        warn!("error in reading internal ack/nack {:?}", err);
-                    },
+                        }),
+                        ..Default::default()
+                    }).await;
                 }
             }
-            () = time::sleep(ACK_TIMEOUT) => {
-                warn!("timed out while waiting to acknowledge config updates");
-                let error = pending_update_versions.into_keys()
-                        .collect::<Vec<String>>()
-                        .join("; ");
-                let error = Status {
-                    message: error,
-                    ..Default::default()
-                };
-                let _ = acknowledgments_tx.send(DeltaDiscoveryRequest {
+        } else {
+            let error =
+                decoding_errors.into_iter().map(|reject| reject.to_string()).collect::<Vec<String>>().join("; ");
+            if let Err(err) = acknowledgments_tx
+                .send(DeltaDiscoveryRequest {
                     type_url: type_url.to_string(),
-                        response_nonce: nonce,
-                        error_detail: Some(error),
+                    response_nonce: nonce,
+                    error_detail: Some(Status {
+                        message: error,
+                        code: tonic::Code::InvalidArgument.into(),
                         ..Default::default()
-                    })
-                    .await;
+                    }),
+                    ..Default::default()
+                })
+                .await
+            {
+                warn!("error in send xDS ack/nack upstream {:?}", err);
             }
         }
 
@@ -426,7 +441,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         state: &mut DiscoveryClientState,
         response: DeltaDiscoveryResponse,
         type_url: TypeUrl,
-    ) -> (Vec<XdsResourceUpdate>, HashMap<String, String>) {
+    ) -> (Vec<XdsResourceUpdate>, HashMap<String, String>, Vec<RejectedConfig>) {
         let for_removal: Vec<String> = response
             .removed_resources
             .iter()
@@ -440,6 +455,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             .collect();
 
         let mut pending_update_versions = HashMap::<ResourceId, ResourceVersion>::new();
+        let mut decoding_errors = Vec::<RejectedConfig>::new();
 
         let updates = response
             .resources
@@ -449,7 +465,14 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let resource_version = resource.version.clone();
                 let decoded = XdsResourcePayload::try_from((resource, type_url));
                 if decoded.is_err() {
-                    warn!("problem decoding config update for {} : error {:?}", resource_id, decoded.as_ref().err());
+                    let error_msg = format!(
+                        "problem decoding config update for {} : error {:?}",
+                        resource_id,
+                        decoded.as_ref().err()
+                    );
+                    let decoding_error: orion_error::Error = error_msg.clone().into();
+                    decoding_errors.push(RejectedConfig::from((resource_id.clone(), decoding_error)));
+                    warn!(error_msg);
                 } else {
                     pending_update_versions.insert(resource_id.clone(), resource_version);
                     debug!("decoded config update for resource {resource_id}");
@@ -459,6 +482,6 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             .chain(for_removal.into_iter().map(|resource_id| XdsResourceUpdate::Remove(resource_id, type_url)))
             .collect();
 
-        (updates, pending_update_versions)
+        (updates, pending_update_versions, decoding_errors)
     }
 }
