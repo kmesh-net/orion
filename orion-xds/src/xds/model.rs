@@ -18,6 +18,7 @@
 //
 //
 
+use core::result::Result::Err;
 use orion_configuration::config::{
     cluster::Cluster, cluster::ClusterLoadAssignment, common::GenericError, listener::Listener,
     network_filters::http_connection_manager::RouteConfiguration, secret::Secret,
@@ -48,14 +49,14 @@ pub type ResourceVersion = String;
 
 #[derive(Debug)]
 pub enum XdsResourceUpdate {
-    Update(ResourceId, XdsResourcePayload),
+    Update(ResourceId, XdsResourcePayload, ResourceVersion),
     Remove(ResourceId, TypeUrl),
 }
 
 impl XdsResourceUpdate {
     pub fn id(&self) -> ResourceId {
         match self {
-            XdsResourceUpdate::Update(id, _) | XdsResourceUpdate::Remove(id, _) => id.to_string(),
+            XdsResourceUpdate::Update(id, _, _) | XdsResourceUpdate::Remove(id, _) => id.to_string(),
         }
     }
 }

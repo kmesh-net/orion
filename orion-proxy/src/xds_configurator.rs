@@ -160,7 +160,7 @@ impl XdsConfigurationHandler {
         let mut rejected_updates = Vec::new();
         for update in updates {
             match update {
-                XdsResourceUpdate::Update(id, resource) => {
+                XdsResourceUpdate::Update(id, resource, _) => {
                     if let Err(e) = self.process_update_event(&id, resource).await {
                         rejected_updates.push(RejectedConfig::from((id, e)));
                     }

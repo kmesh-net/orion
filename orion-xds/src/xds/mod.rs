@@ -22,5 +22,6 @@ pub mod bindings;
 pub mod client;
 pub mod model;
 
+mod request;
 pub mod resources;
 pub mod server;
