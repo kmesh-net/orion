@@ -77,8 +77,8 @@ impl AsyncRead for TlsInspector<'_> {
                         Poll::Ready(Ok(()))
                     },
                     Ordering::Equal => {
-                        // TODO this case potentially problematic
-                        Poll::Ready(Ok(()))
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
                     },
                     Ordering::Less => Poll::Ready(Err(std::io::Error::other(
                         "TLS inspector peeked less bytes than it did in a previous iteration",
