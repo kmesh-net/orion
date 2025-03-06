@@ -66,7 +66,7 @@ pub struct CachedWatcher<'a, T: Clone> {
     local: T,
 }
 
-impl<'a, T: Clone> CachedWatcher<'a, T> {
+impl<T: Clone> CachedWatcher<'_, T> {
     pub fn cached_or_latest(&mut self) -> &mut T {
         let parent_version = self.parent.version();
         if parent_version != self.version {

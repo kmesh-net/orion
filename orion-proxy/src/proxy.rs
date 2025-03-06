@@ -148,7 +148,7 @@ fn spawn_runtime_from_thread(num_threads: usize, runtime_id: RuntimeId) -> Resul
     Ok((handle, configuration_senders))
 }
 
-//TODO: this is crap
+#[allow(clippy::too_many_arguments)]
 fn xds_loop(
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
@@ -168,7 +168,7 @@ fn xds_loop(
             format!("xdstask_{id}")
         })
         .build()
-        .expect("failed to build basic runtime");
+        .with_context(|| "failed to build basic runtime")?;
     runtime.block_on(async move {
         let secret_manager =
             configure_initial_resources(secret_manager, listeners, configuration_senders.clone()).await?;

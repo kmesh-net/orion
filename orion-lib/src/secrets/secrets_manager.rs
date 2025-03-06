@@ -138,7 +138,7 @@ impl SecretManager {
         Self { certificate_secrets: HashMap::default(), validation_contexts: HashMap::default() }
     }
 
-    pub fn add(&mut self, secret: Secret) -> Result<TransportSecret> {
+    pub fn add(&mut self, secret: &Secret) -> Result<TransportSecret> {
         let secret_id = secret.name();
         let secret = match secret.kind() {
             Type::TlsCertificate(certificate) => {

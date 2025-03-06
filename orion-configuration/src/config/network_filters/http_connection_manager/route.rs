@@ -87,7 +87,7 @@ pub enum PathRewriteSpecifier {
 
 impl PathRewriteSpecifier {
     /// will preserve the query part of the input if the replacement does not contain one
-    #[must_use]
+    #[allow(clippy::redundant_else)]
     pub fn apply(
         &self,
         path_and_query: Option<&PathAndQuery>,
@@ -255,6 +255,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const fn default_timeout_deser() -> Option<Duration> {
     Some(DEFAULT_TIMEOUT)
 }
+#[allow(clippy::ref_option)]
 fn is_default_timeout(timeout: &Option<Duration>) -> bool {
     *timeout == default_timeout_deser()
 }

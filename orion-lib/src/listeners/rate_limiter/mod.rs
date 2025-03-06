@@ -25,6 +25,7 @@ use std::sync::Arc;
 use http::status::StatusCode;
 use http::Request;
 use hyper::Response;
+use tracing::warn;
 
 use token_bucket::TokenBucket;
 
@@ -33,6 +34,7 @@ use orion_configuration::config::network_filters::http_connection_manager::http_
 use crate::listeners::synthetic_http_response::SyntheticHttpResponse;
 use crate::{runtime_config, HttpBody};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 // TODO: Implement rate limiting functionality - this struct defines the interface for local rate limits
 pub struct LocalRateLimit {
@@ -40,6 +42,7 @@ pub struct LocalRateLimit {
     pub token_bucket: Arc<TokenBucket>,
 }
 
+#[allow(dead_code)]
 impl LocalRateLimit {
     // TODO: Implement rate limit enforcement - used to check and consume tokens for incoming requests
     pub fn run<B>(&self, req: &Request<B>) -> Option<Response<HttpBody>> {
@@ -57,11 +60,14 @@ impl From<LocalRateLimitConfig> for LocalRateLimit {
         let max_tokens = rate_limit.max_tokens;
         let tokens_per_fill = rate_limit.tokens_per_fill;
         let fill_interval = rate_limit.fill_interval;
-        let token_bucket = Arc::new(TokenBucket::new(
-            max_tokens,
-            tokens_per_fill,
-            fill_interval.checked_mul(runtime_config().num_runtimes.into()).expect("too many runtimes (overflow)"),
-        ));
+        let adjusted_fill_interval = fill_interval.checked_mul(runtime_config().num_runtimes.into());
+        let fill_interval = if let Some(value) = adjusted_fill_interval {
+            value
+        } else {
+            warn!("failed to adjust fill interval to number of configured runtimes (overflow)");
+            fill_interval
+        };
+        let token_bucket = Arc::new(TokenBucket::new(max_tokens, tokens_per_fill, fill_interval));
 
         Self { status, token_bucket }
     }

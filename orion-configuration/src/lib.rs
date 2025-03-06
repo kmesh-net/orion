@@ -22,6 +22,7 @@
 use orion_error::Error;
 pub(crate) type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 
+#[allow(clippy::wildcard_imports, clippy::too_many_lines)]
 pub mod config;
 pub mod options;
 
@@ -74,7 +75,7 @@ mod tests {
                 name: "http-router".to_owned(),
                 config_type: Some(ConfigType::TypedConfig(Any {
                     type_url: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router".to_owned(),
-                    value: vec![].into(),
+                    value: vec![],
                 })),
                 ..Default::default()
             }],

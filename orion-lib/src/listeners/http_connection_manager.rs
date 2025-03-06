@@ -201,8 +201,8 @@ impl fmt::Display for HttpConnectionManager {
 }
 
 impl HttpConnectionManager {
-    pub fn get_route_id(&self) -> &Option<CompactString> {
-        &self.dynamic_route_name
+    pub fn get_route_id(&self) -> Option<&CompactString> {
+        self.dynamic_route_name.as_ref()
     }
 
     pub fn update_route(&self, route: Arc<RouteConfiguration>) {
@@ -323,9 +323,6 @@ impl Service<HttpHandlerRequest> for HttpRequestHandler {
 // This function should check permissions and return forbidden response if access is denied
 fn apply_authorization_rules<B>(rbac: &HttpRbac, req: &Request<B>) -> Option<Response<HttpBody>> {
     debug!("Applying authorization rules {rbac:?} {:?}", &req.headers());
-    if !rbac.is_permitted(req) {
-        Some(SyntheticHttpResponse::forbidden("RBAC: access denied").into_response(req.version()))
-    } else {
-        None
-    }
+    (!rbac.is_permitted(req))
+        .then(|| SyntheticHttpResponse::forbidden("RBAC: access denied").into_response(req.version()))
 }

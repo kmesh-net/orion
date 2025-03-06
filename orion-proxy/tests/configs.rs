@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 use orion_configuration::config::{Config, Runtime};
 use orion_configuration::options::Options;
 use orion_lib::configuration::get_listeners_and_clusters;

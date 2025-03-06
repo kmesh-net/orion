@@ -44,7 +44,7 @@ impl<'a> TlsInspector<'a> {
     }
 }
 
-impl<'a> AsyncRead for TlsInspector<'a> {
+impl AsyncRead for TlsInspector<'_> {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -92,7 +92,7 @@ impl<'a> AsyncRead for TlsInspector<'a> {
 //
 // for now, we simply error out on any writes. The TLS protocol should not require that we write anything before receiving the initial handshake
 // see https://tls13.xargs.org/
-impl<'a> AsyncWrite for TlsInspector<'a> {
+impl AsyncWrite for TlsInspector<'_> {
     fn poll_flush(
         self: Pin<&mut Self>,
         _: &mut std::task::Context<'_>,

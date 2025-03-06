@@ -78,7 +78,7 @@ enum ExplicitProtocolOptions {
 
 impl Default for ExplicitProtocolOptions {
     fn default() -> Self {
-        Self::Http1(Http1ProtocolOptions::default())
+        Self::Http1(Http1ProtocolOptions)
     }
 }
 
@@ -239,10 +239,10 @@ mod envoy_conversions {
             let common = common_http_protocol_options.map(CommonHttpOptions::try_from).transpose()?.unwrap_or_default();
             let (codec, http1_options, http2_options) = match upstream_protocol_options {
                 UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http1(http1)) => {
-                    (Codec::Http1, http1, Default::default())
+                    (Codec::Http1, http1, Http2ProtocolOptions::default())
                 },
                 UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http2(http2)) => {
-                    (Codec::Http2, Default::default(), http2)
+                    (Codec::Http2, Http1ProtocolOptions, http2)
                 },
             };
 

@@ -197,6 +197,7 @@ pub struct HttpHealthCheck {
     pub path: Option<PathAndQuery>,
 }
 
+#[allow(clippy::single_range_in_vec_init)]
 fn default_expected_statuses() -> Vec<Range<u16>> {
     vec![200..201]
 }
@@ -206,6 +207,7 @@ fn is_default_expected_statuses(value: &Vec<Range<u16>>) -> bool {
 }
 
 impl Default for HttpHealthCheck {
+    #[allow(clippy::single_range_in_vec_init)]
     fn default() -> Self {
         Self {
             http_version: Codec::Http1,
@@ -349,6 +351,7 @@ mod envoy_conversions {
                     .with_node("interval_jitter")
             })?;
             let interval_jitter_percent = {
+                #[allow(clippy::cast_precision_loss)]
                 let as_float = interval_jitter_percent as f32;
                 if !as_float.is_finite() || as_float > 1.0 || as_float.is_sign_negative() {
                     Err(GenericError::from_msg(format!(
@@ -431,6 +434,7 @@ mod envoy_conversions {
                 } else if start < 100 || end >= 600 {
                     Err(GenericError::from_msg("invalid range [{start},{end}). Range has to be within [100,600)."))
                 } else {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     Ok((start as u16)..(end as u16))
                 }
             })

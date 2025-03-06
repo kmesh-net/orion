@@ -96,6 +96,7 @@ impl Runtime {
     }
 }
 
+#[allow(clippy::expect_used)]
 pub(crate) fn non_zero_num_cpus() -> NonZeroUsize {
     NonZeroUsize::try_from(num_cpus::get()).expect("found zero cpus")
 }

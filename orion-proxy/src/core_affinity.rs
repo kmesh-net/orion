@@ -193,6 +193,7 @@ fn run_strategy(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::too_many_lines)]
     use super::*;
 
     #[test]

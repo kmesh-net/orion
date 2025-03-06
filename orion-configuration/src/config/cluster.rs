@@ -497,10 +497,9 @@ mod envoy_conversions {
                 Ok(Self { endpoints })
             })();
             if !cluster_name.is_empty() {
-                ret.with_name(cluster_name)
-            } else {
-                ret
+                return ret.with_name(cluster_name);
             }
+            ret
         }
     }
 

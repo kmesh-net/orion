@@ -347,7 +347,7 @@ pub fn create_listener(
         type_url:
             "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
                 .to_owned(),
-        value: http_connection_manager.encode_to_vec().into(),
+        value: http_connection_manager.encode_to_vec(),
     };
 
     let http_connection_manager_filter = Filter {

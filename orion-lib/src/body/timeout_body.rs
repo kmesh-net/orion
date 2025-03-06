@@ -32,7 +32,7 @@
 use http_body::Body;
 use pin_project::pin_project;
 use pingora_timeout::fast_timeout::{fast_timeout, FastTimeout};
-use pingora_timeout::Timeout;
+use pingora_timeout::Timeout as PingoraTimeout;
 use std::{
     future::{pending, Future, Pending},
     pin::Pin,
@@ -40,11 +40,13 @@ use std::{
     time::Duration,
 };
 
+pub type Timeout = PingoraTimeout<Pending<()>, FastTimeout>;
+
 #[pin_project]
 pub struct TimeoutBody<B> {
     timeout: Option<Duration>,
     #[pin]
-    sleep: Option<Pin<Box<Timeout<Pending<()>, FastTimeout>>>>,
+    sleep: Option<Pin<Box<Timeout>>>,
     #[pin]
     body: B,
 }
@@ -78,7 +80,7 @@ where
             };
 
             // Error if the timeout has expired.
-            if let Poll::Ready(_) = sleep_pinned.poll(cx) {
+            if sleep_pinned.poll(cx).is_ready() {
                 return Poll::Ready(Some(Err(TimeoutBodyError::TimedOut)));
             }
 

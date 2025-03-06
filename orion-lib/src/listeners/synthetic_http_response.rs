@@ -29,7 +29,7 @@ use http_body_util::Full;
 // TODO: Error type for synthetic response validation - implement validation logic or remove if unused
 pub enum InvalidSyntheticResponse {
     #[error(transparent)]
-    InvalidHttpResponse(#[from] http::Error),
+    BadHttpResponse(#[from] http::Error),
     #[error(transparent)]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error(transparent)]
@@ -56,7 +56,7 @@ impl SyntheticHttpResponse {
         Self { http_status: StatusCode::BAD_GATEWAY, body: Bytes::default(), close_connection: true }
     }
 
-    // TODO: Implement forbidden response functionality - used for access control features
+    #[allow(dead_code)]
     pub fn forbidden(msg: &str) -> Self {
         Self {
             http_status: StatusCode::FORBIDDEN,

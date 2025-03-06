@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used)]
 use std::{future::IntoFuture, time::Duration};
 
 use orion_xds::xds::{

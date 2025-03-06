@@ -6,8 +6,6 @@ disallowed-methods = [
   { path = "tokio::time::timeout", reason = "Use pingora_timeout::fast_timeout::fast_timeout instead" },
 ]
 
-# The maximum number of function parameters is 5.
-too-many-arguments-threshold = 5
 
 allow-expect-in-tests = true
 allow-print-in-tests = true

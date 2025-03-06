@@ -91,7 +91,7 @@ mod proxy_tracing {
             // Update tracing layer if necessary (stdout -> file)
             if let Some(log_file) = log_conf.log_file {
                 self.layer_reload_handle.modify(|layer| {
-                    let (new_guard, new_layer) = Self::file_layer(&log_file, log_conf.log_directory);
+                    let (new_guard, new_layer) = Self::file_layer(&log_file, log_conf.log_directory.as_ref());
                     *layer = new_layer;
                     self.guard = new_guard;
                 })?;
@@ -139,9 +139,8 @@ mod proxy_tracing {
         }
 
         #[cfg(not(feature = "console"))]
-        fn file_layer(filename: &str, log_directory: Option<String>) -> (WorkerGuard, RegistryLayer) {
-            let file_appender =
-                tracing_appender::rolling::hourly(log_directory.as_ref().unwrap_or(&".".into()), filename);
+        fn file_layer(filename: &str, log_directory: Option<&String>) -> (WorkerGuard, RegistryLayer) {
+            let file_appender = tracing_appender::rolling::hourly(log_directory.unwrap_or(&".".into()), filename);
             let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
             let file_layer = fmt::layer().with_ansi(false).with_writer(non_blocking).with_thread_names(true);
 

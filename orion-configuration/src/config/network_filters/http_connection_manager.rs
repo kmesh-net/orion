@@ -777,13 +777,13 @@ mod envoy_conversions {
         }
     }
 
+    // In the original Protobuf specification, this enum is `oneof` rds, route_config or scoped_routes,
+    // this is why the name of the field is manually added in case an error happens.
     impl TryFrom<Option<EnvoyRouteSpecifier>> for RouteSpecifier {
         type Error = GenericError;
         fn try_from(envoy: Option<EnvoyRouteSpecifier>) -> Result<Self, Self::Error> {
             Ok(match envoy {
-                Some(EnvoyRouteSpecifier::Rds(rds)) => {
-                    Self::Rds(RdsSpecifier::try_from(rds).map_err(|e| e.with_node("rds"))?)
-                },
+                Some(EnvoyRouteSpecifier::Rds(rds)) => Self::Rds(RdsSpecifier::try_from(rds).with_node("rds")?),
                 Some(EnvoyRouteSpecifier::RouteConfig(envoy)) => {
                     Self::RouteConfig(envoy.try_into().with_node("route_config")?)
                 },

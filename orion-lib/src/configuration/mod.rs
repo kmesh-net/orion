@@ -31,7 +31,7 @@ pub fn get_listeners_and_clusters(
     let static_resources = bootstrap.static_resources;
     let secrets = static_resources.secrets;
     let mut secret_manager = SecretManager::new();
-    secrets.into_iter().try_for_each(|secret| secret_manager.add(secret).map(|_| ()))?;
+    secrets.into_iter().try_for_each(|secret| secret_manager.add(&secret).map(|_| ()))?;
 
     let listeners = static_resources
         .listeners

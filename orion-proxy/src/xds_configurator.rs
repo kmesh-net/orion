@@ -260,7 +260,7 @@ impl XdsConfigurationHandler {
             },
             XdsResourcePayload::Secret(id, secret) => {
                 debug!("Got update for secret {id}: {:#?}", secret);
-                let res = self.secret_manager.add(secret);
+                let res = self.secret_manager.add(&secret);
 
                 match res {
                     Ok(secret) => {
