@@ -1,0 +1,15 @@
+[package]
+name = "orion-format"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+http.workspace = true
+lazy_static = "1.5.0"
+ptrie = "0.7.2"
+strum = { version = "0.27.1", features = ["derive"] }
+strum_macros = "0.27.1"
+thiserror.workspace = true
