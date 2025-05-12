@@ -390,7 +390,7 @@ mod tests {
             %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
             %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
             "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-        let result = EnvoyGrammar::parse(input).unwrap();
+        _ = EnvoyGrammar::parse(input).unwrap();
     }
 
     // bad patters..

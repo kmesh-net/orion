@@ -88,16 +88,17 @@ pub trait Grammar {
 
 #[cfg(test)]
 mod tests {
-    use http::Request;
+    use http::{Request, Response, StatusCode};
 
     use super::*;
 
     fn build_request() -> Request<()> {
-        Request::builder()
-            .uri("https://www.rust-lang.org/")
-            .header("User-Agent", "my-awesome-agent/1.0")
-            .body(())
-            .unwrap()
+        Request::builder().uri("https://www.rust-lang.org/").header("User-Agent", "awesome/1.0").body(()).unwrap()
+    }
+
+    fn build_response() -> Response<()> {
+        let builder = Response::builder().status(StatusCode::OK);
+        builder.body(()).unwrap()
     }
 
     #[test]
@@ -144,7 +145,7 @@ mod tests {
     fn test_request_user_agent() {
         let req = build_request();
         let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(USER-AGENT)%").unwrap();
-        let expected = "my-awesome-agent/1.0";
+        let expected = "awesome/1.0";
         formatter.with_context(&req);
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
@@ -153,12 +154,11 @@ mod tests {
     #[test]
     fn default_format_string() {
         let req = build_request();
-        let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
-            %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
-            %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
-            "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
+        let resp = build_response();
+        let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
         let mut formatter = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
         formatter.with_context(&req);
+        formatter.with_context(&resp);
         let actual = format!("{}", &formatter);
         println!("{}", actual);
     }

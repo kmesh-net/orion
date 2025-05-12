@@ -1,4 +1,4 @@
-use http::{Request, Response};
+use http::{Request, Response, Version};
 use std::borrow::Cow;
 
 use crate::token::{ReqArg, RespArg, Token, TokenArgument};
@@ -21,7 +21,22 @@ impl<T> Context for Request<T> {
                 self.uri().scheme().map(|s| Cow::Owned(format!("{}", s)))
             },
             (Token::Request, Some(TokenArgument::Request(ReqArg::NormalHeader(h)))) => {
-                self.headers().get(h).and_then(|v| v.to_str().ok().map(Cow::Borrowed))
+                let hv = self.headers().get(h);
+                match hv {
+                    Some(hv) => hv.to_str().ok().map(Cow::Borrowed),
+                    None => Some(Cow::Borrowed("")),
+                }
+            },
+            (Token::Protocol, _) => {
+                let ver = match self.version() {
+                    Version::HTTP_10 => "HTTP/1.0",
+                    Version::HTTP_11 => "HTTP/1.1",
+                    Version::HTTP_2 => "HTTP/2",
+                    Version::HTTP_3 => "HTTP/3",
+                    _ => "HTTP/UNKNOWN",
+                };
+
+                Some(Cow::Borrowed(ver))
             },
             _ => None,
         }
@@ -31,8 +46,13 @@ impl<T> Context for Request<T> {
 impl<T> Context for Response<T> {
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<Cow<'a, str>> {
         match (token, arg) {
-            (Token::Request, Some(TokenArgument::Response(RespArg::NormalHeader(h)))) => {
-                self.headers().get(h).and_then(|v| v.to_str().ok().map(Cow::Borrowed))
+            (Token::ResponseCode, _) => Some(Cow::Owned(self.status().as_str().to_owned())),
+            (Token::Response, Some(TokenArgument::Response(RespArg::NormalHeader(h)))) => {
+                let hv = self.headers().get(h);
+                match hv {
+                    Some(hv) => hv.to_str().ok().map(Cow::Borrowed),
+                    None => Some(Cow::Borrowed("")),
+                }
             },
             _ => None,
         }

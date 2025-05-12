@@ -1,9 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use http::Request;
+use http::{Request, Response, StatusCode};
 use orion_format::{FormatType, LogFormatter};
 
-fn eval_format(req: &Request<()>, mut fmt: LogFormatter) {
+fn eval_format(req: &Request<()>, resp: &Response<()>, mut fmt: LogFormatter) {
     fmt.with_context(req);
+    fmt.with_context(resp);
 }
 
 fn benchmark_with_request_context(c: &mut Criterion) {
@@ -13,14 +14,22 @@ fn benchmark_with_request_context(c: &mut Criterion) {
         .body(())
         .unwrap();
 
+    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+
     let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(:PATH)%").unwrap();
-    c.bench_function("req(:path)", |b| b.iter(|| black_box(eval_format(black_box(&request), fmt.clone()))));
+    c.bench_function("REQ(:PATH)", |b| {
+        b.iter(|| black_box(eval_format(black_box(&request), black_box(&response), fmt.clone())))
+    });
 
     let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(:METHOD)%").unwrap();
-    c.bench_function("req(:method)", |b| b.iter(|| black_box(eval_format(black_box(&request), fmt.clone()))));
+    c.bench_function("REQ(:METHOD)", |b| {
+        b.iter(|| black_box(eval_format(black_box(&request), black_box(&response), fmt.clone())))
+    });
 
     let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(USER-AGENT)%").unwrap();
-    c.bench_function("req(:user-agent)", |b| b.iter(|| black_box(eval_format(black_box(&request), fmt.clone()))));
+    c.bench_function("REQ(USER-AGENT)", |b| {
+        b.iter(|| black_box(eval_format(black_box(&request), black_box(&response), fmt.clone())))
+    });
 }
 
 fn benchmark_default_format(c: &mut Criterion) {
@@ -30,17 +39,13 @@ fn benchmark_default_format(c: &mut Criterion) {
         .body(())
         .unwrap();
 
-    let fmt = LogFormatter::try_new(
-        FormatType::Envoy,
-        r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
-    %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
-    %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
-    "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#,
-    )
-    .unwrap();
+    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+
+    let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
+    let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
 
     c.bench_function("Envoy default formatter", |b| {
-        b.iter(|| black_box(eval_format(black_box(&request), fmt.clone())))
+        b.iter(|| black_box(eval_format(black_box(&request), black_box(&response), fmt.clone())))
     });
 }
 
