@@ -251,7 +251,7 @@ impl Grammar for EnvoyGrammar {
                 // placeholder found
                 if i > literal_start {
                     let literal_text = &input[literal_start..i];
-                    parts.push(Template::Literal(literal_text.to_string()));
+                    parts.push(Template::Literal(literal_text.into()));
                 }
 
                 // Add this placeholder.
@@ -275,7 +275,7 @@ impl Grammar for EnvoyGrammar {
         if i > literal_start {
             let literal_text = &input[literal_start..i];
 
-            parts.push(Template::Literal(literal_text.replace("%%", "%")));
+            parts.push(Template::Literal(literal_text.replace("%%", "%").into()));
         }
 
         Ok(parts)

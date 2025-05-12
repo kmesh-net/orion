@@ -48,7 +48,7 @@ impl<T> Context for Response<T> {
         match (token, arg) {
             (Token::ResponseCode, _) => Some(Cow::Owned(self.status().as_str().to_owned())),
             (Token::Response, Some(TokenArgument::Response(RespArg::NormalHeader(h)))) => {
-                let hv = self.headers().get(h);
+                let hv = self.headers().get(h.as_str());
                 match hv {
                     Some(hv) => hv.to_str().ok().map(Cow::Borrowed),
                     None => Some(Cow::Borrowed("")),

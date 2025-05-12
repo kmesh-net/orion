@@ -3,6 +3,7 @@ pub mod envoy;
 pub mod token;
 
 use context::Context;
+use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter};
 use thiserror::Error;
 use token::{Token, TokenArgument};
@@ -29,11 +30,11 @@ pub enum FormatError {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Template {
-    Literal(String),
-    Placeholder(String, Token, Option<TokenArgument>), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
+    Literal(SmolStr),
+    Placeholder(SmolStr, Token, Option<TokenArgument>), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct LogFormatter {
     template: Vec<Template>,
 }
@@ -49,11 +50,11 @@ impl LogFormatter {
         }
     }
 
-    pub fn with_context<C: Context>(&mut self, ctx: &C) -> &mut Self {
+    pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
         for part in &mut self.template {
             if let Template::Placeholder(_, token, arg) = part {
                 if let Some(value) = ctx.eval_part(token, arg) {
-                    *part = Template::Literal(value.into());
+                    *part = Template::Literal(value.into()); // TODO: Reduce memory allocations by grouping consecutive templates
                 }
             }
         }
