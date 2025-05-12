@@ -159,7 +159,7 @@ impl EnvoyGrammar {
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidRequestArg(arg.into()))?;
-                Ok(ReqArg::Header(name))
+                Ok(ReqArg::NormalHeader(name))
             },
         }
     }
@@ -170,7 +170,7 @@ impl EnvoyGrammar {
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidResponseArg(arg.into()))?;
-                Ok(RespArg::Header(name))
+                Ok(RespArg::NormalHeader(name))
             },
         }
     }
@@ -231,19 +231,19 @@ impl Grammar for EnvoyGrammar {
                         }
 
                         if !after_placeholder[arg_len..].starts_with("%") {
-                            return Err(FormatError::MissingDelimiter(input[i + *placeholder_len..].into()));
+                            return Err(FormatError::MissingDelimiter(remainder.into()));
                         }
 
                         skip = Some(2 + *placeholder_len + arg_len);
                     } else {
                         longest_placeholder = Some((*placeholder, *placeholder_len, None));
                         if !after_placeholder.starts_with("%") {
-                            return Err(FormatError::MissingDelimiter(input[i + *placeholder_len..].into()));
+                            return Err(FormatError::MissingDelimiter(remainder.into()));
                         }
                         skip = Some(2 + *placeholder_len);
                     }
                 } else {
-                    return Err(FormatError::UnsupportedPattern(input[i..].into()));
+                    return Err(FormatError::UnsupportedPattern(remainder.into()));
                 }
             }
 
@@ -255,7 +255,11 @@ impl Grammar for EnvoyGrammar {
                 }
 
                 // Add this placeholder.
-                parts.push(Template::Placeholder(placeholder.0.into(), placeholder.2.clone()));
+                parts.push(Template::Placeholder(
+                    input[i..i + skip.unwrap()].into(),
+                    placeholder.0.into(),
+                    placeholder.2.clone(),
+                ));
 
                 // advnace the index beyond the current placeholder and possibly its argument.
                 i += skip.unwrap();
@@ -294,8 +298,10 @@ mod tests {
     #[test]
     fn test_parse_only_placeholders() {
         let input = "%START_TIME%%PROTOCOL%";
-        let expected =
-            vec![Template::Placeholder(Token::StartTime, None), Template::Placeholder(Token::Protocol, None)];
+        let expected = vec![
+            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
+            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
+        ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -305,9 +311,13 @@ mod tests {
         let input = "Start %REQ(:METHOD)% middle %PROTOCOL% end.";
         let expected = vec![
             Template::Literal("Start ".into()),
-            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Method))),
+            Template::Placeholder(
+                "%REQ(:METHOD)%".into(),
+                Token::Request,
+                Some(TokenArgument::Request(ReqArg::Method)),
+            ),
             Template::Literal(" middle ".into()),
-            Template::Placeholder(Token::Protocol, None),
+            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
             Template::Literal(" end.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -317,7 +327,10 @@ mod tests {
     #[test]
     fn test_parse_starts_with_placeholder() {
         let input = "%START_TIME% literal after.";
-        let expected = vec![Template::Placeholder(Token::StartTime, None), Template::Literal(" literal after.".into())];
+        let expected = vec![
+            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
+            Template::Literal(" literal after.".into()),
+        ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -325,7 +338,10 @@ mod tests {
     #[test]
     fn test_parse_ends_with_placeholder() {
         let input = "Literal before %PROTOCOL%";
-        let expected = vec![Template::Literal("Literal before ".into()), Template::Placeholder(Token::Protocol, None)];
+        let expected = vec![
+            Template::Literal("Literal before ".into()),
+            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
+        ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -351,17 +367,30 @@ mod tests {
         let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%""#;
         let expected = vec![
             Template::Literal("[".into()),
-            Template::Placeholder(Token::StartTime, None),
+            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
             Template::Literal("] \"".into()),
-            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Method))),
+            Template::Placeholder(
+                "%REQ(:METHOD)%".into(),
+                Token::Request,
+                Some(TokenArgument::Request(ReqArg::Method)),
+            ),
             Template::Literal(" ".into()),
-            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Path))),
+            Template::Placeholder("%REQ(:PATH)%".into(), Token::Request, Some(TokenArgument::Request(ReqArg::Path))),
             Template::Literal(" ".into()),
-            Template::Placeholder(Token::Protocol, None),
+            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
             Template::Literal("\"".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_default_fmt() {
+        let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
+            %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
+            %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
+            "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
+        let result = EnvoyGrammar::parse(input).unwrap();
     }
 
     // bad patters..

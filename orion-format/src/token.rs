@@ -1,8 +1,5 @@
 use http::HeaderName;
-use strum_macros::Display;
 
-#[derive(Display)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Clone, Copy, PartialEq, Hash, Debug)]
 pub enum Token {
     RequestDuration,
@@ -123,27 +120,22 @@ pub enum Token {
     Response,
 }
 
-#[derive(Display, Debug, Clone, PartialEq, Hash)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum TokenArgument {
     Request(ReqArg),
     Response(RespArg),
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Clone, PartialEq, Hash, Debug)]
 pub enum ReqArg {
     Scheme,
     Method,
     Path,
     Authority,
-    Header(HeaderName),
+    NormalHeader(HeaderName),
 }
 
-#[derive(Display)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[derive(Clone, PartialEq, Hash, Debug)]
 pub enum RespArg {
-    Header(HeaderName),
+    NormalHeader(HeaderName),
 }
