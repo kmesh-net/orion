@@ -42,14 +42,9 @@ pub struct LogFormatter {
 }
 
 impl LogFormatter {
-    pub fn try_new(typ: FormatType, input: &str) -> Result<LogFormatter, FormatError> {
-        match typ {
-            FormatType::Envoy => {
+    pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
                 let template = EnvoyGrammar::parse(input)?;
                 Ok(LogFormatter { template })
-            },
-            FormatType::GridRouter => todo!(),
-        }
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
@@ -91,12 +86,6 @@ impl Display for LogFormatter {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum FormatType {
-    Envoy,
-    GridRouter,
-}
-
 pub trait Grammar {
     fn parse(input: &str) -> Result<Vec<Template>, FormatError>;
 }
@@ -123,7 +112,7 @@ mod tests {
     #[test]
     fn test_request_path() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(:PATH)%").unwrap();
+        let mut formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
         let expected = "/";
         formatter.with_context(&DownStreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -133,7 +122,7 @@ mod tests {
     #[test]
     fn test_request_method() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(:METHOD)%").unwrap();
+        let mut formatter = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
         let expected = "GET";
         formatter.with_context(&DownStreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -143,7 +132,7 @@ mod tests {
     #[test]
     fn test_request_scheme() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(:SCHEME)%").unwrap();
+        let mut formatter = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
         let expected = "https";
         formatter.with_context(&DownStreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -153,7 +142,7 @@ mod tests {
     #[test]
     fn test_request_authority() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(:AUTHORITY)%").unwrap();
+        let mut formatter = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
         let expected = "www.rust-lang.org";
         formatter.with_context(&DownStreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -163,7 +152,7 @@ mod tests {
     #[test]
     fn test_request_user_agent() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, "%REQ(USER-AGENT)%").unwrap();
+        let mut formatter = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
         let expected = "awesome/1.0";
         formatter.with_context(&DownStreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -175,7 +164,7 @@ mod tests {
         let req = build_request();
         let resp = build_response();
         let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-        let mut formatter = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
+        let mut formatter = LogFormatter::try_new(def_fmt).unwrap();
         formatter.with_context(&DownStreamContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&DownStreamRequest(&req));
         formatter.with_context(&DownStreamResponse(&resp));
@@ -184,7 +173,6 @@ mod tests {
             bytes_received: 128,
             bytes_sent: 256,
         });
-        let actual = format!("{}", &formatter);
-        println!("{}", actual);
+        println!("{}", &formatter);
     }
 }

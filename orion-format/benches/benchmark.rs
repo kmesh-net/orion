@@ -3,10 +3,12 @@ use http::{Request, Response, StatusCode};
 use orion_format::{
     context::{Context, DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext},
     smol_cow::SmolCow,
-    FormatType, LogFormatter,
+    LogFormatter,
 };
 use smol_str::SmolStr;
 use std::time::Duration;
+
+const DEF_FMT : &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
 
 #[inline]
 fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, mut fmt: LogFormatter)
@@ -33,7 +35,7 @@ fn benchmark_request(c: &mut Criterion) {
     let start = DownStreamContext { start_time: std::time::SystemTime::now() };
     let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
-    let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(:PATH)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
     c.bench_function("REQ(:PATH)", |b| {
         b.iter(|| {
             black_box(eval_format(
@@ -46,7 +48,7 @@ fn benchmark_request(c: &mut Criterion) {
         })
     });
 
-    let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(:METHOD)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
     c.bench_function("REQ(:METHOD)", |b| {
         b.iter(|| {
             black_box(eval_format(
@@ -59,7 +61,7 @@ fn benchmark_request(c: &mut Criterion) {
         })
     });
 
-    let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(USER-AGENT)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
     c.bench_function("REQ(USER-AGENT)", |b| {
         b.iter(|| {
             black_box(eval_format(
@@ -84,8 +86,7 @@ fn benchmark_default_format(c: &mut Criterion) {
     let start = DownStreamContext { start_time: std::time::SystemTime::now() };
     let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
-    let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-    let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
+    let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
 
     c.bench_function("Envoy default formatter", |b| {
         b.iter(|| {
@@ -111,8 +112,7 @@ fn benchmark_format_and_write(c: &mut Criterion) {
     let start = DownStreamContext { start_time: std::time::SystemTime::now() };
     let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
-    let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-    let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
+    let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
 
     c.bench_function("Default formatter and write", |b| {
         b.iter(|| {
@@ -131,8 +131,7 @@ fn benchmark_format_and_write(c: &mut Criterion) {
 }
 
 fn benchmark_clone_formatter(c: &mut Criterion) {
-    let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-    let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
+    let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     c.bench_function("Clone formatter", |b| b.iter(|| black_box(fmt.clone())));
 }
 
