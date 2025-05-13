@@ -43,8 +43,8 @@ pub struct LogFormatter {
 
 impl LogFormatter {
     pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
-                let template = EnvoyGrammar::parse(input)?;
-                Ok(LogFormatter { template })
+        let template = EnvoyGrammar::parse(input)?;
+        Ok(LogFormatter { template })
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
@@ -64,7 +64,7 @@ impl LogFormatter {
         for part in &self.template {
             total_bytes += match part {
                 Template::Literal(s) => w.write(s.as_bytes())?,
-                Template::Placeholder(orig, _, _) => w.write((format!("{}", orig)).as_bytes())?,
+                Template::Placeholder(orig, _, _) => w.write(orig.as_bytes())?,
             };
         }
 
@@ -78,7 +78,7 @@ impl Display for LogFormatter {
             match part {
                 Template::Literal(s) => f.write_str(s.as_ref())?,
                 Template::Placeholder(orig, _, _) => {
-                    f.write_str(&format!("{}", orig))?;
+                    f.write_str(orig)?;
                 },
             }
         }

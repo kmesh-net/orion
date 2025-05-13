@@ -202,9 +202,9 @@ impl Grammar for EnvoyGrammar {
 
             // finst the longest placeholder starting from the current index i
             //
-            if input[i..].starts_with("%") {
+            if input[i..].starts_with('%') {
                 let remainder = &input[i + 1..];
-                if remainder.starts_with("%") {
+                if remainder.starts_with('%') {
                     skip = Some(2);
                 } else if let Some((placeholder, placeholder_len, has_arg)) =
                     ENVOY_PATTERNS.find_longest_prefix(remainder.bytes())
@@ -217,12 +217,12 @@ impl Grammar for EnvoyGrammar {
                         if longest_placeholder.is_none() || *placeholder_len > longest_placeholder.as_ref().unwrap().1 {
                             match placeholder {
                                 Token::Request => {
-                                    let arg = Self::parse_request(&arg_value)?;
+                                    let arg = Self::parse_request(arg_value)?;
                                     longest_placeholder =
                                         Some((*placeholder, *placeholder_len, Some(TokenArgument::Request(arg))));
                                 },
                                 Token::Response => {
-                                    let arg = Self::parse_response(&arg_value)?;
+                                    let arg = Self::parse_response(arg_value)?;
                                     longest_placeholder =
                                         Some((*placeholder, *placeholder_len, Some(TokenArgument::Response(arg))));
                                 },
@@ -230,14 +230,14 @@ impl Grammar for EnvoyGrammar {
                             }
                         }
 
-                        if !after_placeholder[arg_len..].starts_with("%") {
+                        if !after_placeholder[arg_len..].starts_with('%') {
                             return Err(FormatError::MissingDelimiter(remainder.into()));
                         }
 
                         skip = Some(2 + *placeholder_len + arg_len);
                     } else {
                         longest_placeholder = Some((*placeholder, *placeholder_len, None));
-                        if !after_placeholder.starts_with("%") {
+                        if !after_placeholder.starts_with('%') {
                             return Err(FormatError::MissingDelimiter(remainder.into()));
                         }
                         skip = Some(2 + *placeholder_len);
