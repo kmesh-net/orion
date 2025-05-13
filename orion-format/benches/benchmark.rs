@@ -1,6 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::{Request, Response, StatusCode};
-use orion_format::{FormatType, LogFormatter};
+use orion_format::{smol_cow::SmolCow, FormatType, LogFormatter};
+use smol_str::SmolStr;
 
 fn eval_format(req: &Request<()>, resp: &Response<()>, mut fmt: LogFormatter) {
     fmt.with_context(req);
@@ -52,8 +53,31 @@ fn benchmark_default_format(c: &mut Criterion) {
 fn benchmark_clone_formatter(c: &mut Criterion) {
     let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
     let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
-    c.bench_function("Clone formatter", |b| b.iter(|| black_box(black_box(fmt.clone()))));
+    c.bench_function("Clone formatter", |b| b.iter(|| black_box(fmt.clone())));
 }
 
-criterion_group!(benches, benchmark_default_format, benchmark_clone_formatter, benchmark_request);
+fn ret_small_cow() -> SmolCow<'static> {
+    SmolCow::Borrowed("123456789012345678901234567890")
+}
+
+fn ret_small_str() -> SmolStr {
+    SmolStr::new("123456789012345678901234567890")
+}
+
+fn benchmark_small_cow(c: &mut Criterion) {
+    c.bench_function("small_cow", |b| {
+        b.iter(|| {
+            let s = black_box(ret_small_cow());
+            black_box(s.into_owned());
+        })
+    });
+    c.bench_function("small_str", |b| {
+        b.iter(|| {
+            let s = black_box(ret_small_str());
+            black_box(s.clone());
+        })
+    });
+}
+
+criterion_group!(benches, benchmark_default_format, benchmark_clone_formatter, benchmark_request, benchmark_small_cow);
 criterion_main!(benches);

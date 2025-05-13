@@ -1,30 +1,31 @@
 use http::{Request, Response, Version};
-use std::borrow::Cow;
+use smol_str::{format_smolstr, SmolStr};
 
+use crate::smol_cow::SmolCow;
 use crate::token::{ReqArg, RespArg, Token, TokenArgument};
 
 pub trait Context {
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<Cow<'a, str>>;
+    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
 }
 
 impl<T> Context for Request<T> {
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<Cow<'a, str>> {
+    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {
-            (Token::Request, Some(TokenArgument::Request(ReqArg::Path))) => Some(Cow::Borrowed(self.uri().path())),
+            (Token::Request, Some(TokenArgument::Request(ReqArg::Path))) => Some(SmolCow::Borrowed(self.uri().path())),
             (Token::Request, Some(TokenArgument::Request(ReqArg::Authority))) => {
-                self.uri().authority().and_then(|a| Some(Cow::Borrowed(a.host())))
+                self.uri().authority().and_then(|a| Some(SmolCow::Borrowed(a.host())))
             },
             (Token::Request, Some(TokenArgument::Request(ReqArg::Method))) => {
-                Some(Cow::Borrowed(self.method().as_str()))
+                Some(SmolCow::Borrowed(self.method().as_str()))
             },
             (Token::Request, Some(TokenArgument::Request(ReqArg::Scheme))) => {
-                self.uri().scheme().map(|s| Cow::Owned(format!("{}", s)))
+                self.uri().scheme().map(|s| SmolCow::Owned(format_smolstr!("{}", s)))
             },
             (Token::Request, Some(TokenArgument::Request(ReqArg::NormalHeader(h)))) => {
                 let hv = self.headers().get(h);
                 match hv {
-                    Some(hv) => hv.to_str().ok().map(Cow::Borrowed),
-                    None => Some(Cow::Borrowed("")),
+                    Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
+                    None => Some(SmolCow::Borrowed("")),
                 }
             },
             (Token::Protocol, _) => {
@@ -36,7 +37,7 @@ impl<T> Context for Request<T> {
                     _ => "HTTP/UNKNOWN",
                 };
 
-                Some(Cow::Borrowed(ver))
+                Some(SmolCow::Borrowed(ver))
             },
             _ => None,
         }
@@ -44,14 +45,14 @@ impl<T> Context for Request<T> {
 }
 
 impl<T> Context for Response<T> {
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<Cow<'a, str>> {
+    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {
-            (Token::ResponseCode, _) => Some(Cow::Owned(self.status().as_str().to_owned())),
+            (Token::ResponseCode, _) => Some(SmolCow::Owned(SmolStr::new_inline(self.status().as_str()))),
             (Token::Response, Some(TokenArgument::Response(RespArg::NormalHeader(h)))) => {
                 let hv = self.headers().get(h.as_str());
                 match hv {
-                    Some(hv) => hv.to_str().ok().map(Cow::Borrowed),
-                    None => Some(Cow::Borrowed("")),
+                    Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
+                    None => Some(SmolCow::Borrowed("")),
                 }
             },
             _ => None,

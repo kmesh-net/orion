@@ -1,5 +1,6 @@
 pub mod context;
 pub mod envoy;
+pub mod smol_cow;
 pub mod token;
 
 use context::Context;
@@ -54,7 +55,7 @@ impl LogFormatter {
         for part in &mut self.template {
             if let Template::Placeholder(_, token, arg) = part {
                 if let Some(value) = ctx.eval_part(token, arg) {
-                    *part = Template::Literal(value.into()); // TODO: Reduce memory allocations by grouping consecutive templates
+                    *part = Template::Literal(value.into_owned()); // TODO: Reduce memory allocations by grouping consecutive expanded templates
                 }
             }
         }
