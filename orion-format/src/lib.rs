@@ -6,6 +6,7 @@ pub mod token;
 use context::Context;
 use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter};
+use std::io::Write;
 use thiserror::Error;
 use token::{Token, TokenArgument};
 
@@ -62,6 +63,18 @@ impl LogFormatter {
 
         self
     }
+
+    pub fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let mut total_bytes = 0;
+        for part in &self.template {
+            total_bytes += match part {
+                Template::Literal(s) => w.write(s.as_bytes())?,
+                Template::Placeholder(orig, _, _) => w.write((format!("{}", orig)).as_bytes())?,
+            };
+        }
+
+        Ok(total_bytes)
+    }
 }
 
 impl Display for LogFormatter {
@@ -94,7 +107,7 @@ mod tests {
 
     use http::{Request, Response, StatusCode};
 
-    use crate::context::{DownStreamRequest, DownStreamResponse, EndContext, StartContext};
+    use crate::context::{DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext};
 
     use super::*;
 
@@ -163,10 +176,10 @@ mod tests {
         let resp = build_response();
         let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
         let mut formatter = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
-        formatter.with_context(&StartContext { start_time: std::time::SystemTime::now() });
+        formatter.with_context(&DownStreamContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&DownStreamRequest(&req));
         formatter.with_context(&DownStreamResponse(&resp));
-        formatter.with_context(&EndContext {
+        formatter.with_context(&UpStreamContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,

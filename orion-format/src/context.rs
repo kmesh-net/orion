@@ -11,17 +11,17 @@ pub trait Context {
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
 }
 
-pub struct StartContext {
+pub struct DownStreamContext {
     pub start_time: SystemTime,
 }
 
-pub struct EndContext {
+pub struct UpStreamContext {
     pub duration: Duration,
     pub bytes_received: usize,
     pub bytes_sent: usize,
 }
 
-impl Context for StartContext {
+impl Context for DownStreamContext {
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::StartTime => {
@@ -34,7 +34,7 @@ impl Context for StartContext {
     }
 }
 
-impl Context for EndContext {
+impl Context for UpStreamContext {
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::Duration => Some(SmolCow::Owned(format_smolstr!("{}", self.duration.as_millis()))),

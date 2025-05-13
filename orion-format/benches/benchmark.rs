@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::{Request, Response, StatusCode};
 use orion_format::{
-    context::{Context, DownStreamRequest, DownStreamResponse, EndContext, StartContext},
+    context::{Context, DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext},
     smol_cow::SmolCow,
     FormatType, LogFormatter,
 };
@@ -30,8 +30,8 @@ fn benchmark_request(c: &mut Criterion) {
         .unwrap();
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
-    let start = StartContext { start_time: std::time::SystemTime::now() };
-    let end = EndContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let start = DownStreamContext { start_time: std::time::SystemTime::now() };
+    let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
     let fmt = LogFormatter::try_new(FormatType::Envoy, "%REQ(:PATH)%").unwrap();
     c.bench_function("REQ(:PATH)", |b| {
@@ -81,8 +81,8 @@ fn benchmark_default_format(c: &mut Criterion) {
         .unwrap();
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
-    let start = StartContext { start_time: std::time::SystemTime::now() };
-    let end = EndContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let start = DownStreamContext { start_time: std::time::SystemTime::now() };
+    let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
     let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
     let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
@@ -96,6 +96,36 @@ fn benchmark_default_format(c: &mut Criterion) {
                 &end,
                 fmt.clone(),
             ))
+        })
+    });
+}
+
+fn benchmark_format_and_write(c: &mut Criterion) {
+    let request = Request::builder()
+        .uri("https://www.rust-lang.org/hello")
+        .header("User-Agent", "my-awesome-agent/1.0")
+        .body(())
+        .unwrap();
+
+    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let start = DownStreamContext { start_time: std::time::SystemTime::now() };
+    let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+
+    let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
+    let fmt = LogFormatter::try_new(FormatType::Envoy, def_fmt).unwrap();
+
+    c.bench_function("Default formatter and write", |b| {
+        b.iter(|| {
+            black_box(eval_format(
+                &DownStreamRequest(&request),
+                &DownStreamResponse(&response),
+                &start,
+                &end,
+                fmt.clone(),
+            ));
+
+            let mut sink = std::io::sink();
+            _ = black_box(|| { fmt.write_to(&mut sink) });
         })
     });
 }
@@ -129,5 +159,5 @@ fn benchmark_small_cow(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, benchmark_default_format, benchmark_clone_formatter, benchmark_request, benchmark_small_cow);
+criterion_group!(benches, benchmark_default_format, benchmark_format_and_write, benchmark_clone_formatter, benchmark_request, benchmark_small_cow);
 criterion_main!(benches);
