@@ -11,10 +11,12 @@ pub trait Context {
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
 }
 
+#[derive(Clone, Debug)]
 pub struct DownStreamContext {
     pub start_time: SystemTime,
 }
 
+#[derive(Clone, Debug)]
 pub struct UpStreamContext {
     pub duration: Duration,
     pub bytes_received: usize,
@@ -26,8 +28,8 @@ impl Context for DownStreamContext {
         match token {
             Token::StartTime => {
                 let datetime_utc: DateTime<Utc> = self.start_time.into();
-                let fmt_rfc3339 = datetime_utc.to_rfc3339_opts(SecondsFormat::Millis, true);
-                Some(SmolCow::Owned(format_smolstr!("{fmt_rfc3339}")))
+                let rfc3339 = datetime_utc.to_rfc3339_opts(SecondsFormat::Millis, true);
+                Some(SmolCow::Owned(rfc3339.into()))
             },
             _ => None,
         }
