@@ -1,6 +1,6 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
+use http::{HeaderMap, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
     context::{Context, DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext},
     smol_cow::SmolCow,

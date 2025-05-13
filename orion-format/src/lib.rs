@@ -33,7 +33,7 @@ pub enum FormatError {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Template {
     Literal(SmolStr),
-    Placeholder(SmolStr, Token, Option<TokenArgument>), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
+    Placeholder(Token, Option<TokenArgument>), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -49,7 +49,7 @@ impl LogFormatter {
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
         for part in &mut self.template {
-            if let Template::Placeholder(_, token, arg) = part {
+            if let Template::Placeholder(token, arg) = part {
                 if let Some(value) = ctx.eval_part(token, arg) {
                     *part = Template::Literal(value.into_owned()); // TODO: Reduce memory allocations by grouping consecutive expanded templates
                 }
@@ -64,7 +64,7 @@ impl LogFormatter {
         for part in &self.template {
             total_bytes += match part {
                 Template::Literal(s) => w.write(s.as_bytes())?,
-                Template::Placeholder(orig, _, _) => w.write(orig.as_bytes())?,
+                Template::Placeholder(_, _) => w.write("UNSUP".as_bytes())?,
             };
         }
 
@@ -77,8 +77,8 @@ impl Display for LogFormatter {
         for part in &self.template {
             match part {
                 Template::Literal(s) => f.write_str(s.as_ref())?,
-                Template::Placeholder(orig, _, _) => {
-                    f.write_str(orig)?;
+                Template::Placeholder(_, _) => {
+                    f.write_str("UNSUP")?;
                 },
             }
         }

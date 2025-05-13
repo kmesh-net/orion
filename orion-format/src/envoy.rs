@@ -256,7 +256,7 @@ impl Grammar for EnvoyGrammar {
 
                 // Add this placeholder.
                 parts.push(Template::Placeholder(
-                    input[i..i + skip.unwrap()].into(),
+                    // input[i..i + skip.unwrap()].into() <- this is original placeholder
                     placeholder.0.into(),
                     placeholder.2.clone(),
                 ));
@@ -298,10 +298,8 @@ mod tests {
     #[test]
     fn test_parse_only_placeholders() {
         let input = "%START_TIME%%PROTOCOL%";
-        let expected = vec![
-            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
-            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
-        ];
+        let expected =
+            vec![Template::Placeholder(Token::StartTime, None), Template::Placeholder(Token::Protocol, None)];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -311,13 +309,9 @@ mod tests {
         let input = "Start %REQ(:METHOD)% middle %PROTOCOL% end.";
         let expected = vec![
             Template::Literal("Start ".into()),
-            Template::Placeholder(
-                "%REQ(:METHOD)%".into(),
-                Token::Request,
-                Some(TokenArgument::Request(ReqArg::Method)),
-            ),
+            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Method))),
             Template::Literal(" middle ".into()),
-            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
+            Template::Placeholder(Token::Protocol, None),
             Template::Literal(" end.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -327,10 +321,7 @@ mod tests {
     #[test]
     fn test_parse_starts_with_placeholder() {
         let input = "%START_TIME% literal after.";
-        let expected = vec![
-            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
-            Template::Literal(" literal after.".into()),
-        ];
+        let expected = vec![Template::Placeholder(Token::StartTime, None), Template::Literal(" literal after.".into())];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -338,10 +329,7 @@ mod tests {
     #[test]
     fn test_parse_ends_with_placeholder() {
         let input = "Literal before %PROTOCOL%";
-        let expected = vec![
-            Template::Literal("Literal before ".into()),
-            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
-        ];
+        let expected = vec![Template::Literal("Literal before ".into()), Template::Placeholder(Token::Protocol, None)];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
     }
@@ -367,17 +355,13 @@ mod tests {
         let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%""#;
         let expected = vec![
             Template::Literal("[".into()),
-            Template::Placeholder("%START_TIME%".into(), Token::StartTime, None),
+            Template::Placeholder(Token::StartTime, None),
             Template::Literal("] \"".into()),
-            Template::Placeholder(
-                "%REQ(:METHOD)%".into(),
-                Token::Request,
-                Some(TokenArgument::Request(ReqArg::Method)),
-            ),
+            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Method))),
             Template::Literal(" ".into()),
-            Template::Placeholder("%REQ(:PATH)%".into(), Token::Request, Some(TokenArgument::Request(ReqArg::Path))),
+            Template::Placeholder(Token::Request, Some(TokenArgument::Request(ReqArg::Path))),
             Template::Literal(" ".into()),
-            Template::Placeholder("%PROTOCOL%".into(), Token::Protocol, None),
+            Template::Placeholder(Token::Protocol, None),
             Template::Literal("\"".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
