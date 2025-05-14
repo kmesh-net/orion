@@ -9,21 +9,25 @@ use crate::token::{ReqArg, RespArg, Token, TokenArgument};
 
 pub trait Context {
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
+    fn number_keys() -> usize;
 }
 
 #[derive(Clone, Debug)]
-pub struct DownStreamContext {
+pub struct InitContext {
     pub start_time: SystemTime,
 }
 
 #[derive(Clone, Debug)]
-pub struct UpStreamContext {
+pub struct FinishContext {
     pub duration: Duration,
     pub bytes_received: usize,
     pub bytes_sent: usize,
 }
 
-impl Context for DownStreamContext {
+impl Context for InitContext {
+    fn number_keys() -> usize {
+        1
+    }
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::StartTime => {
@@ -36,7 +40,10 @@ impl Context for DownStreamContext {
     }
 }
 
-impl Context for UpStreamContext {
+impl Context for FinishContext {
+    fn number_keys() -> usize {
+        3
+    }
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::Duration => Some(SmolCow::Owned(format_smolstr!("{}", self.duration.as_millis()))),
@@ -47,12 +54,15 @@ impl Context for UpStreamContext {
     }
 }
 
-pub struct DownStreamRequest<'a, T>(pub &'a Request<T>);
-pub struct UpStreamRequest<'a, T>(pub &'a Request<T>);
-pub struct DownStreamResponse<'a, T>(pub &'a Response<T>);
-pub struct UpStreamResponse<'a, T>(pub &'a Response<T>);
+pub struct DownstreamRequest<'a, T>(pub &'a Request<T>);
+pub struct UpstreamRequest<'a, T>(pub &'a Request<T>);
+pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
+pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
-impl<'r, T> Context for DownStreamRequest<'r, T> {
+impl<'r, T> Context for DownstreamRequest<'r, T> {
+    fn number_keys() -> usize {
+        6
+    }
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {
             (Token::Request, Some(TokenArgument::Request(ReqArg::Path))) => {
@@ -90,7 +100,10 @@ impl<'r, T> Context for DownStreamRequest<'r, T> {
     }
 }
 
-impl<'r, T> Context for DownStreamResponse<'r, T> {
+impl<'r, T> Context for DownstreamResponse<'r, T> {
+    fn number_keys() -> usize {
+        2
+    }
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {
             (Token::ResponseCode, _) => Some(SmolCow::Owned(SmolStr::new_inline(self.0.status().as_str()))),

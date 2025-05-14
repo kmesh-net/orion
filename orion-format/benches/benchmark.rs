@@ -2,7 +2,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::{HeaderMap, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
-    context::{Context, DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext},
+    context::{Context, DownstreamRequest, DownstreamResponse, FinishContext, InitContext},
     smol_cow::SmolCow,
     LogFormatter,
 };
@@ -175,8 +175,8 @@ fn benchmark_default_format(c: &mut Criterion) {
         .unwrap();
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
-    let start = DownStreamContext { start_time: std::time::SystemTime::now() };
-    let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let start = InitContext { start_time: std::time::SystemTime::now() };
+    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
 
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     
@@ -195,24 +195,25 @@ fn benchmark_default_format(c: &mut Criterion) {
     
 }
 
-fn benchmark_format_and_write(c: &mut Criterion) {
-    let request = Request::builder()
-        .uri("https://www.rust-lang.org/hello")
-        .header("User-Agent", "my-awesome-agent/1.0")
-        .body(())
-        .unwrap();
+    c.bench_function("LogFormatter: DownstreamResponse", |b| {
+        b.iter(|| {
+            black_box(fmt.clone().with_context(&DownstreamResponse(&response)));
+        })
+    });
 
-    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
-    let start = DownStreamContext { start_time: std::time::SystemTime::now() };
-    let end = UpStreamContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    c.bench_function("LogFormatter: InitContext", |b| {
+        b.iter(|| {
+            black_box(fmt.clone().with_context(&start));
+        })
+    });
 
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     let mut sink = std::io::sink();
     c.bench_function("Default formatter and write", |b| {
         b.iter(|| {
             black_box(eval_format(
-                &DownStreamRequest(&request),
-                &DownStreamResponse(&response),
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
                 &start,
                 &end,
                 fmt.clone(),
@@ -225,6 +226,57 @@ fn benchmark_format_and_write(c: &mut Criterion) {
 fn benchmark_clone_formatter(c: &mut Criterion) {
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     c.bench_function("Clone formatter", |b| b.iter(|| black_box(fmt.clone())));
+}
+
+fn benchmark_request_parts(c: &mut Criterion) {
+    let request = Request::builder()
+        .uri("https://www.rust-lang.org/hello")
+        .header("User-Agent", "my-awesome-agent/1.0")
+        .body(())
+        .unwrap();
+
+    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let start = InitContext { start_time: std::time::SystemTime::now() };
+    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+
+    let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
+    c.bench_function("REQ(:PATH)", |b| {
+        b.iter(|| {
+            black_box(eval_format(
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
+                &start,
+                &end,
+                fmt.clone(),
+            ))
+        })
+    });
+
+    let fmt = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
+    c.bench_function("REQ(:METHOD)", |b| {
+        b.iter(|| {
+            black_box(eval_format(
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
+                &start,
+                &end,
+                fmt.clone(),
+            ))
+        })
+    });
+
+    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
+    c.bench_function("REQ(USER-AGENT)", |b| {
+        b.iter(|| {
+            black_box(eval_format(
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
+                &start,
+                &end,
+                fmt.clone(),
+            ))
+        })
+    });
 }
 
 fn ret_small_cow() -> SmolCow<'static> {
@@ -253,10 +305,9 @@ fn benchmark_small_cow(c: &mut Criterion) {
 criterion_group!(
     benches,
     benchmark_rust_format,
-    benchmark_default_format,
-    benchmark_format_and_write,
+    benchmark_log_formatter,
     benchmark_clone_formatter,
-    benchmark_request,
+    benchmark_request_parts,
     benchmark_small_cow
 );
 criterion_main!(benches);

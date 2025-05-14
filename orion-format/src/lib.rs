@@ -48,8 +48,14 @@ impl LogFormatter {
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
+        let total_keys = C::number_keys();
+        let mut eval_tokens = 0;
         for part in &mut self.template {
+            if eval_tokens == total_keys {
+                break;
+            }
             if let Template::Placeholder(token, arg) = part {
+                eval_tokens += 1;
                 if let Some(value) = ctx.eval_part(token, arg) {
                     *part = Template::Literal(value.into_owned()); // TODO: Reduce memory allocations by grouping consecutive expanded templates
                 }
@@ -96,7 +102,7 @@ mod tests {
 
     use http::{Request, Response, StatusCode};
 
-    use crate::context::{DownStreamContext, DownStreamRequest, DownStreamResponse, UpStreamContext};
+    use crate::context::{DownstreamRequest, DownstreamResponse, FinishContext, InitContext};
 
     use super::*;
 
@@ -114,7 +120,7 @@ mod tests {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
         let expected = "/";
-        formatter.with_context(&DownStreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -124,7 +130,7 @@ mod tests {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
         let expected = "GET";
-        formatter.with_context(&DownStreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -134,7 +140,7 @@ mod tests {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
         let expected = "https";
-        formatter.with_context(&DownStreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -144,7 +150,7 @@ mod tests {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
         let expected = "www.rust-lang.org";
-        formatter.with_context(&DownStreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -154,7 +160,7 @@ mod tests {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
         let expected = "awesome/1.0";
-        formatter.with_context(&DownStreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -165,10 +171,10 @@ mod tests {
         let resp = build_response();
         let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
         let mut formatter = LogFormatter::try_new(def_fmt).unwrap();
-        formatter.with_context(&DownStreamContext { start_time: std::time::SystemTime::now() });
-        formatter.with_context(&DownStreamRequest(&req));
-        formatter.with_context(&DownStreamResponse(&resp));
-        formatter.with_context(&UpStreamContext {
+        formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
+        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamResponse(&resp));
+        formatter.with_context(&FinishContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
