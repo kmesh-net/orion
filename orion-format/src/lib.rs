@@ -1,5 +1,5 @@
 pub mod context;
-pub mod envoy;
+pub mod grammar;
 pub mod smol_cow;
 pub mod token;
 
@@ -10,7 +10,7 @@ use std::io::Write;
 use thiserror::Error;
 use token::{Token, TokenArgument};
 
-use crate::envoy::EnvoyGrammar;
+use crate::grammar::EnvoyGrammar;
 
 #[derive(Error, Debug)]
 pub enum FormatError {
