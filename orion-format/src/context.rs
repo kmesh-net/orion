@@ -5,11 +5,12 @@ use http::{Request, Response, Version};
 use smol_str::{format_smolstr, SmolStr};
 
 use crate::smol_cow::SmolCow;
-use crate::token::{ReqArg, RespArg, Token, TokenArgument};
+use crate::token::{Category, ReqArg, RespArg, Token, TokenArgument};
 
 pub trait Context {
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
     fn number_keys() -> usize;
+    fn category() -> Category;
 }
 
 #[derive(Clone, Debug)]
@@ -28,6 +29,9 @@ impl Context for InitContext {
     fn number_keys() -> usize {
         1
     }
+    fn category() -> Category {
+        Category::INIT_CONTEXT
+    }
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::StartTime => {
@@ -43,6 +47,9 @@ impl Context for InitContext {
 impl Context for FinishContext {
     fn number_keys() -> usize {
         3
+    }
+    fn category() -> Category {
+        Category::FINISH_CONTEXT
     }
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
@@ -62,6 +69,9 @@ pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 impl<'r, T> Context for DownstreamRequest<'r, T> {
     fn number_keys() -> usize {
         6
+    }
+    fn category() -> Category {
+        Category::DOWNSTREAM_REQUEST
     }
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {
@@ -103,6 +113,9 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
 impl<'r, T> Context for DownstreamResponse<'r, T> {
     fn number_keys() -> usize {
         2
+    }
+    fn category() -> Category {
+        Category::DOWNSTREAM_RESPONSE
     }
     fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match (token, arg) {

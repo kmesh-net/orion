@@ -1,4 +1,18 @@
+use bitflags::bitflags;
 use http::HeaderName;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct Category: u16 {
+        const INIT_CONTEXT = 1;
+        const FINISH_CONTEXT = 1 << 1;
+        const DOWNSTREAM_REQUEST = 1 << 1;
+        const DOWNSTREAM_RESPONSE = 1 << 2;
+        const UPSTREAM_REQUEST = 1 << 3;
+        const UPSTREAM_RESPONSE = 1 << 4;
+        const ARGUMENT = 1 << 5;
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Hash, Debug)]
 pub enum Token {
