@@ -1,8 +1,8 @@
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 use http::{Request, Response, Version};
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{format_smolstr, SmolStr, SmolStrBuilder};
 
 use crate::smol_cow::SmolCow;
 use crate::token::{Category, ReqArg, RespArg, Token, TokenArgument};
@@ -35,9 +35,8 @@ impl Context for InitContext {
     fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
         match token {
             Token::StartTime => {
-                let datetime_utc: DateTime<Utc> = self.start_time.into();
-                let rfc3339 = datetime_utc.to_rfc3339_opts(SecondsFormat::Millis, true);
-                Some(SmolCow::Owned(rfc3339.into()))
+                let rfc3339 = format_system_time(self.start_time).ok()?;
+                Some(SmolCow::Owned(rfc3339))
             },
             _ => None,
         }
@@ -130,4 +129,49 @@ impl<'r, T> Context for DownstreamResponse<'r, T> {
             _ => None,
         }
     }
+}
+
+pub fn format_system_time(time: SystemTime) -> std::result::Result<SmolStr, std::fmt::Error> {
+    let datetime: DateTime<Utc> = time.into();
+    let mut builder = SmolStrBuilder::new();
+
+    const TWO_DIGITS: [&str; 100] = [
+        "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17",
+        "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35",
+        "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53",
+        "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71",
+        "72", "73", "74", "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89",
+        "90", "91", "92", "93", "94", "95", "96", "97", "98", "99",
+    ];
+
+    four_digits(&mut builder, datetime.year());
+    builder.push('-');
+    builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.month() as usize) });
+    builder.push('-');
+    builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.day() as usize) });
+    builder.push('T');
+    builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.hour() as usize) });
+    builder.push(':');
+    builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.minute() as usize) });
+    builder.push(':');
+    builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.second() as usize) });
+    builder.push(':');
+    three_digits(&mut builder, datetime.nanosecond() / 1_000_000);
+
+    Ok(builder.finish())
+}
+
+#[inline(always)]
+fn three_digits(builder: &mut SmolStrBuilder, value: u32) {
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 100 % 10) as u8)) as u32) });
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 10 % 10) as u8)) as u32) });
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value % 10) as u8)) as u32) });
+}
+
+#[inline(always)]
+fn four_digits(builder: &mut SmolStrBuilder, value: i32) {
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 1000 % 10) as u8)) as u32) });
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 100 % 10) as u8)) as u32) });
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 10 % 10) as u8)) as u32) });
+    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value % 10) as u8)) as u32) });
 }
