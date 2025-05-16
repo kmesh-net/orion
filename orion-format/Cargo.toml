@@ -30,9 +30,13 @@ strip = "debuginfo"
 debug-assertions = false
 overflow-checks = false
 panic = 'unwind'
-#incremental = false
-#rpath = false
+incremental = false
+rpath = false
 
 [[bench]]
 name = "benchmark"
 harness = false
+
+[[bin]]
+name = "format-test"
+path = "src/bin/format-test.rs"
