@@ -14,7 +14,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Hash, Debug)]
+#[derive(Clone, PartialEq, Hash, Debug)]
 pub enum Token {
     RequestDuration,
     RequestTxDuration,
@@ -130,26 +130,12 @@ pub enum Token {
     UpstreamPeerCertVEnd,
     Environment,
     UpstreamConnectionPoolReadyDuration,
-    Request,
-    Response,
-}
-
-#[derive(Debug, Clone, PartialEq, Hash)]
-pub enum TokenArgument {
-    Request(ReqArg),
-    Response(RespArg),
-}
-
-#[derive(Clone, PartialEq, Hash, Debug)]
-pub enum ReqArg {
-    Scheme,
-    Method,
-    Path,
-    Authority,
-    NormalHeader(HeaderName),
-}
-
-#[derive(Clone, PartialEq, Hash, Debug)]
-pub enum RespArg {
-    NormalHeader(HeaderName),
+    Request, // placeholder
+    RequestScheme,
+    RequestMethod,
+    RequestPath,
+    RequestAuthority,
+    RequestStandard(HeaderName),
+    Response, // placeholder
+    ResponseStandard(HeaderName),
 }

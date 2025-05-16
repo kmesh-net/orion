@@ -286,7 +286,6 @@ criterion_group!(
     benches,
     benchmark_rust_format,
     benchmark_log_formatter,
-    benchmark_clone_formatter,
     benchmark_request_parts,
     benchmark_small_cow
 );

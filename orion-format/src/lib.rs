@@ -8,7 +8,7 @@ use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter};
 use std::io::Write;
 use thiserror::Error;
-use token::{Category, Token, TokenArgument};
+use token::{Category, Token};
 
 use crate::grammar::EnvoyGrammar;
 
@@ -33,7 +33,7 @@ pub enum FormatError {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Template {
     Literal(SmolStr),
-    Placeholder(Token, Category, Option<TokenArgument>), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
+    Placeholder(Token, Category), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -48,17 +48,12 @@ impl LogFormatter {
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
-        let total_keys = C::number_keys();
         let context_category = C::category();
         let mut eval_tokens = 0;
         for part in &mut self.template {
-            if eval_tokens == total_keys {
-                break;
-            }
-            if let Template::Placeholder(token, categories, arg) = part {
-                eval_tokens += 1;
+            if let Template::Placeholder(token, categories) = part {
                 if categories.contains(context_category) {
-                    if let Some(value) = ctx.eval_part(token, arg) {
+                    if let Some(value) = ctx.eval_part(token) {
                         *part = Template::Literal(value.into_owned()); // TODO: Reduce memory allocations by grouping consecutive expanded templates
                     }
                 }
@@ -73,7 +68,7 @@ impl LogFormatter {
         for part in &self.template {
             total_bytes += match part {
                 Template::Literal(s) => w.write(s.as_bytes())?,
-                Template::Placeholder(_, _, _) => w.write("UNSUP".as_bytes())?,
+                Template::Placeholder(_, _) => w.write("UNSUP".as_bytes())?,
             };
         }
 
@@ -86,7 +81,7 @@ impl Display for LogFormatter {
         for part in &self.template {
             match part {
                 Template::Literal(s) => f.write_str(s.as_ref())?,
-                Template::Placeholder(_, _, _) => {
+                Template::Placeholder(_, _) => {
                     f.write_str("UNSUP")?;
                 },
             }

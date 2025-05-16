@@ -1,4 +1,4 @@
-use crate::token::{Category, ReqArg, RespArg, Token, TokenArgument};
+use crate::token::{Category, Token};
 use crate::{FormatError, Grammar, Template};
 use http::HeaderName;
 use lazy_static::lazy_static;
@@ -14,16 +14,16 @@ macro_rules! trie_mapstr {
 }
 
 lazy_static! {
-    static ref ENVOY_REQ_ARGS: Trie<u8, (ReqArg, Category, usize, bool)> = {
+    static ref ENVOY_REQ_ARGS: Trie<u8, (Token, Category, usize, bool)> = {
         let mut trie = Trie::new();
-        trie_mapstr!(trie, ":SCHEME",ReqArg::Scheme, Category::ARGUMENT);
-        trie_mapstr!(trie, ":METHOD",ReqArg::Method, Category::ARGUMENT);
-        trie_mapstr!(trie, ":PATH", ReqArg::Path, Category::ARGUMENT);
-        trie_mapstr!(trie, ":AUTHORITY",ReqArg::Authority, Category::ARGUMENT);
+        trie_mapstr!(trie, ":SCHEME",Token::RequestScheme, Category::ARGUMENT);
+        trie_mapstr!(trie, ":METHOD",Token::RequestMethod, Category::ARGUMENT);
+        trie_mapstr!(trie, ":PATH", Token::RequestPath, Category::ARGUMENT);
+        trie_mapstr!(trie, ":AUTHORITY", Token::RequestAuthority, Category::ARGUMENT);
         trie
     };
 
-    static ref ENVOY_RESP_ARGS: Trie<u8, (RespArg, Category, usize, bool)> = {
+    static ref ENVOY_RESP_ARGS: Trie<u8, (Token, Category, usize, bool)> = {
         let trie = Trie::new();
         trie
     };
@@ -153,24 +153,24 @@ lazy_static! {
 pub struct EnvoyGrammar;
 
 impl EnvoyGrammar {
-    fn parse_request(arg: &str) -> Result<ReqArg, FormatError> {
+    fn parse_request(arg: &str) -> Result<Token, FormatError> {
         match ENVOY_REQ_ARGS.find_longest_prefix(arg.bytes()) {
             Some((t, _, _, _)) => Ok(t.clone()),
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidRequestArg(arg.into()))?;
-                Ok(ReqArg::NormalHeader(name))
+                Ok(Token::RequestStandard(name))
             },
         }
     }
 
-    fn parse_response(arg: &str) -> Result<RespArg, FormatError> {
+    fn parse_response(arg: &str) -> Result<Token, FormatError> {
         match ENVOY_RESP_ARGS.find_longest_prefix(arg.bytes()) {
             Some((t, _, _, _)) => Ok(t.clone()),
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidResponseArg(arg.into()))?;
-                Ok(RespArg::NormalHeader(name))
+                Ok(Token::ResponseStandard(name))
             },
         }
     }
@@ -197,7 +197,7 @@ impl Grammar for EnvoyGrammar {
         let mut i = 0;
 
         while i < input.len() {
-            let mut longest_placeholder: Option<(Token, Category, Option<TokenArgument>, usize)> = None;
+            let mut longest_placeholder: Option<(Token, Category, usize)> = None;
             let mut skip = None;
 
             // finst the longest placeholder starting from the current index i
@@ -214,25 +214,15 @@ impl Grammar for EnvoyGrammar {
                     if *has_arg {
                         let (arg_value, arg_len) = Self::extract_token_arg(after_placeholder)?;
 
-                        if longest_placeholder.is_none() || *placeholder_len > longest_placeholder.as_ref().unwrap().3 {
+                        if longest_placeholder.is_none() || *placeholder_len > longest_placeholder.as_ref().unwrap().2 {
                             match placeholder {
                                 Token::Request => {
-                                    let arg = Self::parse_request(arg_value)?;
-                                    longest_placeholder = Some((
-                                        *placeholder,
-                                        *category,
-                                        Some(TokenArgument::Request(arg)),
-                                        *placeholder_len,
-                                    ));
+                                    let token = Self::parse_request(arg_value)?;
+                                    longest_placeholder = Some((token, *category, *placeholder_len));
                                 },
                                 Token::Response => {
-                                    let arg = Self::parse_response(arg_value)?;
-                                    longest_placeholder = Some((
-                                        *placeholder,
-                                        *category,
-                                        Some(TokenArgument::Response(arg)),
-                                        *placeholder_len,
-                                    ));
+                                    let token = Self::parse_response(arg_value)?;
+                                    longest_placeholder = Some((token, *category, *placeholder_len));
                                 },
                                 _ => (),
                             }
@@ -244,7 +234,7 @@ impl Grammar for EnvoyGrammar {
 
                         skip = Some(2 + *placeholder_len + arg_len);
                     } else {
-                        longest_placeholder = Some((*placeholder, *category, None, *placeholder_len));
+                        longest_placeholder = Some((placeholder.clone(), *category, *placeholder_len));
                         if !after_placeholder.starts_with('%') {
                             return Err(FormatError::MissingDelimiter(remainder.into()));
                         }
@@ -265,9 +255,8 @@ impl Grammar for EnvoyGrammar {
                 // Add this placeholder.
                 parts.push(Template::Placeholder(
                     // input[i..i + skip.unwrap()].into() <- this is original placeholder
-                    placeholder.0.into(),
-                    placeholder.1.into(),
-                    placeholder.2.clone(),
+                    placeholder.0.clone(),
+                    placeholder.1,
                 ));
 
                 // advnace the index beyond the current placeholder and possibly its argument.
@@ -308,8 +297,8 @@ mod tests {
     fn test_parse_only_placeholders() {
         let input = "%START_TIME%%PROTOCOL%";
         let expected = vec![
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT, None),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST, None),
+            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
+            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
@@ -320,13 +309,9 @@ mod tests {
         let input = "Start %REQ(:METHOD)% middle %PROTOCOL% end.";
         let expected = vec![
             Template::Literal("Start ".into()),
-            Template::Placeholder(
-                Token::Request,
-                Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST,
-                Some(TokenArgument::Request(ReqArg::Method)),
-            ),
+            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
             Template::Literal(" middle ".into()),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST, None),
+            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
             Template::Literal(" end.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -337,7 +322,7 @@ mod tests {
     fn test_parse_starts_with_placeholder() {
         let input = "%START_TIME% literal after.";
         let expected = vec![
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT, None),
+            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
             Template::Literal(" literal after.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -349,7 +334,7 @@ mod tests {
         let input = "Literal before %PROTOCOL%";
         let expected = vec![
             Template::Literal("Literal before ".into()),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST, None),
+            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
@@ -376,21 +361,13 @@ mod tests {
         let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%""#;
         let expected = vec![
             Template::Literal("[".into()),
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT, None),
+            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
             Template::Literal("] \"".into()),
-            Template::Placeholder(
-                Token::Request,
-                Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST,
-                Some(TokenArgument::Request(ReqArg::Method)),
-            ),
+            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
             Template::Literal(" ".into()),
-            Template::Placeholder(
-                Token::Request,
-                Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST,
-                Some(TokenArgument::Request(ReqArg::Path)),
-            ),
+            Template::Placeholder(Token::RequestPath, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
             Template::Literal(" ".into()),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST, None),
+            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
             Template::Literal("\"".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();

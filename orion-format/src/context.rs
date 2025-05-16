@@ -5,11 +5,10 @@ use http::{Request, Response, Version};
 use smol_str::{format_smolstr, SmolStr, SmolStrBuilder};
 
 use crate::smol_cow::SmolCow;
-use crate::token::{Category, ReqArg, RespArg, Token, TokenArgument};
+use crate::token::{Category, Token};
 
 pub trait Context {
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>>;
-    fn number_keys() -> usize;
+    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>>;
     fn category() -> Category;
 }
 
@@ -26,13 +25,10 @@ pub struct FinishContext {
 }
 
 impl Context for InitContext {
-    fn number_keys() -> usize {
-        1
-    }
     fn category() -> Category {
         Category::INIT_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
         match token {
             Token::StartTime => {
                 let rfc3339 = format_system_time(self.start_time).ok()?;
@@ -44,13 +40,10 @@ impl Context for InitContext {
 }
 
 impl Context for FinishContext {
-    fn number_keys() -> usize {
-        3
-    }
     fn category() -> Category {
         Category::FINISH_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token, _arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
         match token {
             Token::Duration => Some(SmolCow::Owned(format_smolstr!("{}", self.duration.as_millis()))),
             Token::BytesReceived => Some(SmolCow::Owned(format_smolstr!("{}", self.bytes_received))),
@@ -66,34 +59,23 @@ pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
 pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
 impl<'r, T> Context for DownstreamRequest<'r, T> {
-    fn number_keys() -> usize {
-        6
-    }
     fn category() -> Category {
         Category::DOWNSTREAM_REQUEST
     }
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
-        match (token, arg) {
-            (Token::Request, Some(TokenArgument::Request(ReqArg::Path))) => {
-                Some(SmolCow::Borrowed(self.0.uri().path()))
-            },
-            (Token::Request, Some(TokenArgument::Request(ReqArg::Authority))) => {
-                self.0.uri().authority().and_then(|a| Some(SmolCow::Borrowed(a.host())))
-            },
-            (Token::Request, Some(TokenArgument::Request(ReqArg::Method))) => {
-                Some(SmolCow::Borrowed(self.0.method().as_str()))
-            },
-            (Token::Request, Some(TokenArgument::Request(ReqArg::Scheme))) => {
-                self.0.uri().scheme().map(|s| SmolCow::Owned(format_smolstr!("{}", s)))
-            },
-            (Token::Request, Some(TokenArgument::Request(ReqArg::NormalHeader(h)))) => {
+    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+        match token {
+            Token::RequestPath => Some(SmolCow::Borrowed(self.0.uri().path())),
+            Token::RequestAuthority => self.0.uri().authority().and_then(|a| Some(SmolCow::Borrowed(a.host()))),
+            Token::RequestMethod => Some(SmolCow::Borrowed(self.0.method().as_str())),
+            Token::RequestScheme => self.0.uri().scheme().map(|s| SmolCow::Owned(format_smolstr!("{}", s))),
+            Token::RequestStandard(h) => {
                 let hv = self.0.headers().get(h);
                 match hv {
                     Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
                     None => Some(SmolCow::Borrowed("")),
                 }
             },
-            (Token::Protocol, _) => {
+            Token::Protocol => {
                 let ver = match self.0.version() {
                     Version::HTTP_10 => "HTTP/1.0",
                     Version::HTTP_11 => "HTTP/1.1",
@@ -110,16 +92,13 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
 }
 
 impl<'r, T> Context for DownstreamResponse<'r, T> {
-    fn number_keys() -> usize {
-        2
-    }
     fn category() -> Category {
         Category::DOWNSTREAM_RESPONSE
     }
-    fn eval_part<'a>(&'a self, token: &Token, arg: &Option<TokenArgument>) -> Option<SmolCow<'a>> {
-        match (token, arg) {
-            (Token::ResponseCode, _) => Some(SmolCow::Owned(SmolStr::new_inline(self.0.status().as_str()))),
-            (Token::Response, Some(TokenArgument::Response(RespArg::NormalHeader(h)))) => {
+    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+        match token {
+            Token::ResponseCode => Some(SmolCow::Owned(SmolStr::new_inline(self.0.status().as_str()))),
+            Token::ResponseStandard(h) => {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
                     Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
