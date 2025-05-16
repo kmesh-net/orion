@@ -32,13 +32,7 @@ impl Context for InitContext {
     }
     fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
-            Token::StartTime => {
-                if let Some(s) = format_system_time(self.start_time).ok() {
-                    Smol::Str(s)
-                } else {
-                    Smol::None
-                }
-            },
+            Token::StartTime => Smol::Str(format_system_time(self.start_time)),
             _ => Smol::None,
         }
     }
@@ -150,9 +144,10 @@ impl<'r, T> Context for DownstreamResponse<'r, T> {
     }
 }
 
-pub fn format_system_time(time: SystemTime) -> std::result::Result<SmolStr, std::fmt::Error> {
+pub fn format_system_time(time: SystemTime) -> SmolStr {
     let datetime: DateTime<Utc> = time.into();
     let mut builder = SmolStrBuilder::new();
+    let mut buffer = itoa::Buffer::new();
 
     const TWO_DIGITS: [&str; 100] = [
         "00", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17",
@@ -163,7 +158,7 @@ pub fn format_system_time(time: SystemTime) -> std::result::Result<SmolStr, std:
         "90", "91", "92", "93", "94", "95", "96", "97", "98", "99",
     ];
 
-    four_digits(&mut builder, datetime.year());
+    builder.push_str(buffer.format(datetime.year()));
     builder.push('-');
     builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.month() as usize) });
     builder.push('-');
@@ -175,22 +170,7 @@ pub fn format_system_time(time: SystemTime) -> std::result::Result<SmolStr, std:
     builder.push(':');
     builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.second() as usize) });
     builder.push(':');
-    three_digits(&mut builder, datetime.nanosecond() / 1_000_000);
+    builder.push_str(buffer.format(datetime.nanosecond() / 1_000_000));
 
-    Ok(builder.finish())
-}
-
-#[inline(always)]
-fn three_digits(builder: &mut SmolStrBuilder, value: u32) {
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 100 % 10) as u8)) as u32) });
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 10 % 10) as u8)) as u32) });
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value % 10) as u8)) as u32) });
-}
-
-#[inline(always)]
-fn four_digits(builder: &mut SmolStrBuilder, value: i32) {
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 1000 % 10) as u8)) as u32) });
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 100 % 10) as u8)) as u32) });
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value / 10 % 10) as u8)) as u32) });
-    builder.push(unsafe { std::char::from_u32_unchecked((b'0' + ((value % 10) as u8)) as u32) });
+    builder.finish()
 }
