@@ -5,8 +5,9 @@ pub mod token;
 
 use context::Context;
 use smol_str::SmolStr;
-use std::fmt::{self, Display, Formatter};
-use std::io::Write;
+use std::fmt::{self, Display, Formatter, Write};
+use std::io::Write as IoWrite;
+use std::sync::Arc;
 use thiserror::Error;
 use token::{Category, Token};
 
@@ -32,30 +33,46 @@ pub enum FormatError {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Template {
+    Char(char),
     Literal(SmolStr),
     Placeholder(Token, Category), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
 }
 
 #[derive(PartialEq, Debug, Clone)]
+pub enum Smol {
+    Str(SmolStr),
+    Char(char),
+    None,
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub struct LogFormatter {
-    template: Vec<Template>,
+    pub template: Arc<Vec<Template>>,
+    pub format: Vec<Smol>,
 }
 
 impl LogFormatter {
     pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
         let template = EnvoyGrammar::parse(input)?;
-        Ok(LogFormatter { template })
+        let mut format: Vec<Smol> = Vec::with_capacity(template.len());
+
+        for t in template.iter() {
+            match t {
+                Template::Char(c) => format.push(Smol::Char(*c)),
+                Template::Literal(smol_str) => format.push(Smol::Str(smol_str.clone())),
+                _ => format.push(Smol::None),
+            }
+        }
+
+        Ok(LogFormatter { template: Arc::new(template), format })
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
         let context_category = C::category();
-        let mut eval_tokens = 0;
-        for part in &mut self.template {
+        for (part, out) in self.template.iter().zip(&mut self.format.iter_mut()) {
             if let Template::Placeholder(token, categories) = part {
                 if categories.contains(context_category) {
-                    if let Some(value) = ctx.eval_part(token) {
-                        *part = Template::Literal(value.into_owned()); // TODO: Reduce memory allocations by grouping consecutive expanded templates
-                    }
+                    *out = ctx.eval_part(token);
                 }
             }
         }
@@ -63,12 +80,17 @@ impl LogFormatter {
         self
     }
 
-    pub fn write_to<W: Write>(&self, w: &mut W) -> std::io::Result<usize> {
+    pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
-        for part in &self.template {
-            total_bytes += match part {
-                Template::Literal(s) => w.write(s.as_bytes())?,
-                Template::Placeholder(_, _) => w.write("UNSUP".as_bytes())?,
+        for (part, out) in self.template.iter().zip(self.format.iter()) {
+            total_bytes += match out {
+                Smol::Str(s) => IoWrite::write(w, s.as_bytes())?,
+                Smol::Char(c) => {
+                    let mut buf = [0u8; 4];
+                    let bytes = c.encode_utf8(&mut buf).as_bytes();
+                    IoWrite::write(w, bytes)?
+                },
+                _ => IoWrite::write(w, format!("%{:?}%", part).as_bytes())?,
             };
         }
 
@@ -78,13 +100,12 @@ impl LogFormatter {
 
 impl Display for LogFormatter {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for part in &self.template {
-            match part {
-                Template::Literal(s) => f.write_str(s.as_ref())?,
-                Template::Placeholder(_, _) => {
-                    f.write_str("UNSUP")?;
-                },
-            }
+        for (part, out) in self.template.iter().zip(self.format.iter()) {
+            match out {
+                Smol::Str(s) => f.write_str(s.as_ref())?,
+                Smol::Char(c) => f.write_char(*c)?,
+                _ => f.write_str(&format!("%{:?}%", part))?,
+            };
         }
         Ok(())
     }
@@ -127,6 +148,7 @@ mod tests {
     fn test_request_method() {
         let req = build_request();
         let mut formatter = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
+        println!("FORMATTER: {:?}", formatter);
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);

@@ -4,11 +4,13 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use http::{Request, Response, Version};
 use smol_str::{format_smolstr, SmolStr, SmolStrBuilder};
 
-use crate::smol_cow::SmolCow;
-use crate::token::{Category, Token};
+use crate::{
+    token::{Category, Token},
+    Smol,
+};
 
 pub trait Context {
-    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>>;
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol;
     fn category() -> Category;
 }
 
@@ -28,13 +30,16 @@ impl Context for InitContext {
     fn category() -> Category {
         Category::INIT_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
             Token::StartTime => {
-                let rfc3339 = format_system_time(self.start_time).ok()?;
-                Some(SmolCow::Owned(rfc3339))
+                if let Some(s) = format_system_time(self.start_time).ok() {
+                    Smol::Str(s)
+                } else {
+                    Smol::None
+                }
             },
-            _ => None,
+            _ => Smol::None,
         }
     }
 }
@@ -43,12 +48,12 @@ impl Context for FinishContext {
     fn category() -> Category {
         Category::FINISH_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
-            Token::Duration => Some(SmolCow::Owned(format_smolstr!("{}", self.duration.as_millis()))),
-            Token::BytesReceived => Some(SmolCow::Owned(format_smolstr!("{}", self.bytes_received))),
-            Token::BytesSent => Some(SmolCow::Owned(format_smolstr!("{}", self.bytes_sent))),
-            _ => None,
+            Token::Duration => Smol::Str(format_smolstr!("{}", self.duration.as_millis())),
+            Token::BytesReceived => Smol::Str(format_smolstr!("{}", self.bytes_received)),
+            Token::BytesSent => Smol::Str(format_smolstr!("{}", self.bytes_sent)),
+            _ => Smol::None,
         }
     }
 }
@@ -62,17 +67,36 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
     fn category() -> Category {
         Category::DOWNSTREAM_REQUEST
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
-            Token::RequestPath => Some(SmolCow::Borrowed(self.0.uri().path())),
-            Token::RequestAuthority => self.0.uri().authority().and_then(|a| Some(SmolCow::Borrowed(a.host()))),
-            Token::RequestMethod => Some(SmolCow::Borrowed(self.0.method().as_str())),
-            Token::RequestScheme => self.0.uri().scheme().map(|s| SmolCow::Owned(format_smolstr!("{}", s))),
+            Token::RequestPath => Smol::Str(SmolStr::new(self.0.uri().path())),
+            Token::RequestAuthority => {
+                if let Some(a) = self.0.uri().authority() {
+                    Smol::Str(SmolStr::new(a.host()))
+                } else {
+                    Smol::None
+                }
+            },
+            Token::RequestMethod => Smol::Str(SmolStr::new(self.0.method().as_str())),
+            Token::RequestScheme => {
+                if let Some(s) = self.0.uri().scheme() {
+                    Smol::Str(format_smolstr!("{}", s))
+                } else {
+                    Smol::None
+                }
+            },
+
             Token::RequestStandard(h) => {
                 let hv = self.0.headers().get(h);
                 match hv {
-                    Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
-                    None => Some(SmolCow::Borrowed("")),
+                    Some(hv) => {
+                        if let Some(s) = hv.to_str().ok() {
+                            Smol::Str(SmolStr::new(s))
+                        } else {
+                            Smol::None
+                        }
+                    },
+                    None => Smol::Str(SmolStr::new_static("")),
                 }
             },
             Token::Protocol => {
@@ -84,9 +108,9 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
                     _ => "HTTP/UNKNOWN",
                 };
 
-                Some(SmolCow::Borrowed(ver))
+                Smol::Str(SmolStr::new_static(ver))
             },
-            _ => None,
+            _ => Smol::None,
         }
     }
 }
@@ -95,17 +119,24 @@ impl<'r, T> Context for DownstreamResponse<'r, T> {
     fn category() -> Category {
         Category::DOWNSTREAM_RESPONSE
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Option<SmolCow<'a>> {
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
-            Token::ResponseCode => Some(SmolCow::Owned(SmolStr::new_inline(self.0.status().as_str()))),
+            Token::ResponseCode => Smol::Str(SmolStr::new_inline(self.0.status().as_str())),
             Token::ResponseStandard(h) => {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
-                    Some(hv) => hv.to_str().ok().map(SmolCow::Borrowed),
-                    None => Some(SmolCow::Borrowed("")),
+                    Some(hv) => {
+                        if let Some(s) = hv.to_str().ok() {
+                            Smol::Str(SmolStr::new(s))
+                        } else {
+                            Smol::None
+                        }
+                    },
+
+                    None => Smol::Str(SmolStr::new_static("")),
                 }
             },
-            _ => None,
+            _ => Smol::None,
         }
     }
 }

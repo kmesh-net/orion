@@ -282,11 +282,6 @@ fn benchmark_small_cow(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    benchmark_rust_format,
-    benchmark_log_formatter,
-    benchmark_request_parts,
-    benchmark_small_cow
-);
+criterion_group!(benches, benchmark_rust_format, benchmark_log_formatter, benchmark_request_parts, benchmark_small_cow);
+
 criterion_main!(benches);

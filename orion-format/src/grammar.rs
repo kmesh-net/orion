@@ -249,7 +249,11 @@ impl Grammar for EnvoyGrammar {
                 // placeholder found
                 if i > literal_start {
                     let literal_text = &input[literal_start..i];
-                    parts.push(Template::Literal(literal_text.into()));
+                    if literal_text.chars().count() == 1 {
+                        parts.push(Template::Char(literal_text.chars().next().unwrap()));
+                    } else {
+                        parts.push(Template::Literal(literal_text.into()));
+                    }
                 }
 
                 // Add this placeholder.
@@ -271,9 +275,12 @@ impl Grammar for EnvoyGrammar {
 
         // if there's some text remaning, it's a literal
         if i > literal_start {
-            let literal_text = &input[literal_start..i];
-
-            parts.push(Template::Literal(literal_text.replace("%%", "%").into()));
+            let literal_text = &input[literal_start..i].replace("%%", "%");
+            if literal_text.chars().count() == 1 {
+                parts.push(Template::Char(literal_text.chars().next().unwrap()));
+            } else {
+                parts.push(Template::Literal(literal_text.into()));
+            }
         }
 
         Ok(parts)
@@ -360,15 +367,15 @@ mod tests {
     fn test_parse_complex_envoy_string() {
         let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%""#;
         let expected = vec![
-            Template::Literal("[".into()),
+            Template::Char('['),
             Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
             Template::Literal("] \"".into()),
             Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
-            Template::Literal(" ".into()),
+            Template::Char(' '),
             Template::Placeholder(Token::RequestPath, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
-            Template::Literal(" ".into()),
+            Template::Char(' '),
             Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
-            Template::Literal("\"".into()),
+            Template::Char('"'),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
