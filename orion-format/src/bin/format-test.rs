@@ -22,7 +22,7 @@ where
     fmt.with_context(end);
 }
 
-const TOTAL: u64 = 20_000_000;
+const TOTAL: u64 = 100_000_000;
 
 fn main() {
     let request = Request::builder()
@@ -41,14 +41,16 @@ fn main() {
     };
 
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
-    let mut sink = std::io::sink();
+    // let mut sink = std::io::sink();
+
+    println!("Running {} log format...", TOTAL);
 
     let now = Instant::now();
 
     for _ in 0..TOTAL {
         let mut fmt_ = black_box(fmt.clone());
         black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt_));
-        _ = black_box(|| fmt_.write_to(&mut sink));
+        // _ = black_box(|| fmt_.write_to(&mut sink));
     }
 
     let dur = now.elapsed();

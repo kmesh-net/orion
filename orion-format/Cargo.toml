@@ -18,21 +18,10 @@ chrono = "0.4.40"
 dhat = "0.3.3"
 bitflags = "2.9.0"
 itoa = "1.0.15"
+compact_str = "0.8.0"
 
 [features]
 dhat-heap = []
-
-[profile.bench]
-opt-level = 3
-lto = true
-codegen-units = 1
-debug = false
-strip = "debuginfo"
-debug-assertions = false
-overflow-checks = false
-panic = 'unwind'
-incremental = false
-rpath = false
 
 [[bench]]
 name = "benchmark"

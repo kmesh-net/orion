@@ -49,7 +49,7 @@ fn benchmark_rust_format(c: &mut Criterion) {
     };
     let mut sink = std::io::sink();
 
-    c.bench_function("Rust format!", |b| {
+    c.bench_function("rust_format!", |b| {
         b.iter(|| {
             let s =
                 black_box(eval_rust_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end));
@@ -59,7 +59,7 @@ fn benchmark_rust_format(c: &mut Criterion) {
 
     let default_haader_value = HeaderValue::from_static("");
 
-    c.bench_function("Rust format! (full clone)", |b| {
+    c.bench_function("rust_format!_full_clone", |b| {
         b.iter(|| {
             let start_time = start.start_time.clone();
             let datetime_utc: DateTime<Utc> = start_time.into();
@@ -184,13 +184,13 @@ fn benchmark_log_formatter(c: &mut Criterion) {
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     let mut sink = std::io::sink();
 
-    c.bench_function("LogFormatter: clone only", |b| {
+    c.bench_function("log_formatter_clone_only", |b| {
         b.iter(|| {
             black_box(fmt.clone());
         })
     });
 
-    c.bench_function("LogFromatter (full)", |b| {
+    c.bench_function("log_formatter_full", |b| {
         b.iter(|| {
             let mut fmt = fmt.clone();
             black_box(eval_format(
@@ -203,7 +203,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         })
     });
 
-    c.bench_function("LogFormatter (full) + write", |b| {
+    c.bench_function("log_formatter_full_write", |b| {
         b.iter(|| {
             let mut fmt = fmt.clone();
             black_box(eval_format(
@@ -220,7 +220,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
     let mut formatted = fmt.clone();
     eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut formatted);
 
-    c.bench_function("LogFormatter: write only", |b| {
+    c.bench_function("log_formatter_write_only", |b| {
         b.iter(|| {
             _ = black_box(|| formatted.write_to(&mut sink));
         })

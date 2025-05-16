@@ -2,6 +2,7 @@ pub mod context;
 pub mod grammar;
 pub mod token;
 
+// use compact_str::CompactString;
 use context::Context;
 use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter, Write};
@@ -38,28 +39,29 @@ pub enum Template {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Smol {
-    Str(SmolStr),
+pub enum StringType {
     Char(char),
+    Smol(SmolStr),
+    // Compact(CompactString),
     None,
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct LogFormatter {
     pub template: Arc<Vec<Template>>,
-    pub format: Vec<Smol>,
+    pub format: Vec<StringType>,
 }
 
 impl LogFormatter {
     pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
         let template = EnvoyGrammar::parse(input)?;
-        let mut format: Vec<Smol> = Vec::with_capacity(template.len());
+        let mut format: Vec<StringType> = Vec::with_capacity(template.len());
 
         for t in template.iter() {
             match t {
-                Template::Char(c) => format.push(Smol::Char(*c)),
-                Template::Literal(smol_str) => format.push(Smol::Str(smol_str.clone())),
-                _ => format.push(Smol::None),
+                Template::Char(c) => format.push(StringType::Char(*c)),
+                Template::Literal(smol_str) => format.push(StringType::Smol(smol_str.clone())),
+                _ => format.push(StringType::None),
             }
         }
 
@@ -83,12 +85,13 @@ impl LogFormatter {
         let mut total_bytes = 0;
         for (part, out) in self.template.iter().zip(self.format.iter()) {
             total_bytes += match out {
-                Smol::Str(s) => IoWrite::write(w, s.as_bytes())?,
-                Smol::Char(c) => {
+                StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
+                StringType::Char(c) => {
                     let mut buf = [0u8; 4];
                     let bytes = c.encode_utf8(&mut buf).as_bytes();
                     IoWrite::write(w, bytes)?
                 },
+                // StringType::Compact(s) => IoWrite::write(w, s.as_bytes())?,
                 _ => IoWrite::write(w, format!("%{:?}%", part).as_bytes())?,
             };
         }
@@ -101,8 +104,9 @@ impl Display for LogFormatter {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         for (part, out) in self.template.iter().zip(self.format.iter()) {
             match out {
-                Smol::Str(s) => f.write_str(s.as_ref())?,
-                Smol::Char(c) => f.write_char(*c)?,
+                StringType::Smol(s) => f.write_str(s.as_ref())?,
+                StringType::Char(c) => f.write_char(*c)?,
+                // StringType::Compact(s) => f.write_str(s.as_ref())?,
                 _ => f.write_str(&format!("%{:?}%", part))?,
             };
         }
