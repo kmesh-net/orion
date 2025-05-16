@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use http::{Request, Response, Version};
-use smol_str::{format_smolstr, SmolStr, SmolStrBuilder};
+use smol_str::{SmolStr, SmolStrBuilder};
 
 use crate::{
     token::{Category, Token},
@@ -50,9 +50,18 @@ impl Context for FinishContext {
     }
     fn eval_part<'a>(&'a self, token: &Token) -> Smol {
         match token {
-            Token::Duration => Smol::Str(format_smolstr!("{}", self.duration.as_millis())),
-            Token::BytesReceived => Smol::Str(format_smolstr!("{}", self.bytes_received)),
-            Token::BytesSent => Smol::Str(format_smolstr!("{}", self.bytes_sent)),
+            Token::Duration => {
+                let mut buffer = itoa::Buffer::new();
+                Smol::Str(SmolStr::new(buffer.format(self.duration.as_millis())))
+            },
+            Token::BytesReceived => {
+                let mut buffer = itoa::Buffer::new();
+                Smol::Str(SmolStr::new(buffer.format(self.bytes_received)))
+            },
+            Token::BytesSent => {
+                let mut buffer = itoa::Buffer::new();
+                Smol::Str(SmolStr::new(buffer.format(self.bytes_sent)))
+            },
             _ => Smol::None,
         }
     }
@@ -80,7 +89,7 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
             Token::RequestMethod => Smol::Str(SmolStr::new(self.0.method().as_str())),
             Token::RequestScheme => {
                 if let Some(s) = self.0.uri().scheme() {
-                    Smol::Str(format_smolstr!("{}", s))
+                    Smol::Str(SmolStr::new(s.as_str()))
                 } else {
                     Smol::None
                 }

@@ -17,6 +17,7 @@ smol_str = "0.3.2"
 chrono = "0.4.40"
 dhat = "0.3.3"
 bitflags = "2.9.0"
+itoa = "1.0.15"
 
 [features]
 dhat-heap = []
