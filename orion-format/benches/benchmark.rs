@@ -16,7 +16,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 const DEF_FMT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
 
 #[inline]
-fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, mut fmt: LogFormatter)
+fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter)
 where
     C1: Context,
     C2: Context,
@@ -184,26 +184,37 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     c.bench_function("LogFromatter (full)", |b| {
         b.iter(|| {
+            let mut fmt = fmt.clone();
             black_box(eval_format(
                 &DownstreamRequest(&request),
                 &DownstreamResponse(&response),
                 &start,
                 &end,
-                fmt.clone(),
+                &mut fmt,
             ));
         })
     });
 
     c.bench_function("LogFormatter (full) + write", |b| {
         b.iter(|| {
+            let mut fmt = fmt.clone();
             black_box(eval_format(
                 &DownstreamRequest(&request),
                 &DownstreamResponse(&response),
                 &start,
                 &end,
-                fmt.clone(),
+                &mut fmt,
             ));
             _ = black_box(|| fmt.write_to(&mut sink));
+        })
+    });
+
+    let mut formatted = fmt.clone();
+    eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut formatted);
+
+    c.bench_function("LogFormatter: write only", |b| {
+        b.iter(|| {
+            _ = black_box(|| formatted.write_to(&mut sink));
         })
     });
 }
@@ -222,39 +233,24 @@ fn benchmark_request_parts(c: &mut Criterion) {
     let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
     c.bench_function("REQ(:PATH)", |b| {
         b.iter(|| {
-            black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
-                &start,
-                &end,
-                fmt.clone(),
-            ))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 
     let fmt = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
     c.bench_function("REQ(:METHOD)", |b| {
         b.iter(|| {
-            black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
-                &start,
-                &end,
-                fmt.clone(),
-            ))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 
     let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
     c.bench_function("REQ(USER-AGENT)", |b| {
         b.iter(|| {
-            black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
-                &start,
-                &end,
-                fmt.clone(),
-            ))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 }
