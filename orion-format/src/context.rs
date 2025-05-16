@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use http::{Request, Response, Version};
+use http::{uri::Authority, Request, Response, Version};
 use smol_str::{SmolStr, SmolStrBuilder};
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
 };
 
 pub trait Context {
-    fn eval_part<'a>(&'a self, token: &Token) -> Smol;
+    fn eval_part(&self, token: &Token) -> Smol;
     fn category() -> Category;
 }
 
@@ -20,17 +20,38 @@ pub struct InitContext {
 }
 
 #[derive(Clone, Debug)]
-pub struct FinishContext {
+pub struct FinishContext<'a> {
     pub duration: Duration,
     pub bytes_received: usize,
     pub bytes_sent: usize,
+    pub response_flags: &'a str,
+}
+
+#[derive(Clone, Debug)]
+pub struct UpstreamContext<'a> {
+    pub authority: &'a Authority,
+}
+
+#[derive(Clone, Debug)]
+pub struct DownstreamContext {}
+
+impl<'c> Context for UpstreamContext<'c> {
+    fn category() -> Category {
+        Category::UPSTREAM_CONTEXT
+    }
+    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
+        match token {
+            Token::UpstreamHost => Smol::Str(SmolStr::new(self.authority.host())),
+            _ => Smol::None,
+        }
+    }
 }
 
 impl Context for InitContext {
     fn category() -> Category {
         Category::INIT_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
+    fn eval_part(&self, token: &Token) -> Smol {
         match token {
             Token::StartTime => Smol::Str(format_system_time(self.start_time)),
             _ => Smol::None,
@@ -38,12 +59,13 @@ impl Context for InitContext {
     }
 }
 
-impl Context for FinishContext {
+impl<'a> Context for FinishContext<'a> {
     fn category() -> Category {
         Category::FINISH_CONTEXT
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
+    fn eval_part(&self, token: &Token) -> Smol {
         match token {
+            Token::ResponseFlags => Smol::Str(SmolStr::new(self.response_flags)),
             Token::Duration => {
                 let mut buffer = itoa::Buffer::new();
                 Smol::Str(SmolStr::new(buffer.format(self.duration.as_millis())))
@@ -66,11 +88,11 @@ pub struct UpstreamRequest<'a, T>(pub &'a Request<T>);
 pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
 pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
-impl<'r, T> Context for DownstreamRequest<'r, T> {
+impl<'a, T> Context for DownstreamRequest<'a, T> {
     fn category() -> Category {
         Category::DOWNSTREAM_REQUEST
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
+    fn eval_part(&self, token: &Token) -> Smol {
         match token {
             Token::RequestPath => Smol::Str(SmolStr::new(self.0.uri().path())),
             Token::RequestAuthority => {
@@ -118,11 +140,11 @@ impl<'r, T> Context for DownstreamRequest<'r, T> {
     }
 }
 
-impl<'r, T> Context for DownstreamResponse<'r, T> {
+impl<'a, T> Context for DownstreamResponse<'a, T> {
     fn category() -> Category {
         Category::DOWNSTREAM_RESPONSE
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> Smol {
+    fn eval_part(&self, token: &Token) -> Smol {
         match token {
             Token::ResponseCode => Smol::Str(SmolStr::new_inline(self.0.status().as_str())),
             Token::ResponseStandard(h) => {

@@ -75,6 +75,9 @@ strip = false
 debug = 1
 inherits = "release"
 
+[profile.bench]
+inherits = "release"
+
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 disallowed-methods      = "deny"

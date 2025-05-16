@@ -6,11 +6,13 @@ bitflags! {
     pub struct Category: u16 {
         const INIT_CONTEXT = 1;
         const FINISH_CONTEXT = 1 << 1;
-        const DOWNSTREAM_REQUEST = 1 << 1;
-        const DOWNSTREAM_RESPONSE = 1 << 2;
-        const UPSTREAM_REQUEST = 1 << 3;
-        const UPSTREAM_RESPONSE = 1 << 4;
-        const ARGUMENT = 1 << 5;
+        const UPSTREAM_CONTEXT = 1 << 2;
+        const DOWNSTREAM_CONTEXT = 1 << 3;
+        const DOWNSTREAM_REQUEST = 1 << 4;
+        const DOWNSTREAM_RESPONSE = 1 << 5;
+        const UPSTREAM_REQUEST = 1 << 6;
+        const UPSTREAM_RESPONSE = 1 << 7;
+        const ARGUMENT = 1 << 8;
     }
 }
 

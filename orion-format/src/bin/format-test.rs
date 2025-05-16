@@ -33,7 +33,12 @@ fn main() {
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
-    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let end = FinishContext {
+        duration: Duration::from_millis(100),
+        bytes_received: 128,
+        bytes_sent: 256,
+        response_flags: "-",
+    };
 
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     let mut sink = std::io::sink();
@@ -48,5 +53,9 @@ fn main() {
 
     let dur = now.elapsed();
 
-    println!("LogFormat: {:.2} msg/sec", TOTAL as f64 / dur.as_secs_f64());
+    println!(
+        "LogFormat: {:.2} msg/sec - avg duration {:.2} nsec",
+        TOTAL as f64 / dur.as_secs_f64(),
+        (dur.as_secs_f64() * 1_000_000_000.0) / TOTAL as f64
+    );
 }

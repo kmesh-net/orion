@@ -60,7 +60,7 @@ lazy_static! {
         // trie_mapstr!(trie, "RESPONSE_FLAGS_LONG", Token::ResponseFlagsLong);
         // trie_mapstr!(trie, "UPSTREAM_HOST_NAME", Token::UpstreamHostName);
         // trie_mapstr!(trie, "UPSTREAM_HOST_NAME_WITHOUT_PORT", Token::UpstreamHostNameWithoutPort);
-        trie_mapstr!(trie, "UPSTREAM_HOST", Token::UpstreamHost, Category::UPSTREAM_REQUEST);
+        trie_mapstr!(trie, "UPSTREAM_HOST", Token::UpstreamHost, Category::UPSTREAM_CONTEXT);
         // trie_mapstr!(trie, "UPSTREAM_CONNECTION_ID", Token::UpstreamConnectionId);
         // trie_mapstr!(trie, "UPSTREAM_CLUSTER", Token::UpstreamCluster);
         // trie_mapstr!(trie, "UPSTREAM_CLUSTER_RAW", Token::UpstreamClusterRaw);

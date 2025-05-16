@@ -1,6 +1,5 @@
 pub mod context;
 pub mod grammar;
-pub mod smol_cow;
 pub mod token;
 
 use context::Context;
@@ -121,7 +120,7 @@ mod tests {
 
     use http::{Request, Response, StatusCode};
 
-    use crate::context::{DownstreamRequest, DownstreamResponse, FinishContext, InitContext};
+    use crate::context::{DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext};
 
     use super::*;
 
@@ -192,12 +191,14 @@ mod tests {
         let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
         let mut formatter = LogFormatter::try_new(def_fmt).unwrap();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
+        formatter.with_context(&UpstreamContext { authority: &req.uri().authority().unwrap() });
         formatter.with_context(&DownstreamRequest(&req));
         formatter.with_context(&DownstreamResponse(&resp));
         formatter.with_context(&FinishContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
+            response_flags: "UH",
         });
         println!("{}", &formatter);
     }

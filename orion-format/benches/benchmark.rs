@@ -3,10 +3,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::{HeaderMap, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
     context::{Context, DownstreamRequest, DownstreamResponse, FinishContext, InitContext},
-    smol_cow::SmolCow,
     LogFormatter,
 };
-use smol_str::SmolStr;
 use std::time::Duration;
 
 #[cfg(feature = "dhat-heap")]
@@ -43,7 +41,12 @@ fn benchmark_rust_format(c: &mut Criterion) {
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
-    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let end = FinishContext {
+        duration: Duration::from_millis(100),
+        bytes_received: 128,
+        bytes_sent: 256,
+        response_flags: "-",
+    };
     let mut sink = std::io::sink();
 
     c.bench_function("Rust format!", |b| {
@@ -171,7 +174,12 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
-    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let end = FinishContext {
+        duration: Duration::from_millis(100),
+        bytes_received: 128,
+        bytes_sent: 256,
+        response_flags: "-",
+    };
 
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     let mut sink = std::io::sink();
@@ -228,7 +236,12 @@ fn benchmark_request_parts(c: &mut Criterion) {
 
     let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
-    let end = FinishContext { duration: Duration::from_millis(100), bytes_received: 128, bytes_sent: 256 };
+    let end = FinishContext {
+        duration: Duration::from_millis(100),
+        bytes_received: 128,
+        bytes_sent: 256,
+        response_flags: "-",
+    };
 
     let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
     c.bench_function("REQ(:PATH)", |b| {
@@ -255,29 +268,6 @@ fn benchmark_request_parts(c: &mut Criterion) {
     });
 }
 
-fn ret_small_cow() -> SmolCow<'static> {
-    SmolCow::Borrowed("123456789012345678901234567890")
-}
-
-fn ret_small_str() -> SmolStr {
-    SmolStr::new("123456789012345678901234567890")
-}
-
-fn benchmark_small_cow(c: &mut Criterion) {
-    c.bench_function("small_cow", |b| {
-        b.iter(|| {
-            let s = black_box(ret_small_cow());
-            black_box(s.into_owned());
-        })
-    });
-    c.bench_function("small_str", |b| {
-        b.iter(|| {
-            let s = black_box(ret_small_str());
-            black_box(s.clone());
-        })
-    });
-}
-
-criterion_group!(benches, benchmark_rust_format, benchmark_log_formatter, benchmark_request_parts, benchmark_small_cow);
+criterion_group!(benches, benchmark_rust_format, benchmark_log_formatter, benchmark_request_parts);
 
 criterion_main!(benches);
