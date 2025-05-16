@@ -176,27 +176,9 @@ fn benchmark_log_formatter(c: &mut Criterion) {
     let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
     let mut sink = std::io::sink();
 
-    c.bench_function("LogFormatter: DownstreamRequest", |b| {
+    c.bench_function("LogFormatter: clone only", |b| {
         b.iter(|| {
-            black_box(fmt.clone().with_context(&DownstreamRequest(&request)));
-        })
-    });
-
-    c.bench_function("LogFormatter: DownstreamResponse", |b| {
-        b.iter(|| {
-            black_box(fmt.clone().with_context(&DownstreamResponse(&response)));
-        })
-    });
-
-    c.bench_function("LogFormatter: InitContext", |b| {
-        b.iter(|| {
-            black_box(fmt.clone().with_context(&start));
-        })
-    });
-
-    c.bench_function("LogFormatter: FinishContext", |b| {
-        b.iter(|| {
-            black_box(fmt.clone().with_context(&end));
+            black_box(fmt.clone());
         })
     });
 
@@ -224,11 +206,6 @@ fn benchmark_log_formatter(c: &mut Criterion) {
             _ = black_box(|| fmt.write_to(&mut sink));
         })
     });
-}
-
-fn benchmark_clone_formatter(c: &mut Criterion) {
-    let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
-    c.bench_function("Clone formatter", |b| b.iter(|| black_box(fmt.clone())));
 }
 
 fn benchmark_request_parts(c: &mut Criterion) {
