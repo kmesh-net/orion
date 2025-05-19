@@ -122,9 +122,11 @@ pub trait Grammar {
 mod tests {
     use std::time::Duration;
 
-    use http::{Request, Response, StatusCode};
+    use http::{HeaderValue, Request, Response, StatusCode};
 
-    use crate::context::{DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext};
+    use crate::context::{
+        DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext, UpstreamRequest,
+    };
 
     use super::*;
 
@@ -139,10 +141,26 @@ mod tests {
 
     #[test]
     fn test_request_path() {
-        let req = build_request();
+        let mut req = build_request();
+        req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
+
         let mut formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
         let expected = "/";
-        formatter.with_context(&DownstreamRequest(&req));
+
+        formatter.with_context(&UpstreamRequest(&req));
+        let actual = format!("{}", &formatter);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_request_original_path() {
+        let mut req = build_request();
+        req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
+
+        let mut formatter = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
+        let expected = "/original";
+
+        formatter.with_context(&UpstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }

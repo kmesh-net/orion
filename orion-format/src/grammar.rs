@@ -20,6 +20,7 @@ lazy_static! {
         trie_mapstr!(trie, ":METHOD",Token::RequestMethod, Category::ARGUMENT);
         trie_mapstr!(trie, ":PATH", Token::RequestPath, Category::ARGUMENT);
         trie_mapstr!(trie, ":AUTHORITY", Token::RequestAuthority, Category::ARGUMENT);
+        trie_mapstr!(trie, "X-ENVOY-ORIGINAL-PATH?:PATH", Token::RequestOriginalPathOrPath, Category::ARGUMENT);
         trie
     };
 
@@ -383,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_default_fmt() {
-        let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%"
+        let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
             %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
             %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
             "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;

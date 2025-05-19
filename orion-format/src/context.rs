@@ -2,7 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 // use compact_str::CompactString;
-use http::{uri::Authority, Request, Response, Version};
+use http::{uri::Authority, HeaderName, Request, Response, Version};
 use smol_str::{SmolStr, SmolStrBuilder};
 
 use crate::{
@@ -89,6 +89,68 @@ pub struct DownstreamRequest<'a, T>(pub &'a Request<T>);
 pub struct UpstreamRequest<'a, T>(pub &'a Request<T>);
 pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
 pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
+
+impl<'a, T> Context for UpstreamRequest<'a, T> {
+    fn category() -> Category {
+        Category::UPSTREAM_REQUEST
+    }
+    fn eval_part(&self, token: &Token) -> StringType {
+        match token {
+            Token::RequestPath => StringType::Smol(SmolStr::new(self.0.uri().path())),
+            Token::RequestOriginalPathOrPath => {
+                let path_str = self
+                    .0
+                    .headers()
+                    .get(HeaderName::from_static("x-envoy-original-path"))
+                    .and_then(|p| p.to_str().ok())
+                    .unwrap_or_else(|| self.0.uri().path());
+
+                StringType::Smol(SmolStr::new(path_str))
+            },
+            Token::RequestAuthority => {
+                if let Some(a) = self.0.uri().authority() {
+                    StringType::Smol(SmolStr::new(a.host()))
+                } else {
+                    StringType::None
+                }
+            },
+            Token::RequestMethod => StringType::Smol(SmolStr::new(self.0.method().as_str())),
+            Token::RequestScheme => {
+                if let Some(s) = self.0.uri().scheme() {
+                    StringType::Smol(SmolStr::new(s.as_str()))
+                } else {
+                    StringType::None
+                }
+            },
+
+            Token::RequestStandard(h) => {
+                let hv = self.0.headers().get(h);
+                match hv {
+                    Some(hv) => {
+                        if let Some(s) = hv.to_str().ok() {
+                            StringType::Smol(SmolStr::new(s))
+                        } else {
+                            StringType::None
+                        }
+                    },
+                    None => StringType::Smol(SmolStr::new_static("")),
+                }
+            },
+            Token::Protocol => {
+                let ver = match self.0.version() {
+                    Version::HTTP_10 => "HTTP/1.0",
+                    Version::HTTP_11 => "HTTP/1.1",
+                    Version::HTTP_2 => "HTTP/2",
+                    Version::HTTP_3 => "HTTP/3",
+                    _ => "HTTP/UNKNOWN",
+                };
+
+                StringType::Smol(SmolStr::new_static(ver))
+            },
+            _ => StringType::None,
+        }
+    }
+}
 
 impl<'a, T> Context for DownstreamRequest<'a, T> {
     fn category() -> Category {

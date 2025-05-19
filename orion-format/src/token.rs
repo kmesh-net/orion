@@ -136,6 +136,7 @@ pub enum Token {
     RequestScheme,
     RequestMethod,
     RequestPath,
+    RequestOriginalPathOrPath,
     RequestAuthority,
     RequestStandard(HeaderName),
     Response, // placeholder
