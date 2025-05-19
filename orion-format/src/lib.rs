@@ -1,6 +1,7 @@
 pub mod context;
 pub mod grammar;
 pub mod token;
+pub mod types;
 
 // use compact_str::CompactString;
 use context::Context;
@@ -12,6 +13,8 @@ use thiserror::Error;
 use token::{Category, Token};
 
 use crate::grammar::EnvoyGrammar;
+
+pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
 
 #[derive(Error, Debug)]
 pub enum FormatError {
@@ -124,8 +127,11 @@ mod tests {
 
     use http::{HeaderValue, Request, Response, StatusCode};
 
-    use crate::context::{
-        DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext, UpstreamRequest,
+    use crate::{
+        context::{
+            DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext, UpstreamRequest,
+        },
+        types::ResponseFlags,
     };
 
     use super::*;
@@ -147,7 +153,7 @@ mod tests {
         let mut formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
         let expected = "/";
 
-        formatter.with_context(&UpstreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -160,7 +166,7 @@ mod tests {
         let mut formatter = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
         let expected = "/original";
 
-        formatter.with_context(&UpstreamRequest(&req));
+        formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -172,6 +178,28 @@ mod tests {
         println!("FORMATTER: {:?}", formatter);
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
+        let actual = format!("{}", &formatter);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_request_protocol() {
+        let req = build_request();
+        let mut formatter = LogFormatter::try_new("%PROTOCOL%").unwrap();
+        println!("FORMATTER: {:?}", formatter);
+        let expected = "HTTP/1.1";
+        formatter.with_context(&DownstreamRequest(&req));
+        let actual = format!("{}", &formatter);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_request_upstream_protocol() {
+        let req = build_request();
+        let mut formatter = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
+        println!("FORMATTER: {:?}", formatter);
+        let expected = "HTTP/1.1";
+        formatter.with_context(&UpstreamRequest(&req));
         let actual = format!("{}", &formatter);
         assert_eq!(actual, expected);
     }
@@ -210,8 +238,7 @@ mod tests {
     fn default_format_string() {
         let req = build_request();
         let resp = build_response();
-        let def_fmt = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-        let mut formatter = LogFormatter::try_new(def_fmt).unwrap();
+        let mut formatter = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&UpstreamContext { authority: &req.uri().authority().unwrap() });
         formatter.with_context(&DownstreamRequest(&req));
@@ -220,7 +247,7 @@ mod tests {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
-            response_flags: "UH",
+            response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
         });
         println!("{}", &formatter);
     }

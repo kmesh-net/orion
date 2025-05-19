@@ -45,7 +45,7 @@ lazy_static! {
         // trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_RECEIVED", Token::DownstreamWireBytesReceived);
         // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_RECEIVED", Token::DownstreamHeaderBytesReceived);
         trie_mapstr!(trie, "PROTOCOL", Token::Protocol, Category::DOWNSTREAM_REQUEST);
-        // trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Token::UpstreamProtocol);
+        trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Token::UpstreamProtocol, Category::UPSTREAM_REQUEST);
         trie_mapstr!(trie, "RESPONSE_CODE", Token::ResponseCode, Category::DOWNSTREAM_RESPONSE);
         // trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Token::ResponseCodeDetails);
         // trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Token::ConnectionTerminationDetails);
@@ -145,8 +145,8 @@ lazy_static! {
         // trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_END", Token::UpstreamPeerCertVEnd);
         // trie_mapstr!(trie, "ENVIRONMENT", Token::Environment);
         // trie_mapstr!(trie, "UPSTREAM_CONNECTION_POOL_READY_DURATION", Token::UpstreamConnectionPoolReadyDuration);
-        trie_mapstr!(trie, "REQ", Token::Request, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST, true); // %REQ(USER-AGENT)%
-        trie_mapstr!(trie, "RESP", Token::Response, Category::DOWNSTREAM_RESPONSE | Category::UPSTREAM_RESPONSE , true); // %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%
+        trie_mapstr!(trie, "REQ", Token::Request, Category::DOWNSTREAM_REQUEST, true); // %REQ(USER-AGENT)%
+        trie_mapstr!(trie, "RESP", Token::Response, Category::DOWNSTREAM_RESPONSE, true); // %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%
         trie
     };
 }
@@ -317,7 +317,7 @@ mod tests {
         let input = "Start %REQ(:METHOD)% middle %PROTOCOL% end.";
         let expected = vec![
             Template::Literal("Start ".into()),
-            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
+            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST),
             Template::Literal(" middle ".into()),
             Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
             Template::Literal(" end.".into()),
@@ -371,9 +371,9 @@ mod tests {
             Template::Char('['),
             Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
             Template::Literal("] \"".into()),
-            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
+            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST),
             Template::Char(' '),
-            Template::Placeholder(Token::RequestPath, Category::DOWNSTREAM_REQUEST | Category::UPSTREAM_REQUEST),
+            Template::Placeholder(Token::RequestPath, Category::DOWNSTREAM_REQUEST),
             Template::Char(' '),
             Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
             Template::Char('"'),
