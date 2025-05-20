@@ -230,19 +230,21 @@ impl Grammar for EnvoyGrammar {
                         }
 
                         if !after_placeholder[arg_len..].starts_with('%') {
-                            return Err(FormatError::MissingDelimiter(remainder.into()));
+                            return Err(FormatError::MissingDelimiter(remainder[..*placeholder_len].into()));
                         }
 
                         skip = Some(2 + *placeholder_len + arg_len);
                     } else {
                         longest_placeholder = Some((placeholder.clone(), *category, *placeholder_len));
                         if !after_placeholder.starts_with('%') {
-                            return Err(FormatError::MissingDelimiter(remainder.into()));
+                            return Err(FormatError::MissingDelimiter(remainder[..*placeholder_len].into()));
                         }
                         skip = Some(2 + *placeholder_len);
                     }
                 } else {
-                    return Err(FormatError::UnsupportedPattern(remainder.into()));
+                    return Err(FormatError::InvalidOperator(
+                        remainder.split_once('%').map(|(operator, _)| operator).unwrap_or(remainder).into(),
+                    ));
                 }
             }
 
@@ -395,7 +397,7 @@ mod tests {
     fn test_parse_unsupported_operator() {
         let input = "%UNSUPPORTED%";
         let result = EnvoyGrammar::parse(input);
-        assert!(matches!(result, Err(FormatError::UnsupportedPattern(_))));
+        assert!(matches!(result, Err(FormatError::InvalidOperator(_))));
     }
 
     #[test]

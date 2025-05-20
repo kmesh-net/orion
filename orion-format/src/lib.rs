@@ -19,19 +19,19 @@ pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-
 
 #[derive(Error, Debug)]
 pub enum FormatError {
-    #[error("pattern `{0}` not supported")]
-    UnsupportedPattern(String),
-    #[error("missing argument for `{0}`")]
+    #[error("invalid operator `{0}`")]
+    InvalidOperator(String),
+    #[error("missing argument `{0}`")]
     MissingArgument(String),
-    #[error("missing braket around `{0}`...")]
+    #[error("missing braket `{0}`")]
     MissingBracket(String),
-    #[error("missing delimiter around `{0}`...")]
+    #[error("missing delimiter `{0}`")]
     MissingDelimiter(String),
-    #[error("empty argument around `{0}`...")]
+    #[error("empty argument `{0}`")]
     EmptyArgument(String),
-    #[error("invalid request argument (`{0}`)")]
+    #[error("invalid request argument `{0}`")]
     InvalidRequestArg(String),
-    #[error("invalid response argument (`{0}`)")]
+    #[error("invalid response argument `{0}`")]
     InvalidResponseArg(String),
 }
 
