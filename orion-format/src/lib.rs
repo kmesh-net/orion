@@ -1,16 +1,17 @@
 pub mod context;
 pub mod grammar;
-pub mod token;
+pub mod operator;
 pub mod types;
 
 // use compact_str::CompactString;
 use context::Context;
+use operator::{Category, Operator};
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io::Write as IoWrite;
 use std::sync::Arc;
 use thiserror::Error;
-use token::{Category, Token};
 
 use crate::grammar::EnvoyGrammar;
 
@@ -34,14 +35,14 @@ pub enum FormatError {
     InvalidResponseArg(String),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub enum Template {
     Char(char),
     Literal(SmolStr),
-    Placeholder(Token, Category), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
+    Placeholder(Operator, Category), // eg. ("DURATION", Pattern::Duration, None), (Pattern::Req, Some(":METHOD"))
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub enum StringType {
     Char(char),
     Smol(SmolStr),
@@ -49,10 +50,16 @@ pub enum StringType {
     None,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct LogFormatter {
     pub template: Arc<Vec<Template>>,
     pub format: Vec<StringType>,
+}
+
+impl Default for LogFormatter {
+    fn default() -> Self {
+        LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap()
+    }
 }
 
 impl LogFormatter {
@@ -74,9 +81,9 @@ impl LogFormatter {
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
         let context_category = C::category();
         for (part, out) in self.template.iter().zip(&mut self.format.iter_mut()) {
-            if let Template::Placeholder(token, categories) = part {
-                if categories.contains(context_category) {
-                    *out = ctx.eval_part(token);
+            if let Template::Placeholder(op, category) = part {
+                if *category == context_category {
+                    *out = ctx.eval_part(op);
                 }
             }
         }
@@ -86,7 +93,7 @@ impl LogFormatter {
 
     pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
-        for (part, out) in self.template.iter().zip(self.format.iter()) {
+        for (_part, out) in self.template.iter().zip(self.format.iter()) {
             total_bytes += match out {
                 StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
                 StringType::Char(c) => {
@@ -95,11 +102,19 @@ impl LogFormatter {
                     IoWrite::write(w, bytes)?
                 },
                 // StringType::Compact(s) => IoWrite::write(w, s.as_bytes())?,
-                _ => IoWrite::write(w, format!("%{:?}%", part).as_bytes())?,
+                #[cfg(debug_assertions)]
+                _ => IoWrite::write(w, format!("%{:?}%", _part).as_bytes())?,
+                #[cfg(not(debug_assertions))]
+                _ => IoWrite::write(w, "?".as_bytes())?,
             };
         }
 
         Ok(total_bytes)
+    }
+
+    #[inline]
+    pub fn is_fully_formatted(&self) -> bool {
+        self.format.iter().all(|f| *f != StringType::None)
     }
 }
 
@@ -235,6 +250,13 @@ mod tests {
     }
 
     #[test]
+    fn test_unevaluated_operator() {
+        let formatter = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
+        let actual = format!("{}", &formatter);
+        println!("{actual}");
+    }
+
+    #[test]
     fn default_format_string() {
         let req = build_request();
         let resp = build_response();
@@ -249,6 +271,7 @@ mod tests {
             bytes_sent: 256,
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
         });
+        assert!(formatter.is_fully_formatted());
         println!("{}", &formatter);
     }
 }

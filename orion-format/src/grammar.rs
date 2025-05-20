@@ -1,4 +1,4 @@
-use crate::token::{Category, Token};
+use crate::operator::{Category, Operator};
 use crate::{FormatError, Grammar, Template};
 use http::HeaderName;
 use lazy_static::lazy_static;
@@ -14,22 +14,22 @@ macro_rules! trie_mapstr {
 }
 
 lazy_static! {
-    static ref ENVOY_REQ_ARGS: Trie<u8, (Token, Category, usize, bool)> = {
+    static ref ENVOY_REQ_ARGS: Trie<u8, (Operator, Category, usize, bool)> = {
         let mut trie = Trie::new();
-        trie_mapstr!(trie, ":SCHEME",Token::RequestScheme, Category::ARGUMENT);
-        trie_mapstr!(trie, ":METHOD",Token::RequestMethod, Category::ARGUMENT);
-        trie_mapstr!(trie, ":PATH", Token::RequestPath, Category::ARGUMENT);
-        trie_mapstr!(trie, ":AUTHORITY", Token::RequestAuthority, Category::ARGUMENT);
-        trie_mapstr!(trie, "X-ENVOY-ORIGINAL-PATH?:PATH", Token::RequestOriginalPathOrPath, Category::ARGUMENT);
+        trie_mapstr!(trie, ":SCHEME",Operator::RequestScheme, Category::Argument);
+        trie_mapstr!(trie, ":METHOD",Operator::RequestMethod, Category::Argument);
+        trie_mapstr!(trie, ":PATH", Operator::RequestPath, Category::Argument);
+        trie_mapstr!(trie, ":AUTHORITY", Operator::RequestAuthority, Category::Argument);
+        trie_mapstr!(trie, "X-ENVOY-ORIGINAL-PATH?:PATH", Operator::RequestOriginalPathOrPath, Category::Argument);
         trie
     };
 
-    static ref ENVOY_RESP_ARGS: Trie<u8, (Token, Category, usize, bool)> = {
+    static ref ENVOY_RESP_ARGS: Trie<u8, (Operator, Category, usize, bool)> = {
         let trie = Trie::new();
         trie
     };
 
-    static ref ENVOY_PATTERNS: Trie<u8, (Token, Category, usize, bool)> = {
+    static ref ENVOY_PATTERNS: Trie<u8, (Operator, Category, usize, bool)> = {
         let mut trie = Trie::new();
         // trie_mapstr!(trie, "REQUEST_DURATION", Token::RequestDuration);
         // trie_mapstr!(trie, "REQUEST_TX_DURATION", Token::RequestTxDuration);
@@ -37,31 +37,31 @@ lazy_static! {
         // trie_mapstr!(trie, "RESPONSE_TX_DURATION", Token::ResponseTxDuration);
         // trie_mapstr!(trie, "DOWNSTREAM_HANDSHAKE_DURATION", Token::DownstreamHandshakeDuration);
         // trie_mapstr!(trie, "ROUNDTRIP_DURATION", Token::RoundtripDuration);
-        trie_mapstr!(trie, "BYTES_RECEIVED", Token::BytesReceived, Category::FINISH_CONTEXT);
+        trie_mapstr!(trie, "BYTES_RECEIVED", Operator::BytesReceived, Category::FinishContext);
         // trie_mapstr!(trie, "BYTES_RETRANSMITTED", Token::BytesRetransmitted);
         // trie_mapstr!(trie, "PACKETS_RETRANSMITTED", Token::PacketsRetransmitted);
         // trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_RECEIVED", Token::UpstreamWireBytesReceived);
         // trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_RECEIVED", Token::UpstreamHeaderBytesReceived);
         // trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_RECEIVED", Token::DownstreamWireBytesReceived);
         // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_RECEIVED", Token::DownstreamHeaderBytesReceived);
-        trie_mapstr!(trie, "PROTOCOL", Token::Protocol, Category::DOWNSTREAM_REQUEST);
-        trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Token::UpstreamProtocol, Category::UPSTREAM_REQUEST);
-        trie_mapstr!(trie, "RESPONSE_CODE", Token::ResponseCode, Category::DOWNSTREAM_RESPONSE);
+        trie_mapstr!(trie, "PROTOCOL", Operator::Protocol, Category::DownstreamRequest);
+        trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Operator::UpstreamProtocol, Category::UpstreamRequest);
+        trie_mapstr!(trie, "RESPONSE_CODE", Operator::ResponseCode, Category::DownstreamResponse);
         // trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Token::ResponseCodeDetails);
         // trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Token::ConnectionTerminationDetails);
-        trie_mapstr!(trie, "BYTES_SENT", Token::BytesSent, Category::FINISH_CONTEXT);
+        trie_mapstr!(trie, "BYTES_SENT", Operator::BytesSent, Category::FinishContext);
         // trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_SENT", Token::UpstreamWireBytesSent);
         // trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_SENT", Token::UpstreamHeaderBytesSent);
         // trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_SENT", Token::DownstreamWireBytesSent);
         // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_SENT", Token::DownstreamHeaderBytesSent);
-        trie_mapstr!(trie, "DURATION", Token::Duration, Category::FINISH_CONTEXT);
+        trie_mapstr!(trie, "DURATION", Operator::Duration, Category::FinishContext);
         // trie_mapstr!(trie, "COMMON_DURATION", Token::CommonDuration);
         // trie_mapstr!(trie, "CUSTOM_FLAGS", Token::CustomFlags);
-        trie_mapstr!(trie, "RESPONSE_FLAGS", Token::ResponseFlags, Category::FINISH_CONTEXT);
+        trie_mapstr!(trie, "RESPONSE_FLAGS", Operator::ResponseFlags, Category::FinishContext);
         // trie_mapstr!(trie, "RESPONSE_FLAGS_LONG", Token::ResponseFlagsLong);
         // trie_mapstr!(trie, "UPSTREAM_HOST_NAME", Token::UpstreamHostName);
         // trie_mapstr!(trie, "UPSTREAM_HOST_NAME_WITHOUT_PORT", Token::UpstreamHostNameWithoutPort);
-        trie_mapstr!(trie, "UPSTREAM_HOST", Token::UpstreamHost, Category::UPSTREAM_CONTEXT);
+        trie_mapstr!(trie, "UPSTREAM_HOST", Operator::UpstreamHost, Category::UpstreamContext);
         // trie_mapstr!(trie, "UPSTREAM_CONNECTION_ID", Token::UpstreamConnectionId);
         // trie_mapstr!(trie, "UPSTREAM_CLUSTER", Token::UpstreamCluster);
         // trie_mapstr!(trie, "UPSTREAM_CLUSTER_RAW", Token::UpstreamClusterRaw);
@@ -130,7 +130,7 @@ lazy_static! {
         // trie_mapstr!(trie, "TLS_JA3_FINGERPRINT", Token::TlsJa3Fingerprint);
         // trie_mapstr!(trie, "UNIQUE_ID", Token::UniqueId);
         // trie_mapstr!(trie, "STREAM_ID", Token::StreamId);
-        trie_mapstr!(trie, "START_TIME", Token::StartTime, Category::INIT_CONTEXT);
+        trie_mapstr!(trie, "START_TIME", Operator::StartTime, Category::InitContext);
         // trie_mapstr!(trie, "START_TIME_LOCAL", Token::StartTimeLocal);
         // trie_mapstr!(trie, "EMIT_TIME", Token::EmitTime);
         // trie_mapstr!(trie, "EMIT_TIME_LOCAL", Token::EmitTimeLocal);
@@ -145,8 +145,8 @@ lazy_static! {
         // trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_END", Token::UpstreamPeerCertVEnd);
         // trie_mapstr!(trie, "ENVIRONMENT", Token::Environment);
         // trie_mapstr!(trie, "UPSTREAM_CONNECTION_POOL_READY_DURATION", Token::UpstreamConnectionPoolReadyDuration);
-        trie_mapstr!(trie, "REQ", Token::Request, Category::DOWNSTREAM_REQUEST, true); // %REQ(USER-AGENT)%
-        trie_mapstr!(trie, "RESP", Token::Response, Category::DOWNSTREAM_RESPONSE, true); // %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%
+        trie_mapstr!(trie, "REQ", Operator::Request, Category::DownstreamRequest, true); // %REQ(USER-AGENT)%
+        trie_mapstr!(trie, "RESP", Operator::Response, Category::DownstreamResponse, true); // %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%
         trie
     };
 }
@@ -154,29 +154,29 @@ lazy_static! {
 pub struct EnvoyGrammar;
 
 impl EnvoyGrammar {
-    fn parse_request(arg: &str) -> Result<Token, FormatError> {
+    fn parse_request(arg: &str) -> Result<Operator, FormatError> {
         match ENVOY_REQ_ARGS.find_longest_prefix(arg.bytes()) {
             Some((t, _, _, _)) => Ok(t.clone()),
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidRequestArg(arg.into()))?;
-                Ok(Token::RequestStandard(name))
+                Ok(Operator::RequestStandard(name))
             },
         }
     }
 
-    fn parse_response(arg: &str) -> Result<Token, FormatError> {
+    fn parse_response(arg: &str) -> Result<Operator, FormatError> {
         match ENVOY_RESP_ARGS.find_longest_prefix(arg.bytes()) {
             Some((t, _, _, _)) => Ok(t.clone()),
             None => {
                 let name =
                     HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidResponseArg(arg.into()))?;
-                Ok(Token::ResponseStandard(name))
+                Ok(Operator::ResponseStandard(name))
             },
         }
     }
 
-    fn extract_token_arg(input: &str) -> Result<(&str, usize), FormatError> {
+    fn extract_operator_arg(input: &str) -> Result<(&str, usize), FormatError> {
         if let Some(rest) = input.strip_prefix('(') {
             if let Some(end) = rest.find(')') {
                 let arg = &rest[..end];
@@ -198,7 +198,7 @@ impl Grammar for EnvoyGrammar {
         let mut i = 0;
 
         while i < input.len() {
-            let mut longest_placeholder: Option<(Token, Category, usize)> = None;
+            let mut longest_placeholder: Option<(Operator, Category, usize)> = None;
             let mut skip = None;
 
             // finst the longest placeholder starting from the current index i
@@ -213,15 +213,15 @@ impl Grammar for EnvoyGrammar {
                     let after_placeholder = &remainder[*placeholder_len..];
                     // placeholder found
                     if *has_arg {
-                        let (arg_value, arg_len) = Self::extract_token_arg(after_placeholder)?;
+                        let (arg_value, arg_len) = Self::extract_operator_arg(after_placeholder)?;
 
                         if longest_placeholder.is_none() || *placeholder_len > longest_placeholder.as_ref().unwrap().2 {
                             match placeholder {
-                                Token::Request => {
+                                Operator::Request => {
                                     let token = Self::parse_request(arg_value)?;
                                     longest_placeholder = Some((token, *category, *placeholder_len));
                                 },
-                                Token::Response => {
+                                Operator::Response => {
                                     let token = Self::parse_response(arg_value)?;
                                     longest_placeholder = Some((token, *category, *placeholder_len));
                                 },
@@ -291,6 +291,8 @@ impl Grammar for EnvoyGrammar {
 // Unit tests module
 #[cfg(test)]
 mod tests {
+    use crate::DEFAULT_ENVOY_FORMAT;
+
     use super::*;
 
     #[test]
@@ -305,8 +307,8 @@ mod tests {
     fn test_parse_only_placeholders() {
         let input = "%START_TIME%%PROTOCOL%";
         let expected = vec![
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::StartTime, Category::InitContext),
+            Template::Placeholder(Operator::Protocol, Category::DownstreamRequest),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
@@ -317,9 +319,9 @@ mod tests {
         let input = "Start %REQ(:METHOD)% middle %PROTOCOL% end.";
         let expected = vec![
             Template::Literal("Start ".into()),
-            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::RequestMethod, Category::DownstreamRequest),
             Template::Literal(" middle ".into()),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::Protocol, Category::DownstreamRequest),
             Template::Literal(" end.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -330,7 +332,7 @@ mod tests {
     fn test_parse_starts_with_placeholder() {
         let input = "%START_TIME% literal after.";
         let expected = vec![
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
+            Template::Placeholder(Operator::StartTime, Category::InitContext),
             Template::Literal(" literal after.".into()),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -342,7 +344,7 @@ mod tests {
         let input = "Literal before %PROTOCOL%";
         let expected = vec![
             Template::Literal("Literal before ".into()),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::Protocol, Category::DownstreamRequest),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
         assert_eq!(actual, expected);
@@ -369,13 +371,13 @@ mod tests {
         let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(:PATH)% %PROTOCOL%""#;
         let expected = vec![
             Template::Char('['),
-            Template::Placeholder(Token::StartTime, Category::INIT_CONTEXT),
+            Template::Placeholder(Operator::StartTime, Category::InitContext),
             Template::Literal("] \"".into()),
-            Template::Placeholder(Token::RequestMethod, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::RequestMethod, Category::DownstreamRequest),
             Template::Char(' '),
-            Template::Placeholder(Token::RequestPath, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::RequestPath, Category::DownstreamRequest),
             Template::Char(' '),
-            Template::Placeholder(Token::Protocol, Category::DOWNSTREAM_REQUEST),
+            Template::Placeholder(Operator::Protocol, Category::DownstreamRequest),
             Template::Char('"'),
         ];
         let actual = EnvoyGrammar::parse(input).unwrap();
@@ -384,17 +386,13 @@ mod tests {
 
     #[test]
     fn test_default_fmt() {
-        let input = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
-            %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
-            %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
-            "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
-        _ = EnvoyGrammar::parse(input).unwrap();
+        _ = EnvoyGrammar::parse(DEFAULT_ENVOY_FORMAT).unwrap();
     }
 
     // bad patters..
 
     #[test]
-    fn test_parse_unsupported_token() {
+    fn test_parse_unsupported_operator() {
         let input = "%UNSUPPORTED%";
         let result = EnvoyGrammar::parse(input);
         assert!(matches!(result, Err(FormatError::UnsupportedPattern(_))));

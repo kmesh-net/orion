@@ -6,7 +6,7 @@ use http::{uri::Authority, HeaderName, Request, Response, Version};
 use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr};
 
 use crate::{
-    token::{Category, Token},
+    operator::{Category, Operator},
     types::{ResponseFlags, ResponseFlagsShort},
     StringType,
 };
@@ -14,7 +14,7 @@ use crate::{
 const X_ENVOY_ORIGINAL_PATH: HeaderName = HeaderName::from_static("x-envoy-original-path");
 
 pub trait Context {
-    fn eval_part(&self, token: &Token) -> StringType;
+    fn eval_part(&self, op: &Operator) -> StringType;
     fn category() -> Category;
 }
 
@@ -41,11 +41,11 @@ pub struct DownstreamContext {}
 
 impl<'c> Context for UpstreamContext<'c> {
     fn category() -> Category {
-        Category::UPSTREAM_CONTEXT
+        Category::UpstreamContext
     }
-    fn eval_part<'a>(&'a self, token: &Token) -> StringType {
-        match token {
-            Token::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.host())),
+    fn eval_part<'a>(&'a self, op: &Operator) -> StringType {
+        match op {
+            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.host())),
             _ => StringType::None,
         }
     }
@@ -53,12 +53,12 @@ impl<'c> Context for UpstreamContext<'c> {
 
 impl Context for InitContext {
     fn category() -> Category {
-        Category::INIT_CONTEXT
+        Category::InitContext
     }
-    fn eval_part(&self, token: &Token) -> StringType {
-        match token {
-            // Token::StartTime => StringType::Compact(format_system_time_compact(self.start_time)),
-            Token::StartTime => StringType::Smol(format_system_time(self.start_time)),
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            // Operator::StartTime => StringType::Compact(format_system_time_compact(self.start_time)),
+            Operator::StartTime => StringType::Smol(format_system_time(self.start_time)),
             _ => StringType::None,
         }
     }
@@ -66,20 +66,20 @@ impl Context for InitContext {
 
 impl Context for FinishContext {
     fn category() -> Category {
-        Category::FINISH_CONTEXT
+        Category::FinishContext
     }
-    fn eval_part(&self, token: &Token) -> StringType {
-        match token {
-            Token::ResponseFlags => StringType::Smol(ResponseFlagsShort(&self.response_flags).to_smolstr()),
-            Token::Duration => {
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::ResponseFlags => StringType::Smol(ResponseFlagsShort(&self.response_flags).to_smolstr()),
+            Operator::Duration => {
                 let mut buffer = itoa::Buffer::new();
                 StringType::Smol(SmolStr::new(buffer.format(self.duration.as_millis())))
             },
-            Token::BytesReceived => {
+            Operator::BytesReceived => {
                 let mut buffer = itoa::Buffer::new();
                 StringType::Smol(SmolStr::new(buffer.format(self.bytes_received)))
             },
-            Token::BytesSent => {
+            Operator::BytesSent => {
                 let mut buffer = itoa::Buffer::new();
                 StringType::Smol(SmolStr::new(buffer.format(self.bytes_sent)))
             },
@@ -95,12 +95,12 @@ pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
 impl<'a, T> Context for DownstreamRequest<'a, T> {
     fn category() -> Category {
-        Category::DOWNSTREAM_REQUEST
+        Category::DownstreamRequest
     }
-    fn eval_part(&self, token: &Token) -> StringType {
-        match token {
-            Token::RequestPath => StringType::Smol(SmolStr::new(self.0.uri().path())),
-            Token::RequestOriginalPathOrPath => {
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::RequestPath => StringType::Smol(SmolStr::new(self.0.uri().path())),
+            Operator::RequestOriginalPathOrPath => {
                 let path_str = self
                     .0
                     .headers()
@@ -110,15 +110,15 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
 
                 StringType::Smol(SmolStr::new(path_str))
             },
-            Token::RequestAuthority => {
+            Operator::RequestAuthority => {
                 if let Some(a) = self.0.uri().authority() {
                     StringType::Smol(SmolStr::new(a.host()))
                 } else {
                     StringType::None
                 }
             },
-            Token::RequestMethod => StringType::Smol(SmolStr::new(self.0.method().as_str())),
-            Token::RequestScheme => {
+            Operator::RequestMethod => StringType::Smol(SmolStr::new(self.0.method().as_str())),
+            Operator::RequestScheme => {
                 if let Some(s) = self.0.uri().scheme() {
                     StringType::Smol(SmolStr::new(s.as_str()))
                 } else {
@@ -126,7 +126,7 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
                 }
             },
 
-            Token::RequestStandard(h) => {
+            Operator::RequestStandard(h) => {
                 let hv = self.0.headers().get(h);
                 match hv {
                     Some(hv) => {
@@ -139,7 +139,7 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
                     None => StringType::Smol(SmolStr::new_static("")),
                 }
             },
-            Token::Protocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
+            Operator::Protocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
             _ => StringType::None,
         }
     }
@@ -147,11 +147,11 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
 
 impl<'a, T> Context for UpstreamRequest<'a, T> {
     fn category() -> Category {
-        Category::UPSTREAM_REQUEST
+        Category::UpstreamRequest
     }
-    fn eval_part(&self, token: &Token) -> StringType {
-        match token {
-            Token::UpstreamProtocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::UpstreamProtocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
             _ => StringType::None,
         }
     }
@@ -159,12 +159,12 @@ impl<'a, T> Context for UpstreamRequest<'a, T> {
 
 impl<'a, T> Context for DownstreamResponse<'a, T> {
     fn category() -> Category {
-        Category::DOWNSTREAM_RESPONSE
+        Category::DownstreamResponse
     }
-    fn eval_part(&self, token: &Token) -> StringType {
-        match token {
-            Token::ResponseCode => StringType::Smol(SmolStr::new_inline(self.0.status().as_str())),
-            Token::ResponseStandard(h) => {
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::ResponseCode => StringType::Smol(SmolStr::new_inline(self.0.status().as_str())),
+            Operator::ResponseStandard(h) => {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
                     Some(hv) => {

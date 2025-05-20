@@ -1,23 +1,21 @@
-use bitflags::bitflags;
 use http::HeaderName;
+use serde::{Deserialize, Serialize};
 
-bitflags! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct Category: u16 {
-        const INIT_CONTEXT = 1;
-        const FINISH_CONTEXT = 1 << 1;
-        const UPSTREAM_CONTEXT = 1 << 2;
-        const DOWNSTREAM_CONTEXT = 1 << 3;
-        const DOWNSTREAM_REQUEST = 1 << 4;
-        const DOWNSTREAM_RESPONSE = 1 << 5;
-        const UPSTREAM_REQUEST = 1 << 6;
-        const UPSTREAM_RESPONSE = 1 << 7;
-        const ARGUMENT = 1 << 8;
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Category {
+    InitContext,
+    FinishContext,
+    UpstreamContext,
+    DownstreamContext,
+    DownstreamRequest,
+    DownstreamResponse,
+    UpstreamRequest,
+    UpstreamResponse,
+    Argument,
 }
 
-#[derive(Clone, PartialEq, Hash, Debug)]
-pub enum Token {
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum Operator {
     RequestDuration,
     RequestTxDuration,
     ResponseDuration,
@@ -138,7 +136,9 @@ pub enum Token {
     RequestPath,
     RequestOriginalPathOrPath,
     RequestAuthority,
+    #[serde(with = "http_serde_ext::header_name")]
     RequestStandard(HeaderName),
     Response, // placeholder
+    #[serde(with = "http_serde_ext::header_name")]
     ResponseStandard(HeaderName),
 }
