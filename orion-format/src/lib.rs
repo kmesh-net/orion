@@ -8,6 +8,7 @@ use context::Context;
 use operator::{Category, Operator};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
+use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io::Write as IoWrite;
 use std::sync::Arc;
@@ -60,7 +61,7 @@ struct IndexedTemplate {
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct LogFormatter {
     catalog: Arc<IndexedTemplate>,
-    format: Vec<StringType>,
+    format: RefCell<Vec<StringType>>,
 }
 
 impl Default for LogFormatter {
@@ -90,14 +91,14 @@ impl LogFormatter {
             }
         }
 
-        Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format })
+        Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format: RefCell::new(format) })
     }
 
-    pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
+    pub fn with_context<'a, C: Context>(&self, ctx: &'a C) -> &Self {
         for idx in &self.catalog.indices[C::category() as usize] {
             unsafe {
                 if let Template::Placeholder(op, _) = self.catalog.templates.get_unchecked(*idx as usize) {
-                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
+                    *self.format.borrow_mut().get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
                 }
             }
         }
@@ -107,7 +108,7 @@ impl LogFormatter {
 
     pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
-        for (_part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
+        for (_part, out) in self.catalog.templates.iter().zip(self.format.borrow().iter()) {
             total_bytes += match out {
                 StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
                 StringType::Char(c) => {
@@ -128,13 +129,13 @@ impl LogFormatter {
 
     #[inline]
     pub fn is_fully_formatted(&self) -> bool {
-        self.format.iter().all(|f| *f != StringType::None)
+        self.format.borrow().iter().all(|f| *f != StringType::None)
     }
 }
 
 impl Display for LogFormatter {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
+        for (part, out) in self.catalog.templates.iter().zip(self.format.borrow().iter()) {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
@@ -179,7 +180,7 @@ mod tests {
         let mut req = build_request();
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
-        let mut formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
         let expected = "/";
 
         formatter.with_context(&DownstreamRequest(&req));
@@ -192,7 +193,7 @@ mod tests {
         let mut req = build_request();
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
-        let mut formatter = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
         let expected = "/original";
 
         formatter.with_context(&DownstreamRequest(&req));
@@ -203,7 +204,7 @@ mod tests {
     #[test]
     fn test_request_method() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
         println!("FORMATTER: {:?}", formatter);
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
@@ -214,7 +215,7 @@ mod tests {
     #[test]
     fn test_request_protocol() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%PROTOCOL%").unwrap();
+        let formatter = LogFormatter::try_new("%PROTOCOL%").unwrap();
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&DownstreamRequest(&req));
@@ -225,7 +226,7 @@ mod tests {
     #[test]
     fn test_request_upstream_protocol() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
+        let formatter = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&UpstreamRequest(&req));
@@ -236,7 +237,7 @@ mod tests {
     #[test]
     fn test_request_scheme() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
         let expected = "https";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -246,7 +247,7 @@ mod tests {
     #[test]
     fn test_request_authority() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
         let expected = "www.rust-lang.org";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -256,7 +257,7 @@ mod tests {
     #[test]
     fn test_request_user_agent() {
         let req = build_request();
-        let mut formatter = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
+        let formatter = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
         let expected = "awesome/1.0";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -274,7 +275,7 @@ mod tests {
     fn default_format_string() {
         let req = build_request();
         let resp = build_response();
-        let mut formatter = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
+        let formatter = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&UpstreamContext { authority: &req.uri().authority().unwrap() });
         formatter.with_context(&DownstreamRequest(&req));
