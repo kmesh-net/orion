@@ -11,11 +11,12 @@ use smol_str::SmolStr;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io::Write as IoWrite;
 use std::sync::Arc;
+use strum::EnumCount;
 use thiserror::Error;
 
 use crate::grammar::EnvoyGrammar;
 
-pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
+pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"\n"#;
 
 #[derive(Error, Debug)]
 pub enum FormatError {
@@ -51,9 +52,15 @@ pub enum StringType {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+struct IndexedTemplate {
+    templates: Vec<Template>,
+    indices: [Vec<u8>; Category::COUNT],
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct LogFormatter {
-    pub template: Arc<Vec<Template>>,
-    pub format: Vec<StringType>,
+    catalog: Arc<IndexedTemplate>,
+    format: Vec<StringType>,
 }
 
 impl Default for LogFormatter {
@@ -64,10 +71,18 @@ impl Default for LogFormatter {
 
 impl LogFormatter {
     pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
-        let template = EnvoyGrammar::parse(input)?;
-        let mut format: Vec<StringType> = Vec::with_capacity(template.len());
+        let templates = EnvoyGrammar::parse(input)?;
+        let mut indices: [Vec<u8>; Category::COUNT] = std::array::from_fn(|_| vec![]);
 
-        for t in template.iter() {
+        for (i, part) in templates.iter().enumerate() {
+            if let Template::Placeholder(_, category) = part {
+                indices[*category as usize].push(i as u8);
+            }
+        }
+
+        let mut format: Vec<StringType> = Vec::with_capacity(templates.len());
+
+        for t in templates.iter() {
             match t {
                 Template::Char(c) => format.push(StringType::Char(*c)),
                 Template::Literal(smol_str) => format.push(StringType::Smol(smol_str.clone())),
@@ -75,15 +90,14 @@ impl LogFormatter {
             }
         }
 
-        Ok(LogFormatter { template: Arc::new(template), format })
+        Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format })
     }
 
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &mut Self {
-        let context_category = C::category();
-        for (part, out) in self.template.iter().zip(&mut self.format.iter_mut()) {
-            if let Template::Placeholder(op, category) = part {
-                if *category == context_category {
-                    *out = ctx.eval_part(op);
+        for idx in &self.catalog.indices[C::category() as usize] {
+            unsafe {
+                if let Template::Placeholder(op, _) = self.catalog.templates.get_unchecked(*idx as usize) {
+                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
                 }
             }
         }
@@ -93,7 +107,7 @@ impl LogFormatter {
 
     pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
-        for (_part, out) in self.template.iter().zip(self.format.iter()) {
+        for (_part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
             total_bytes += match out {
                 StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
                 StringType::Char(c) => {
@@ -120,7 +134,7 @@ impl LogFormatter {
 
 impl Display for LogFormatter {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (part, out) in self.template.iter().zip(self.format.iter()) {
+        for (part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,

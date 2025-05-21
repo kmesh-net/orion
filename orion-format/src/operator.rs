@@ -1,7 +1,9 @@
 use http::HeaderName;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumCount;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, EnumCount)]
+#[repr(usize)]
 pub enum Category {
     InitContext,
     FinishContext,
