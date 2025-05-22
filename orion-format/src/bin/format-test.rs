@@ -3,14 +3,14 @@ use http::{Request, Response, StatusCode};
 use orion_format::{
     context::{Context, DownstreamRequest, DownstreamResponse, FinishContext, InitContext},
     types::ResponseFlags,
-    LogFormatter,
+    LogFormatter, LogFormatterCell,
 };
 use std::time::{Duration, Instant};
 
 const DEF_FMT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
 
 #[inline]
-fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter)
+fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &LogFormatterCell)
 where
     C1: Context,
     C2: Context,
@@ -49,8 +49,8 @@ fn main() {
     let now = Instant::now();
 
     for _ in 0..TOTAL {
-        let mut fmt_ = black_box(fmt.clone());
-        black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt_));
+        let fmt = black_box(fmt.to_cell());
+        black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &fmt));
         // _ = black_box(|| fmt_.write_to(&mut sink));
     }
 
