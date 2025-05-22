@@ -45,7 +45,7 @@ impl<'c> Context for UpstreamContext<'c> {
     }
     fn eval_part<'a>(&'a self, op: &Operator) -> StringType {
         match op {
-            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.host())),
+            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.as_str())),
             _ => StringType::None,
         }
     }
@@ -111,8 +111,8 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
                 StringType::Smol(SmolStr::new(path_str))
             },
             Operator::RequestAuthority => {
-                if let Some(a) = self.0.uri().authority() {
-                    StringType::Smol(SmolStr::new(a.host()))
+                if let Some(a) = extract_authority_from_request(self.0) {
+                    StringType::Smol(SmolStr::new(a))
                 } else {
                     StringType::None
                 }
@@ -181,6 +181,17 @@ impl<'a, T> Context for DownstreamResponse<'a, T> {
             _ => StringType::None,
         }
     }
+}
+
+pub fn extract_authority_from_request<T>(request: &Request<T>) -> Option<&str> {
+    if let Some(authority) = request.uri().authority() {
+        return Some(authority.as_str());
+    }
+    if let Some(host_header_value) = request.headers().get(http::header::HOST) {
+        return host_header_value.to_str().ok();
+    }
+
+    None
 }
 
 const TWO_DIGITS: [&str; 100] = [
