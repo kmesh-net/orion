@@ -8,7 +8,6 @@ use context::Context;
 use operator::{Category, Operator};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use std::cell::RefCell;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io::Write as IoWrite;
 use std::sync::Arc;
@@ -64,12 +63,6 @@ pub struct LogFormatter {
     format: Vec<StringType>,
 }
 
-#[derive(PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct LogFormatterCell {
-    catalog: Arc<IndexedTemplate>,
-    format: RefCell<Vec<StringType>>,
-}
-
 impl Default for LogFormatter {
     fn default() -> Self {
         LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap()
@@ -121,22 +114,11 @@ impl LogFormatter {
         Ok(total_bytes)
     }
 
-    pub fn to_cell(&self) -> LogFormatterCell {
-        LogFormatterCell { catalog: Arc::clone(&self.catalog), format: RefCell::new(self.format.clone()) }
-    }
-
-    #[inline]
-    pub fn is_fully_formatted(&self) -> bool {
-        self.format.iter().all(|f| *f != StringType::None)
-    }
-}
-
-impl LogFormatterCell {
-    pub fn with_context<'a, C: Context>(&self, ctx: &'a C) -> &Self {
+    pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &Self {
         for idx in &self.catalog.indices[C::category() as usize] {
             unsafe {
                 if let Template::Placeholder(op, _) = self.catalog.templates.get_unchecked(*idx as usize) {
-                    *self.format.borrow_mut().get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
+                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
                 }
             }
         }
@@ -145,13 +127,8 @@ impl LogFormatterCell {
     }
 
     #[inline]
-    pub fn into_inner(self) -> LogFormatter {
-        LogFormatter { catalog: self.catalog, format: self.format.into_inner() }
-    }
-
-    #[inline]
     pub fn is_fully_formatted(&self) -> bool {
-        self.format.borrow().iter().all(|f| *f != StringType::None)
+        self.format.iter().all(|f| *f != StringType::None)
     }
 }
 
@@ -164,23 +141,6 @@ impl Display for LogFormatter {
                 // StringType::Compact(s) => f.write_str(s.as_ref())?,
                 #[cfg(debug_assertions)]
                 _ => f.write_str(&format!("%{:?}%", _part))?,
-                #[cfg(not(debug_assertions))]
-                _ => f.write_str(&format!("?"))?,
-            };
-        }
-        Ok(())
-    }
-}
-
-impl Display for LogFormatterCell {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (part, out) in self.catalog.templates.iter().zip(self.format.borrow().iter()) {
-            match out {
-                StringType::Smol(s) => f.write_str(s.as_ref())?,
-                StringType::Char(c) => f.write_char(*c)?,
-                // StringType::Compact(s) => f.write_str(s.as_ref())?,
-                #[cfg(debug_assertions)]
-                _ => f.write_str(&format!("%{:?}%", part))?,
                 #[cfg(not(debug_assertions))]
                 _ => f.write_str(&format!("?"))?,
             };
@@ -223,7 +183,7 @@ mod tests {
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
         let source = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         let expected = "/";
 
         formatter.with_context(&DownstreamRequest(&req));
@@ -237,7 +197,7 @@ mod tests {
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
         let source = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         let expected = "/original";
 
         formatter.with_context(&DownstreamRequest(&req));
@@ -249,7 +209,7 @@ mod tests {
     fn test_request_method() {
         let req = build_request();
         let source = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         println!("FORMATTER: {:?}", formatter);
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
@@ -261,7 +221,7 @@ mod tests {
     fn test_request_protocol() {
         let req = build_request();
         let source = LogFormatter::try_new("%PROTOCOL%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&DownstreamRequest(&req));
@@ -273,7 +233,7 @@ mod tests {
     fn test_request_upstream_protocol() {
         let req = build_request();
         let source = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&UpstreamRequest(&req));
@@ -285,7 +245,7 @@ mod tests {
     fn test_request_scheme() {
         let req = build_request();
         let source = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         let expected = "https";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -296,7 +256,7 @@ mod tests {
     fn test_request_authority() {
         let req = build_request();
         let source = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         let expected = "www.rust-lang.org";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -307,7 +267,7 @@ mod tests {
     fn test_request_user_agent() {
         let req = build_request();
         let source = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         let expected = "awesome/1.0";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter);
@@ -317,7 +277,7 @@ mod tests {
     #[test]
     fn test_unevaluated_operator() {
         let source = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
-        let formatter = source.to_cell();
+        let formatter = source.clone();
         let actual = format!("{}", &formatter);
         println!("{actual}");
     }
@@ -327,7 +287,7 @@ mod tests {
         let req = build_request();
         let resp = build_response();
         let source = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
-        let formatter = source.to_cell();
+        let mut formatter = source.clone();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&DownstreamRequest(&req));
         formatter.with_context(&UpstreamContext { authority: &req.uri().authority().unwrap() });

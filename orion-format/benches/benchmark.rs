@@ -4,7 +4,7 @@ use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Ve
 use orion_format::{
     context::{Context, DownstreamRequest, DownstreamResponse, FinishContext, InitContext},
     types::{ResponseFlags, ResponseFlagsShort},
-    LogFormatter, LogFormatterCell, DEFAULT_ENVOY_FORMAT,
+    LogFormatter, DEFAULT_ENVOY_FORMAT,
 };
 use smol_str::ToSmolStr;
 use std::time::Duration;
@@ -14,7 +14,7 @@ use std::time::Duration;
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 #[inline]
-fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &LogFormatterCell)
+fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter)
 where
     C1: Context,
     C2: Context,
@@ -131,14 +131,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     c.bench_function("log_formatter_full", |b| {
         b.iter(|| {
-            let fmt = fmt.to_cell();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &fmt));
-        })
-    });
-
-    c.bench_function("log_formatter_full_write", |b| {
-        b.iter(|| {
-            let mut fmt = fmt.to_cell();
+            let mut fmt = fmt.clone();
             black_box(eval_format(
                 &DownstreamRequest(&request),
                 &DownstreamResponse(&response),
@@ -146,7 +139,20 @@ fn benchmark_log_formatter(c: &mut Criterion) {
                 &end,
                 &mut fmt,
             ));
-            _ = black_box(|| fmt.into_inner().write_to(&mut sink));
+        })
+    });
+
+    c.bench_function("log_formatter_full_write", |b| {
+        b.iter(|| {
+            let mut fmt = fmt.clone();
+            black_box(eval_format(
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
+                &start,
+                &end,
+                &mut fmt,
+            ));
+            _ = black_box(|| fmt.write_to(&mut sink));
         })
     });
 
@@ -156,13 +162,12 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         })
     });
 
-    let formatted = fmt.to_cell();
-    eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &formatted);
+    let mut formatted = fmt.clone();
+    eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut formatted);
 
-    let fmt = formatted.into_inner();
     c.bench_function("log_formatter_write_only", |b| {
         b.iter(|| {
-            _ = black_box(|| fmt.write_to(&mut sink));
+            _ = black_box(|| formatted.write_to(&mut sink));
         })
     });
 }
@@ -186,24 +191,24 @@ fn benchmark_request_parts(c: &mut Criterion) {
     let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
     c.bench_function("REQ(:PATH)", |b| {
         b.iter(|| {
-            let fmt = fmt.to_cell();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &fmt))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 
     let fmt = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
     c.bench_function("REQ(:METHOD)", |b| {
         b.iter(|| {
-            let fmt = fmt.to_cell();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &fmt))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 
     let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
     c.bench_function("REQ(USER-AGENT)", |b| {
         b.iter(|| {
-            let fmt = fmt.to_cell();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &fmt))
+            let mut fmt = fmt.clone();
+            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
         })
     });
 }
