@@ -152,7 +152,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
                 &end,
                 &mut fmt,
             ));
-            _ = black_box(|| fmt.write_to(&mut sink));
+            _ = black_box(|| fmt.into_message().write_to(&mut sink));
         })
     });
 
@@ -165,9 +165,10 @@ fn benchmark_log_formatter(c: &mut Criterion) {
     let mut formatted = fmt.clone();
     eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut formatted);
 
+    let message = formatted.into_message();
     c.bench_function("log_formatter_write_only", |b| {
         b.iter(|| {
-            _ = black_box(|| formatted.write_to(&mut sink));
+            _ = black_box(|| message.write_to(&mut sink));
         })
     });
 }

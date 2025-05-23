@@ -93,27 +93,6 @@ impl LogFormatter {
         Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format })
     }
 
-    pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
-        let mut total_bytes = 0;
-        for (_part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
-            total_bytes += match out {
-                StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
-                StringType::Char(c) => {
-                    let mut buf = [0u8; 4];
-                    let bytes = c.encode_utf8(&mut buf).as_bytes();
-                    IoWrite::write(w, bytes)?
-                },
-                // StringType::Compact(s) => IoWrite::write(w, s.as_bytes())?,
-                #[cfg(debug_assertions)]
-                _ => IoWrite::write(w, format!("%{:?}%", _part).as_bytes())?,
-                #[cfg(not(debug_assertions))]
-                _ => IoWrite::write(w, "?".as_bytes())?,
-            };
-        }
-
-        Ok(total_bytes)
-    }
-
     pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &Self {
         for idx in &self.catalog.indices[C::category() as usize] {
             unsafe {
@@ -127,21 +106,53 @@ impl LogFormatter {
     }
 
     #[inline]
+    pub fn into_message(self) -> FormattedMessage {
+        FormattedMessage { format: self.format }
+    }
+
+    #[inline]
     pub fn is_fully_formatted(&self) -> bool {
         self.format.iter().all(|f| *f != StringType::None)
     }
 }
 
-impl Display for LogFormatter {
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+pub struct FormattedMessage {
+    format: Vec<StringType>,
+}
+
+impl FormattedMessage {
+    #[inline]
+    pub fn is_fully_formatted(&self) -> bool {
+        self.format.iter().all(|f| *f != StringType::None)
+    }
+
+    pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
+        let mut total_bytes = 0;
+        for out in self.format.iter() {
+            total_bytes += match out {
+                StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
+                StringType::Char(c) => {
+                    let mut buf = [0u8; 4];
+                    let bytes = c.encode_utf8(&mut buf).as_bytes();
+                    IoWrite::write(w, bytes)?
+                },
+                // StringType::Compact(s) => IoWrite::write(w, s.as_bytes())?,
+                _ => IoWrite::write(w, "?".as_bytes())?,
+            };
+        }
+
+        Ok(total_bytes)
+    }
+}
+
+impl Display for FormattedMessage {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for (_part, out) in self.catalog.templates.iter().zip(self.format.iter()) {
+        for out in self.format.iter() {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
                 // StringType::Compact(s) => f.write_str(s.as_ref())?,
-                #[cfg(debug_assertions)]
-                _ => f.write_str(&format!("%{:?}%", _part))?,
-                #[cfg(not(debug_assertions))]
                 _ => f.write_str(&format!("?"))?,
             };
         }
@@ -187,7 +198,7 @@ mod tests {
         let expected = "/";
 
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -201,7 +212,7 @@ mod tests {
         let expected = "/original";
 
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -213,7 +224,7 @@ mod tests {
         println!("FORMATTER: {:?}", formatter);
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -225,7 +236,7 @@ mod tests {
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -237,7 +248,7 @@ mod tests {
         println!("FORMATTER: {:?}", formatter);
         let expected = "HTTP/1.1";
         formatter.with_context(&UpstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -248,7 +259,7 @@ mod tests {
         let mut formatter = source.clone();
         let expected = "https";
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -259,7 +270,7 @@ mod tests {
         let mut formatter = source.clone();
         let expected = "www.rust-lang.org";
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -270,7 +281,7 @@ mod tests {
         let mut formatter = source.clone();
         let expected = "awesome/1.0";
         formatter.with_context(&DownstreamRequest(&req));
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
@@ -278,7 +289,7 @@ mod tests {
     fn test_unevaluated_operator() {
         let source = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
         let formatter = source.clone();
-        let actual = format!("{}", &formatter);
+        let actual = format!("{}", &formatter.into_message());
         println!("{actual}");
     }
 
@@ -299,6 +310,6 @@ mod tests {
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
         });
         assert!(formatter.is_fully_formatted());
-        println!("{}", &source);
+        println!("{}", &source.into_message());
     }
 }
