@@ -40,15 +40,14 @@ bitflags! {
 pub struct ResponseFlagsShort<'a>(pub &'a ResponseFlags);
 pub struct ResponseFlagsLong<'a>(pub &'a ResponseFlags);
 
-impl<'a> ToSmolStr for ResponseFlagsShort<'a> {
+impl ToSmolStr for ResponseFlagsShort<'_> {
     fn to_smolstr(&self) -> SmolStr {
         if self.0.is_empty() {
             return SmolStr::new_static("-");
         }
         let mut flags = SmolStrBuilder::new();
-        let mut i = 0;
 
-        for f in self.0.clone() {
+        for (i ,f) in self.0.clone().iter().enumerate() {
             if i > 0 {
                 flags.push(',');
             }
@@ -85,23 +84,20 @@ impl<'a> ToSmolStr for ResponseFlagsShort<'a> {
                 ResponseFlags::UNCONDITIONAL_DROP_OVERLOAD           => flags.push_str("UDO"),
                 _ => flags.push_str("?"),
             });
-
-            i += 1;
         }
 
         flags.finish()
     }
 }
 
-impl<'a> ToSmolStr for ResponseFlagsLong<'a> {
+impl ToSmolStr for ResponseFlagsLong<'_> {
     fn to_smolstr(&self) -> SmolStr {
         if self.0.is_empty() {
             return SmolStr::new_static("-");
         }
         let mut flags = SmolStrBuilder::new();
-        let mut i = 0;
 
-        for f in self.0.clone() {
+        for (i, f) in self.0.clone().iter().enumerate() {
             if i > 0 {
                 flags.push(',');
             }
@@ -138,8 +134,6 @@ impl<'a> ToSmolStr for ResponseFlagsLong<'a> {
                 ResponseFlags::UNCONDITIONAL_DROP_OVERLOAD           => flags.push_str("UnconditionalDropOverload"),
                 _ => flags.push_str("?"),
             });
-
-            i += 1;
         }
 
         flags.finish()

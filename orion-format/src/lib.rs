@@ -66,7 +66,11 @@ pub struct LogFormatter {
 
 impl Default for LogFormatter {
     fn default() -> Self {
-        LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap()
+        if let Ok(log) = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT) {
+            log
+        } else {
+            panic!("Failed to create default LogFormatter")
+        }
     }
 }
 
@@ -94,11 +98,11 @@ impl LogFormatter {
         Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format })
     }
 
-    pub fn with_context<'a, C: Context>(&mut self, ctx: &'a C) -> &Self {
+    pub fn with_context<C: Context>(&mut self, ctx: &C) -> &Self {
         for idx in &self.catalog.indices[C::category() as usize] {
             unsafe {
                 if let Template::Placeholder(op, _) = self.catalog.templates.get_unchecked(*idx as usize) {
-                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(&op);
+                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(op);
                 }
             }
         }
@@ -130,7 +134,7 @@ impl FormattedMessage {
 
     pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
-        for out in self.format.iter() {
+        for out in &self.format {
             total_bytes += match out {
                 StringType::Smol(s) => IoWrite::write(w, s.as_bytes())?,
                 StringType::Char(c) => {
@@ -149,12 +153,12 @@ impl FormattedMessage {
 
 impl Display for FormattedMessage {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for out in self.format.iter() {
+        for out in &self.format {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
                 // StringType::Compact(s) => f.write_str(s.as_ref())?,
-                _ => f.write_str(&format!("?"))?,
+                _ => f.write_str("?")?,
             };
         }
         Ok(())
@@ -222,7 +226,7 @@ mod tests {
         let req = build_request();
         let source = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
         let mut formatter = source.clone();
-        println!("FORMATTER: {:?}", formatter);
+        println!("FORMATTER: {formatter:?}");
         let expected = "GET";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter.into_message());
@@ -234,7 +238,7 @@ mod tests {
         let req = build_request();
         let source = LogFormatter::try_new("%PROTOCOL%").unwrap();
         let mut formatter = source.clone();
-        println!("FORMATTER: {:?}", formatter);
+        println!("FORMATTER: {formatter:?}");
         let expected = "HTTP/1.1";
         formatter.with_context(&DownstreamRequest(&req));
         let actual = format!("{}", &formatter.into_message());
@@ -246,7 +250,7 @@ mod tests {
         let req = build_request();
         let source = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
         let mut formatter = source.clone();
-        println!("FORMATTER: {:?}", formatter);
+        println!("FORMATTER: {formatter:?}");
         let expected = "HTTP/1.1";
         formatter.with_context(&UpstreamRequest(&req));
         let actual = format!("{}", &formatter.into_message());
@@ -302,7 +306,7 @@ mod tests {
         let mut formatter = source.clone();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&DownstreamRequest(&req));
-        formatter.with_context(&UpstreamContext { authority: &req.uri().authority().unwrap() });
+        formatter.with_context(&UpstreamContext { authority: req.uri().authority().unwrap() });
         formatter.with_context(&DownstreamResponse(&resp));
         formatter.with_context(&FinishContext {
             duration: Duration::from_millis(100),

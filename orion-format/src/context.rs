@@ -39,11 +39,11 @@ pub struct UpstreamContext<'a> {
 #[derive(Clone, Debug)]
 pub struct DownstreamContext {}
 
-impl<'c> Context for UpstreamContext<'c> {
+impl Context for UpstreamContext<'_> {
     fn category() -> Category {
         Category::UpstreamContext
     }
-    fn eval_part<'a>(&'a self, op: &Operator) -> StringType {
+    fn eval_part(&self, op: &Operator) -> StringType {
         match op {
             Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.as_str())),
             _ => StringType::None,
@@ -93,7 +93,7 @@ pub struct UpstreamRequest<'a, T>(pub &'a Request<T>);
 pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
 pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
-impl<'a, T> Context for DownstreamRequest<'a, T> {
+impl<T> Context for DownstreamRequest<'_, T> {
     fn category() -> Category {
         Category::DownstreamRequest
     }
@@ -130,7 +130,7 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
                 let hv = self.0.headers().get(h);
                 match hv {
                     Some(hv) => {
-                        if let Some(s) = hv.to_str().ok() {
+                        if let Ok(s) = hv.to_str() {
                             StringType::Smol(SmolStr::new(s))
                         } else {
                             StringType::None
@@ -145,7 +145,7 @@ impl<'a, T> Context for DownstreamRequest<'a, T> {
     }
 }
 
-impl<'a, T> Context for UpstreamRequest<'a, T> {
+impl<T> Context for UpstreamRequest<'_, T> {
     fn category() -> Category {
         Category::UpstreamRequest
     }
@@ -157,7 +157,7 @@ impl<'a, T> Context for UpstreamRequest<'a, T> {
     }
 }
 
-impl<'a, T> Context for DownstreamResponse<'a, T> {
+impl<T> Context for DownstreamResponse<'_, T> {
     fn category() -> Category {
         Category::DownstreamResponse
     }
@@ -168,7 +168,7 @@ impl<'a, T> Context for DownstreamResponse<'a, T> {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
                     Some(hv) => {
-                        if let Some(s) = hv.to_str().ok() {
+                        if let Ok(s) = hv.to_str() {
                             StringType::Smol(SmolStr::new(s))
                         } else {
                             StringType::None

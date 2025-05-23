@@ -25,14 +25,15 @@ where
 
 const TOTAL: u64 = 100_000_000;
 
-fn main() {
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+fn main() -> Result <(), BoxError> {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
         .header("User-Agent", "my-awesome-agent/1.0")
-        .body(())
-        .unwrap();
+        .body(())?;
 
-    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let response = Response::builder().status(StatusCode::OK).body(())?;
     let start = InitContext { start_time: std::time::SystemTime::now() };
     let end = FinishContext {
         duration: Duration::from_millis(100),
@@ -41,10 +42,10 @@ fn main() {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new(DEF_FMT).unwrap();
+    let fmt = LogFormatter::try_new(DEF_FMT)?;
     // let mut sink = std::io::sink();
 
-    println!("Running {} log format...", TOTAL);
+    println!("Running {TOTAL} log format...");
 
     let now = Instant::now();
 
@@ -61,4 +62,5 @@ fn main() {
         TOTAL as f64 / dur.as_secs_f64(),
         (dur.as_secs_f64() * 1_000_000_000.0) / TOTAL as f64
     );
+    Ok(())
 }

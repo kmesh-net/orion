@@ -194,14 +194,14 @@ impl EnvoyGrammar {
 impl Grammar for EnvoyGrammar {
     fn parse(input: &str) -> Result<Vec<Template>, FormatError> {
         let mut parts = Vec::new();
-        let mut literal_start = 0; // Indice di inizio del literal corrente
+        let mut literal_start = 0;
         let mut i = 0;
 
         while i < input.len() {
             let mut longest_placeholder: Option<(Operator, Category, usize)> = None;
             let mut skip = None;
 
-            // finst the longest placeholder starting from the current index i
+            // find the longest placeholder starting from the current index i
             //
             if input[i..].starts_with('%') {
                 let remainder = &input[i + 1..];
@@ -215,7 +215,7 @@ impl Grammar for EnvoyGrammar {
                     if *has_arg {
                         let (arg_value, arg_len) = Self::extract_operator_arg(after_placeholder)?;
 
-                        if longest_placeholder.is_none() || *placeholder_len > longest_placeholder.as_ref().unwrap().2 {
+                        if longest_placeholder.as_ref().is_none_or(|(_, _, len)| *placeholder_len > *len) {
                             match placeholder {
                                 Operator::Request => {
                                     let token = Self::parse_request(arg_value)?;
@@ -253,7 +253,12 @@ impl Grammar for EnvoyGrammar {
                 if i > literal_start {
                     let literal_text = &input[literal_start..i];
                     if literal_text.chars().count() == 1 {
-                        parts.push(Template::Char(literal_text.chars().next().unwrap()));
+                        // if the literal is a single char, push it as a char
+                        if let Some(c) = literal_text.chars().next() {
+                            parts.push(Template::Char(c));
+                        } else { // This case should not happen, but just in case
+                            parts.push(Template::Literal(literal_text.into()));
+                        }
                     } else {
                         parts.push(Template::Literal(literal_text.into()));
                     }
@@ -266,13 +271,13 @@ impl Grammar for EnvoyGrammar {
                     placeholder.1,
                 ));
 
-                // advnace the index beyond the current placeholder and possibly its argument.
-                i += skip.unwrap();
+                // advance the index beyond the current placeholder and possibly its argument.
+                i += skip.unwrap_or(0);
 
                 literal_start = i;
             } else {
                 /* skip the specified number of bytes, or by default the next char */
-                i += skip.unwrap_or(input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(0));
+                i += skip.unwrap_or(input[i..].chars().next().map(char::len_utf8).unwrap_or(0));
             }
         }
 
@@ -280,7 +285,12 @@ impl Grammar for EnvoyGrammar {
         if i > literal_start {
             let literal_text = &input[literal_start..i].replace("%%", "%");
             if literal_text.chars().count() == 1 {
-                parts.push(Template::Char(literal_text.chars().next().unwrap()));
+                if let Some(c) = literal_text.chars().next() {
+                    // if the literal is a single char, push it as a char
+                    parts.push(Template::Char(c));
+                } else { // This case should not happen, but just in case
+                    parts.push(Template::Literal(literal_text.into()));
+                }
             } else {
                 parts.push(Template::Literal(literal_text.into()));
             }
