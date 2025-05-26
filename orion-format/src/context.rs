@@ -114,7 +114,7 @@ impl<T> Context for DownstreamRequest<'_, T> {
                 if let Some(a) = extract_authority_from_request(self.0) {
                     StringType::Smol(SmolStr::new(a))
                 } else {
-                    StringType::None
+                    StringType::Smol(SmolStr::new_static("-"))
                 }
             },
             Operator::RequestMethod => StringType::Smol(SmolStr::new(self.0.method().as_str())),
@@ -122,7 +122,7 @@ impl<T> Context for DownstreamRequest<'_, T> {
                 if let Some(s) = self.0.uri().scheme() {
                     StringType::Smol(SmolStr::new(s.as_str()))
                 } else {
-                    StringType::None
+                    StringType::Smol(SmolStr::new_static("-"))
                 }
             },
 
@@ -130,10 +130,9 @@ impl<T> Context for DownstreamRequest<'_, T> {
                 let hv = self.0.headers().get(h);
                 match hv {
                     Some(hv) => {
-                        if let Ok(s) = hv.to_str() {
-                            StringType::Smol(SmolStr::new(s))
-                        } else {
-                            StringType::None
+                        match String::from_utf8_lossy(hv.as_bytes()) {
+                            std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
+                            std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
                         }
                     },
                     None => StringType::Smol(SmolStr::new_static("-")),
@@ -168,10 +167,9 @@ impl<T> Context for DownstreamResponse<'_, T> {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
                     Some(hv) => {
-                        if let Ok(s) = hv.to_str() {
-                            StringType::Smol(SmolStr::new(s))
-                        } else {
-                            StringType::None
+                        match String::from_utf8_lossy(hv.as_bytes()) {
+                            std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
+                            std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
                         }
                     },
 

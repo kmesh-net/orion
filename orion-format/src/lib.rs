@@ -51,6 +51,7 @@ pub enum Template {
 pub enum StringType {
     Char(char),
     Smol(SmolStr),
+    Bytes(Box<[u8]>),
     // Compact(CompactString),
     None,
 }
@@ -145,6 +146,7 @@ impl FormattedMessage {
                     let bytes = c.encode_utf8(&mut buf).as_bytes();
                     IoWrite::write(w, bytes)?
                 },
+                StringType::Bytes(bs) => IoWrite::write(w, bs)?,
                 StringType::None => IoWrite::write(w, "?".as_bytes())?, // this corresponds to an operator not evaluated from contexts
             };
         }
@@ -159,6 +161,7 @@ impl Display for FormattedMessage {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
+                StringType::Bytes(bs) => f.write_str(&String::from_utf8_lossy(bs))?,
                 StringType::None => f.write_str("?")?,
             }
         }
