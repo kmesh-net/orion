@@ -129,11 +129,9 @@ impl<T> Context for DownstreamRequest<'_, T> {
             Operator::RequestStandard(h) => {
                 let hv = self.0.headers().get(h);
                 match hv {
-                    Some(hv) => {
-                        match String::from_utf8_lossy(hv.as_bytes()) {
-                            std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
-                            std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
-                        }
+                    Some(hv) => match String::from_utf8_lossy(hv.as_bytes()) {
+                        std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
+                        std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
                     },
                     None => StringType::Smol(SmolStr::new_static("-")),
                 }
@@ -166,11 +164,9 @@ impl<T> Context for DownstreamResponse<'_, T> {
             Operator::ResponseStandard(h) => {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
-                    Some(hv) => {
-                        match String::from_utf8_lossy(hv.as_bytes()) {
-                            std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
-                            std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
-                        }
+                    Some(hv) => match String::from_utf8_lossy(hv.as_bytes()) {
+                        std::borrow::Cow::Borrowed(s) => StringType::Smol(SmolStr::new(s)),
+                        std::borrow::Cow::Owned(s) => StringType::Smol(SmolStr::new(s)),
                     },
 
                     None => StringType::Smol(SmolStr::new_static("-")),
