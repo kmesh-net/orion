@@ -28,7 +28,7 @@ const TOTAL: u64 = 100_000_000;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-fn main() -> Result <(), BoxError> {
+fn main() -> Result<(), BoxError> {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
         .header("User-Agent", "my-awesome-agent/1.0")

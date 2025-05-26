@@ -47,7 +47,7 @@ impl ToSmolStr for ResponseFlagsShort<'_> {
         }
         let mut flags = SmolStrBuilder::new();
 
-        for (i ,f) in self.0.clone().iter().enumerate() {
+        for (i, f) in self.0.clone().iter().enumerate() {
             if i > 0 {
                 flags.push(',');
             }

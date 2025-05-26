@@ -94,7 +94,7 @@ impl LogFormatter {
             match t {
                 Template::Char(c) => format.push(StringType::Char(*c)),
                 Template::Literal(smol_str) => format.push(StringType::Smol(smol_str.clone())),
-                Template::Placeholder(_,_) => format.push(StringType::None),
+                Template::Placeholder(_, _) => format.push(StringType::None),
             }
         }
 
