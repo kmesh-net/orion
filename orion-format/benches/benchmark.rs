@@ -32,14 +32,42 @@ fn header_lookup<'a>(name: &'a str, m: &'a HeaderMap, default_header: &'a Header
     m.get(name).unwrap_or(default_header)
 }
 
+// A workaround for the `unwrap` lint in Clippy, which is too strict for our benchmarks.
+// This trait provides a method to unwrap `Option` and `Result` types without triggering Clippy warnings.
+trait UnwrapClippyWorkaround {
+    type Target;
+    fn stealth_unwrap(self) -> Self::Target;
+}
+
+impl<T> UnwrapClippyWorkaround for Option<T> {
+    type Target = T;
+
+    fn stealth_unwrap(self) -> Self::Target {
+        match self {
+            Some(value) => value,
+            None => panic!("Called stealth_unwrap on None"),
+        }
+    }
+}
+
+impl<T, E> UnwrapClippyWorkaround for Result<T, E> {
+    type Target = T;
+
+    fn stealth_unwrap(self) -> Self::Target {
+        match self {
+            Ok(value) => value,
+            _ => panic!("Called stealth_unwrap on Err"),
+        }
+    }
+}
 fn benchmark_rust_format(c: &mut Criterion) {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
         .header("User-Agent", "my-awesome-agent/1.0")
         .body(())
-        .unwrap();
+        .stealth_unwrap();
 
-    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let response = Response::builder().status(StatusCode::OK).body(()).stealth_unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
     let end = FinishContext {
         duration: Duration::from_millis(100),
@@ -96,11 +124,11 @@ fn benchmark_rust_format(c: &mut Criterion) {
                 end_context.bytes_received,
                 end_context.bytes_sent,
                 end_context.duration.as_millis(),
-                x_envoy_upstream_service_time.to_str().unwrap(),
-                x_forwarded_for.to_str().unwrap(),
-                user_agent.to_str().unwrap(),
-                x_request_id.to_str().unwrap(),
-                uri.authority().unwrap().host(),
+                x_envoy_upstream_service_time.to_str().stealth_unwrap(),
+                x_forwarded_for.to_str().stealth_unwrap(),
+                user_agent.to_str().stealth_unwrap(),
+                x_request_id.to_str().stealth_unwrap(),
+                uri.authority().stealth_unwrap().host(),
                 upstream_host,
             ));
         });
@@ -115,9 +143,9 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         .uri("https://www.rust-lang.org/hello")
         .header("User-Agent", "my-awesome-agent/1.0")
         .body(())
-        .unwrap();
+        .stealth_unwrap();
 
-    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let response = Response::builder().status(StatusCode::OK).body(()).stealth_unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
     let end = FinishContext {
         duration: Duration::from_millis(100),
@@ -126,7 +154,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
+    let fmt = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).stealth_unwrap();
     let mut sink = std::io::sink();
 
     c.bench_function("log_formatter_full", |b| {
@@ -178,9 +206,9 @@ fn benchmark_request_parts(c: &mut Criterion) {
         .uri("https://www.rust-lang.org/hello")
         .header("User-Agent", "my-awesome-agent/1.0")
         .body(())
-        .unwrap();
+        .stealth_unwrap();
 
-    let response = Response::builder().status(StatusCode::OK).body(()).unwrap();
+    let response = Response::builder().status(StatusCode::OK).body(()).stealth_unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
     let end = FinishContext {
         duration: Duration::from_millis(100),
@@ -189,7 +217,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(:PATH)%").stealth_unwrap();
     c.bench_function("REQ(:PATH)", |b| {
         b.iter(|| {
             let mut fmt = fmt.clone();
@@ -197,7 +225,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         })
     });
 
-    let fmt = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(:METHOD)%").stealth_unwrap();
     c.bench_function("REQ(:METHOD)", |b| {
         b.iter(|| {
             let mut fmt = fmt.clone();
@@ -205,7 +233,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         })
     });
 
-    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
+    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").stealth_unwrap();
     c.bench_function("REQ(USER-AGENT)", |b| {
         b.iter(|| {
             let mut fmt = fmt.clone();
