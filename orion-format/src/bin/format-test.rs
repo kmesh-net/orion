@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 const DEF_FMT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;
 
 #[inline]
-fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter)
+fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter) -> bool
 where
     C1: Context,
     C2: Context,
@@ -21,6 +21,7 @@ where
     fmt.with_context(resp);
     fmt.with_context(start);
     fmt.with_context(end);
+    true
 }
 
 const TOTAL: u64 = 100_000_000;
@@ -52,7 +53,6 @@ fn main() -> Result <(), BoxError> {
     for _ in 0..TOTAL {
         let mut fmt = black_box(fmt.clone());
         black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt));
-        // _ = black_box(|| fmt_.write_to(&mut sink));
     }
 
     let dur = now.elapsed();

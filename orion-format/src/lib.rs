@@ -35,6 +35,9 @@ pub enum FormatError {
     InvalidRequestArg(String),
     #[error("invalid response argument `{0}`")]
     InvalidResponseArg(String),
+
+    #[error("invalid operator index `{0}`")]
+    InvalidOperatorIndex(#[from] std::num::TryFromIntError),
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -81,17 +84,17 @@ impl LogFormatter {
 
         for (i, part) in templates.iter().enumerate() {
             if let Template::Placeholder(_, category) = part {
-                indices[*category as usize].push(i as u8);
+                indices[*category as usize].push(u8::try_from(i)?);
             }
         }
 
         let mut format: Vec<StringType> = Vec::with_capacity(templates.len());
 
-        for t in templates.iter() {
+        for t in &templates {
             match t {
                 Template::Char(c) => format.push(StringType::Char(*c)),
                 Template::Literal(smol_str) => format.push(StringType::Smol(smol_str.clone())),
-                _ => format.push(StringType::None),
+                Template::Placeholder(_,_) => format.push(StringType::None),
             }
         }
 
@@ -142,8 +145,7 @@ impl FormattedMessage {
                     let bytes = c.encode_utf8(&mut buf).as_bytes();
                     IoWrite::write(w, bytes)?
                 },
-                // StringType::Compact(s) => IoWrite::write(w, s.as_bytes())?,
-                _ => IoWrite::write(w, "?".as_bytes())?,
+                StringType::None => IoWrite::write(w, "?".as_bytes())?, // this corresponds to an operator not evaluated from contexts
             };
         }
 
@@ -157,9 +159,8 @@ impl Display for FormattedMessage {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
-                // StringType::Compact(s) => f.write_str(s.as_ref())?,
-                _ => f.write_str("?")?,
-            };
+                StringType::None => f.write_str("?")?,
+            }
         }
         Ok(())
     }

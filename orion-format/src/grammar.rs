@@ -25,8 +25,7 @@ lazy_static! {
     };
 
     static ref ENVOY_RESP_ARGS: Trie<u8, (Operator, Category, usize, bool)> = {
-        let trie = Trie::new();
-        trie
+        Trie::new()
     };
 
     static ref ENVOY_PATTERNS: Trie<u8, (Operator, Category, usize, bool)> = {
@@ -155,24 +154,22 @@ pub struct EnvoyGrammar;
 
 impl EnvoyGrammar {
     fn parse_request(arg: &str) -> Result<Operator, FormatError> {
-        match ENVOY_REQ_ARGS.find_longest_prefix(arg.bytes()) {
-            Some((t, _, _, _)) => Ok(t.clone()),
-            None => {
-                let name =
-                    HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidRequestArg(arg.into()))?;
-                Ok(Operator::RequestStandard(name))
-            },
+        if let Some((t, _, _, _)) = ENVOY_REQ_ARGS.find_longest_prefix(arg.bytes()) {
+            Ok(t.clone())
+        } else {
+            let name =
+                HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidRequestArg(arg.into()))?;
+            Ok(Operator::RequestStandard(name))
         }
     }
 
     fn parse_response(arg: &str) -> Result<Operator, FormatError> {
-        match ENVOY_RESP_ARGS.find_longest_prefix(arg.bytes()) {
-            Some((t, _, _, _)) => Ok(t.clone()),
-            None => {
-                let name =
-                    HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidResponseArg(arg.into()))?;
-                Ok(Operator::ResponseStandard(name))
-            },
+        if let Some((t, _, _, _)) = ENVOY_RESP_ARGS.find_longest_prefix(arg.bytes()) {
+            Ok(t.clone())
+        } else {
+            let name =
+                HeaderName::from_bytes(arg.as_bytes()).map_err(|_| FormatError::InvalidResponseArg(arg.into()))?;
+            Ok(Operator::ResponseStandard(name))
         }
     }
 
@@ -256,7 +253,8 @@ impl Grammar for EnvoyGrammar {
                         // if the literal is a single char, push it as a char
                         if let Some(c) = literal_text.chars().next() {
                             parts.push(Template::Char(c));
-                        } else { // This case should not happen, but just in case
+                        } else {
+                            // This case should not happen, but just in case
                             parts.push(Template::Literal(literal_text.into()));
                         }
                     } else {
@@ -281,14 +279,15 @@ impl Grammar for EnvoyGrammar {
             }
         }
 
-        // if there's some text remaning, it's a literal
+        // if there's some text remaining, it's a literal
         if i > literal_start {
             let literal_text = &input[literal_start..i].replace("%%", "%");
             if literal_text.chars().count() == 1 {
                 if let Some(c) = literal_text.chars().next() {
                     // if the literal is a single char, push it as a char
                     parts.push(Template::Char(c));
-                } else { // This case should not happen, but just in case
+                } else {
+                    // This case should not happen, but just in case
                     parts.push(Template::Literal(literal_text.into()));
                 }
             } else {
