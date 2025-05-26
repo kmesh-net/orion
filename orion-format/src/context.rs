@@ -136,7 +136,7 @@ impl<T> Context for DownstreamRequest<'_, T> {
                             StringType::None
                         }
                     },
-                    None => StringType::Smol(SmolStr::new_static("")),
+                    None => StringType::Smol(SmolStr::new_static("-")),
                 }
             },
             Operator::Protocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
@@ -175,7 +175,7 @@ impl<T> Context for DownstreamResponse<'_, T> {
                         }
                     },
 
-                    None => StringType::Smol(SmolStr::new_static("")),
+                    None => StringType::Smol(SmolStr::new_static("-")),
                 }
             },
             _ => StringType::None,
