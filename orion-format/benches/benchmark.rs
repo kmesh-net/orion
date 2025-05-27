@@ -50,16 +50,20 @@ impl<T> UnwrapClippyWorkaround for Option<T> {
     }
 }
 
-impl<T, E> UnwrapClippyWorkaround for Result<T, E> {
+impl<T, E> UnwrapClippyWorkaround for Result<T, E>
+where
+    E: std::fmt::Display,
+{
     type Target = T;
 
     fn stealth_unwrap(self) -> Self::Target {
         match self {
             Ok(value) => value,
-            _ => panic!("Called stealth_unwrap on Err"),
+            Err(e) => panic!("Called stealth_unwrap on Err({e})"),
         }
     }
 }
+
 fn benchmark_rust_format(c: &mut Criterion) {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
@@ -101,7 +105,7 @@ fn benchmark_rust_format(c: &mut Criterion) {
 
             let x_envoy_upstream_service_time =
                 header_lookup("X-ENVOY-UPSTREAM-SERVICE-TIME", request.headers(), &default_header_value);
-            let x_forwarded_for = header_lookup("SX-FORWARDED-FORER-AGENT", request.headers(), &default_header_value);
+            let x_forwarded_for = header_lookup("X-FORWARDED-FOR", request.headers(), &default_header_value);
             let user_agent = header_lookup("USER-AGENT", request.headers(), &default_header_value);
             let x_request_id = header_lookup("X-REQUEST-ID", request.headers(), &default_header_value);
             let upstream_host = upstream_host.clone();
@@ -242,6 +246,83 @@ fn benchmark_request_parts(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, benchmark_rust_format, benchmark_log_formatter, benchmark_request_parts);
+fn benchmark_log_headers(c: &mut Criterion) {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
+    let request = Request::builder()
+        .uri("https://www.rust-lang.org/hello")
+        .header("X-Header-0", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-1", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-2", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-3", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-4", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-5", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-6", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-7", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-8", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-9", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-10", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-11", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-12", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-13", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-14", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-15", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-16", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-17", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-18", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-19", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-20", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-21", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-23", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-24", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-25", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-26", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-27", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-28", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-29", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-30", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-31", "XXXXXXXXXXXXXXXXXXXX")
+        .header("X-Header-32", "XXXXXXXXXXXXXXXXXXXX")
+        .body(())
+        .stealth_unwrap();
+
+    const ENVOY_FORMAT: &str = r#"%REQ(X-Header-0)% %REQ(X-Header-1)% %REQ(X-Header-2)% %REQ(X-Header-3)% %REQ(X-Header-4)% %REQ(X-Header-5)% %REQ(X-Header-6)% %REQ(X-Header-7)% %REQ(X-Header-8)% %REQ(X-Header-9)%
+     %REQ(X-Header-10)% %REQ(X-Header-11)% %REQ(X-Header-12)% %REQ(X-Header-13)% %REQ(X-Header-14)% %REQ(X-Header-15)% %REQ(X-Header-16)% %REQ(X-Header-17)% %REQ(X-Header-18)% %REQ(X-Header-19)% %REQ(X-Header-20)%
+     %REQ(X-Header-21)% %REQ(X-Header-22)% %REQ(X-Header-23)% %REQ(X-Header-24)% %REQ(X-Header-25)% %REQ(X-Header-26)% %REQ(X-Header-27)% %REQ(X-Header-28)% %REQ(X-Header-29)% %REQ(X-Header-30)% %REQ(X-Header-31)%
+     %REQ(X-Header-32)%"#;
+
+    let response = Response::builder().status(StatusCode::OK).body(()).stealth_unwrap();
+    let start = InitContext { start_time: std::time::SystemTime::now() };
+    let end = FinishContext {
+        duration: Duration::from_millis(100),
+        bytes_received: 128,
+        bytes_sent: 256,
+        response_flags: ResponseFlags::empty(),
+    };
+
+    let fmt = LogFormatter::try_new(ENVOY_FORMAT).stealth_unwrap();
+
+    c.bench_function("log_format_headers", |b| {
+        b.iter(|| {
+            let mut fmt = fmt.clone();
+            black_box(eval_format(
+                &DownstreamRequest(&request),
+                &DownstreamResponse(&response),
+                &start,
+                &end,
+                &mut fmt,
+            ));
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    benchmark_rust_format,
+    benchmark_log_formatter,
+    benchmark_log_headers,
+    benchmark_request_parts
+);
 
 criterion_main!(benches);

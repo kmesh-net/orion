@@ -3,7 +3,7 @@ pub mod grammar;
 pub mod operator;
 pub mod types;
 
-// use compact_str::CompactString;
+use crate::grammar::EnvoyGrammar;
 use context::Context;
 use operator::{Category, Operator};
 use serde::{Deserialize, Serialize};
@@ -14,8 +14,6 @@ use std::sync::Arc;
 use strum::EnumCount;
 use thiserror::Error;
 
-use crate::grammar::EnvoyGrammar;
-
 pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
 "#;
 
@@ -25,7 +23,7 @@ pub enum FormatError {
     InvalidOperator(String),
     #[error("missing argument `{0}`")]
     MissingArgument(String),
-    #[error("missing braket `{0}`")]
+    #[error("missing bracket `{0}`")]
     MissingBracket(String),
     #[error("missing delimiter `{0}`")]
     MissingDelimiter(String),
@@ -52,7 +50,6 @@ pub enum StringType {
     Char(char),
     Smol(SmolStr),
     Bytes(Box<[u8]>),
-    // Compact(CompactString),
     None,
 }
 
@@ -123,6 +120,16 @@ impl LogFormatter {
     pub fn is_fully_formatted(&self) -> bool {
         self.format.iter().all(|f| *f != StringType::None)
     }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.format.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.format.is_empty()
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
@@ -146,7 +153,7 @@ impl FormattedMessage {
                     let bytes = c.encode_utf8(&mut buf).as_bytes();
                     IoWrite::write(w, bytes)?
                 },
-                StringType::Bytes(bs) => IoWrite::write(w, bs)?,
+                StringType::Bytes(v) => IoWrite::write(w, v.as_ref())?,
                 StringType::None => IoWrite::write(w, "?".as_bytes())?, // this corresponds to an operator not evaluated from contexts
             };
         }
@@ -161,7 +168,7 @@ impl Display for FormattedMessage {
             match out {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
-                StringType::Bytes(bs) => f.write_str(&String::from_utf8_lossy(bs))?,
+                StringType::Bytes(v) => f.write_str(&String::from_utf8_lossy(v))?,
                 StringType::None => f.write_str("?")?,
             }
         }
@@ -319,6 +326,13 @@ mod tests {
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
         });
         assert!(formatter.is_fully_formatted());
-        println!("{}", &source.into_message());
+        println!("{}", &formatter.into_message());
+    }
+
+    #[test]
+    fn test_sizes() {
+        println!("Vec:       {}", std::mem::size_of::<Vec<u8>>());
+        println!("SmolStr:   {}", std::mem::size_of::<SmolStr>());
+        println!("Box<[u8]>: {}", std::mem::size_of::<Box<[u8]>>());
     }
 }

@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-// use compact_str::CompactString;
 use http::{uri::Authority, HeaderName, Request, Response, Version};
 use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr};
 
@@ -57,7 +56,6 @@ impl Context for InitContext {
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            // Operator::StartTime => StringType::Compact(format_system_time_compact(self.start_time)),
             Operator::StartTime => StringType::Smol(format_system_time(self.start_time)),
             _ => StringType::None,
         }
@@ -129,10 +127,7 @@ impl<T> Context for DownstreamRequest<'_, T> {
             Operator::RequestStandard(h) => {
                 let hv = self.0.headers().get(h);
                 match hv {
-                    Some(hv) => match hv.to_str() {
-                        Ok(s) => StringType::Smol(SmolStr::new(s)),
-                        Err(_) => StringType::Bytes(hv.as_bytes().to_vec().into_boxed_slice()),
-                    },
+                    Some(hv) => StringType::Bytes(hv.as_bytes().into()),
                     None => StringType::Smol(SmolStr::new_static("-")),
                 }
             },
@@ -164,11 +159,7 @@ impl<T> Context for DownstreamResponse<'_, T> {
             Operator::ResponseStandard(h) => {
                 let hv = self.0.headers().get(h.as_str());
                 match hv {
-                    Some(hv) => match hv.to_str() {
-                        Ok(s) => StringType::Smol(SmolStr::new(s)),
-                        Err(_) => StringType::Bytes(hv.as_bytes().to_vec().into_boxed_slice()),
-                    },
-
+                    Some(hv) => StringType::Bytes(hv.as_bytes().into()),
                     None => StringType::Smol(SmolStr::new_static("-")),
                 }
             },
@@ -197,6 +188,17 @@ const TWO_DIGITS: [&str; 100] = [
     "95", "96", "97", "98", "99",
 ];
 
+#[inline]
+fn into_protocol(ver: Version) -> &'static str {
+    match ver {
+        Version::HTTP_10 => "HTTP/1.0",
+        Version::HTTP_11 => "HTTP/1.1",
+        Version::HTTP_2 => "HTTP/2",
+        Version::HTTP_3 => "HTTP/3",
+        _ => "HTTP/UNKNOWN",
+    }
+}
+
 pub fn format_system_time(time: SystemTime) -> SmolStr {
     let datetime: DateTime<Utc> = time.into();
 
@@ -219,17 +221,6 @@ pub fn format_system_time(time: SystemTime) -> SmolStr {
     // builder.push('Z');
 
     builder.finish()
-}
-
-#[inline]
-fn into_protocol(ver: Version) -> &'static str {
-    match ver {
-        Version::HTTP_10 => "HTTP/1.0",
-        Version::HTTP_11 => "HTTP/1.1",
-        Version::HTTP_2 => "HTTP/2",
-        Version::HTTP_3 => "HTTP/3",
-        _ => "HTTP/UNKNOWN",
-    }
 }
 
 #[cfg(any())]
