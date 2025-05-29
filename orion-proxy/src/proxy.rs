@@ -68,10 +68,11 @@ fn calculate_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result
 }
 
 struct ServiceInfo {
+    bootstrap: Bootstrap,
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
     secret_manager: SecretManager,
-    listeners: Vec<orion_lib::ListenerFactory>,
+    listener_factories: Vec<orion_lib::ListenerFactory>,
     clusters: Vec<orion_lib::PartialClusterType>,
     ads_cluster_names: Vec<String>,
 }
@@ -114,10 +115,10 @@ fn launch_runtimes(bootstrap: Bootstrap) -> Result<()> {
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
     let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into() });
 
-    let (secret_manager, listeners, clusters) =
-        get_listeners_and_clusters(bootstrap).context("Failed to get listeners and clusters")?;
+    let (secret_manager, listener_factories, clusters) =
+        get_listeners_and_clusters(bootstrap.clone()).context("Failed to get listeners and clusters")?;
 
-    if listeners.is_empty() && ads_cluster_names.is_empty() {
+    if listener_factories.is_empty() && ads_cluster_names.is_empty() {
         return Err("No listeners and no ads clusters configured".into());
     }
 
@@ -125,7 +126,8 @@ fn launch_runtimes(bootstrap: Bootstrap) -> Result<()> {
         node,
         configuration_senders: configuration_senders.clone(),
         secret_manager,
-        listeners,
+        listener_factories,
+        bootstrap,
         clusters,
         ads_cluster_names,
     };
@@ -204,14 +206,22 @@ fn spawn_service_runtime_from_thread(
 
 #[allow(clippy::too_many_arguments)]
 async fn run_services(info: ServiceInfo) {
-    let ServiceInfo { node, configuration_senders, secret_manager, listeners, clusters, ads_cluster_names } = info;
+    let ServiceInfo {
+        bootstrap: _,
+        node,
+        configuration_senders,
+        secret_manager,
+        listener_factories,
+        clusters,
+        ads_cluster_names,
+    } = info;
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
     // spawn XSD configuration service...
 
     set.spawn(async move {
         let secret_manager =
-            configure_initial_resources(secret_manager, listeners, configuration_senders.clone()).await?;
+            configure_initial_resources(secret_manager, listener_factories, configuration_senders.clone()).await?;
         let xds_handler = XdsConfigurationHandler::new(secret_manager, configuration_senders);
         _ = xds_handler.xds_run(node, clusters, ads_cluster_names).await;
         Ok(())
