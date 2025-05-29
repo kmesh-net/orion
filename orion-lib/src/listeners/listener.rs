@@ -378,7 +378,7 @@ impl Listener {
                         if let Some(route_id) = route_id {
                             if route_id == id {
                                 debug!("{listener_name} Route updated {id} {route:?}");
-                                http_manager.update_route(Arc::new(route.clone()));
+                                http_manager.update_route(route.clone());
                             }
                         } else {
                             debug!("{listener_name} Got route update but id doesn't match {route_id:?} {id}");

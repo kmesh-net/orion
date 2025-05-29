@@ -1,4 +1,5 @@
 /target
+advisory-db
 .idea/
 *.profraw
 *~

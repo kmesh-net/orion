@@ -350,8 +350,8 @@ pub struct PartialClusterLoadAssignment {
 }
 
 impl ClusterLoadAssignment {
-    pub fn get_http_channel(&mut self, hash: HashState) -> Result<HttpChannel> {
-        let endpoint = self.balancer.next_item(Some(hash)).ok_or("No active endpoint")?;
+    pub fn get_http_channel(&mut self, hash: Option<HashState>) -> Result<HttpChannel> {
+        let endpoint = self.balancer.next_item(hash).ok_or("No active endpoint")?;
         Ok(endpoint.http_channel.clone())
     }
 

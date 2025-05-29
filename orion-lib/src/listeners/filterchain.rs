@@ -209,7 +209,7 @@ impl FilterchainType {
                     CodecType::Auto => hyper_server,
                 };
                 hyper_server
-                    .serve_connection(
+                    .serve_connection_with_upgrades(
                         stream,
                         hyper::service::service_fn(|req: Request<hyper::body::Incoming>| {
                             let handler_req = HttpHandlerRequest { request: req, source_addr: peer_addr };

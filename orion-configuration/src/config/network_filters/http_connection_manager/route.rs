@@ -18,7 +18,7 @@
 //
 //
 
-use super::{header_matcher::HeaderMatcher, RetryPolicy};
+use super::{header_matcher::HeaderMatcher, RetryPolicy, UpgradeType};
 use crate::config::{
     cluster::ClusterSpecifier,
     common::*,
@@ -48,6 +48,7 @@ pub enum Action {
     Route(RouteAction),
     DirectResponse(DirectResponseAction),
     Redirect(RedirectAction),
+    Upgrade(UpgradeAction),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -221,6 +222,25 @@ impl Eq for DirectResponseBody {}
 //todo: impl serialize, deserialize on DirectResponsebody to prepare the bytes at deserialization
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum UpgradeActionType {
+    Websocket,
+    Connect { allow_post: bool /* , proxy_protocol_config: Option<...> */ },
+}
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct UpgradeAction {
+    pub cluster_specifier: ClusterSpecifier,
+    #[serde(
+        with = "http_serde_ext::status_code",
+        skip_serializing_if = "is_default_statuscode",
+        default = "default_statuscode_deser"
+    )]
+    pub cluster_not_found_response_code: StatusCode,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub rewrite: Option<PathRewriteSpecifier>,
+    pub upgrade_type: UpgradeActionType,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RouteAction {
     pub cluster_specifier: ClusterSpecifier,
     #[serde(
@@ -235,9 +255,9 @@ pub struct RouteAction {
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub rewrite: Option<PathRewriteSpecifier>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    //note(hayley): we wrap this struct in an Arc because orion-lib is designed around that.
-    // ideally we would check if we could instead use a referenve in orion-lib but that's a large refactor
     pub retry_policy: Option<RetryPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub upgrade_config: Option<UpgradeConfig>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub hash_policy: Vec<HashPolicy>,
 }
@@ -258,6 +278,41 @@ const fn default_timeout_deser() -> Option<Duration> {
 #[allow(clippy::ref_option)]
 fn is_default_timeout(timeout: &Option<Duration>) -> bool {
     *timeout == default_timeout_deser()
+}
+
+#[derive(Clone, Debug, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Websocket {
+    Enabled,
+    Disabled,
+}
+
+#[derive(Clone, Debug, Copy, Deserialize, Serialize, PartialEq, Eq)]
+pub enum Connect {
+    Enabled { allow_post: bool /* , proxy_protocol_config: Option<...> */ },
+    Disabled,
+}
+
+#[derive(Clone, Debug, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct UpgradeConfig {
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub websocket: Option<Websocket>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub connect: Option<Connect>,
+}
+
+impl UpgradeConfig {
+    pub fn is_websocket_enabled(&self, inherited: &[UpgradeType]) -> bool {
+        let enabled_via_hcm = inherited.iter().any(|upgrade| matches!(upgrade, UpgradeType::Websocket));
+        let locally_enabled = matches!(self.websocket, Some(Websocket::Enabled));
+        let locally_disabled = matches!(self.websocket, Some(Websocket::Disabled));
+        locally_enabled || (enabled_via_hcm && !locally_disabled)
+    }
+    pub fn is_connect_enabled(&self, inherited: &[UpgradeType]) -> bool {
+        let enabled_via_hcm = inherited.iter().any(|upgrade| matches!(upgrade, UpgradeType::Connect));
+        let locally_enabled = matches!(self.connect, Some(Connect::Enabled { allow_post: _ }));
+        let locally_disabled = matches!(self.connect, Some(Connect::Disabled));
+        locally_enabled || (enabled_via_hcm && !locally_disabled)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -370,9 +425,9 @@ impl RouteMatch {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PathMatcher {
     #[serde(flatten)]
-    specifier: PathSpecifier,
+    pub specifier: PathSpecifier,
     #[serde(skip_serializing_if = "std::ops::Not::not", default = "Default::default")]
-    ignore_case: bool,
+    pub ignore_case: bool,
 }
 
 pub struct PathMatcherResult {
@@ -473,9 +528,9 @@ mod tests {
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        Action, AuthorityRedirect, DirectResponseAction, DirectResponseBody, HashPolicy, PathMatcher,
+        Action, AuthorityRedirect, Connect, DirectResponseAction, DirectResponseBody, HashPolicy, PathMatcher,
         PathRewriteSpecifier, PathSpecifier, PolicySpecifier, RedirectAction, RedirectResponseCode,
-        RegexMatchAndSubstitute, RouteAction, RouteMatch, DEFAULT_TIMEOUT,
+        RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
     };
     use crate::config::network_filters::http_connection_manager::RetryPolicy;
     use crate::config::{
@@ -499,7 +554,7 @@ mod envoy_conversions {
                     ConnectionProperties as EnvoyConnectionProperties, Header as EnvoyHeader,
                     PolicySpecifier as EnvoyPolicySpecifier, QueryParameter as EnvoyQueryParameter,
                 },
-                HashPolicy as EnvoyHashPolicy,
+                HashPolicy as EnvoyHashPolicy, UpgradeConfig as EnvoyUpgradeConfig,
             },
             route_match::PathSpecifier as EnvoyPathSpecifier,
             DirectResponseAction as EnvoyDirectResponseAction, RedirectAction as EnvoyRedirectAction,
@@ -507,6 +562,7 @@ mod envoy_conversions {
         },
         r#type::matcher::v3::RegexMatchAndSubstitute as EnvoyRegexMatchAndSubstitute,
     };
+    use ng2_data_plane_api::envoy_data_plane_api::google::protobuf::BoolValue;
     use std::{num::NonZeroU16, str::FromStr};
 
     impl TryFrom<EnvoyHashPolicy> for HashPolicy {
@@ -718,7 +774,7 @@ mod envoy_conversions {
                 cors,
                 max_grpc_timeout,
                 grpc_timeout_offset,
-                upgrade_configs,
+                // upgrade_configs,
                 internal_redirect_policy,
                 internal_redirect_action,
                 max_internal_redirects,
@@ -750,8 +806,42 @@ mod envoy_conversions {
                 },
             };
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
+            let upgrade_config = upgrade_configs.try_into().with_node("upgrade_configs").ok();
             let hash_policy = convert_vec!(hash_policy)?;
-            Ok(Self { cluster_not_found_response_code, timeout, cluster_specifier, rewrite, retry_policy, hash_policy })
+            Ok(Self {
+                cluster_not_found_response_code,
+                timeout,
+                cluster_specifier,
+                rewrite,
+                retry_policy,
+                upgrade_config,
+                hash_policy,
+            })
+        }
+    }
+
+    impl TryFrom<Vec<EnvoyUpgradeConfig>> for UpgradeConfig {
+        type Error = GenericError;
+        fn try_from(value: Vec<EnvoyUpgradeConfig>) -> Result<Self, Self::Error> {
+            let mut upgrade_config = UpgradeConfig::default();
+            for envoy_upgrade_config in value {
+                match (envoy_upgrade_config.upgrade_type.to_lowercase().as_str(), envoy_upgrade_config.enabled) {
+                    ("websocket", Some(BoolValue { value: true })) => {
+                        upgrade_config.websocket = Some(Websocket::Enabled)
+                    },
+                    ("websocket", Some(BoolValue { value: false })) => {
+                        upgrade_config.websocket = Some(Websocket::Disabled)
+                    },
+                    ("connect", Some(BoolValue { value: true })) => {
+                        return Err(GenericError::from_msg("Http CONNECT upgrades are not currently supported"))
+                    },
+                    ("connect", Some(BoolValue { value: false })) => upgrade_config.connect = Some(Connect::Disabled),
+                    (unknown, _) => {
+                        return Err(GenericError::from_msg(format!("Unsupported upgrade type [{unknown}]")))
+                    },
+                }
+            }
+            Ok(upgrade_config)
         }
     }
 

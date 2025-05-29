@@ -1,0 +1,137 @@
+node:
+  id: "test-id"
+dynamic_resources:
+  ads_config:
+    # api_type: GRPC
+    # transport_api_version: V3
+    grpc_services:
+      - envoy_grpc:
+          cluster_name: xds_cluster
+static_resources:
+  listeners:
+    - name: listener_http
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 8000 }
+      filter_chains:
+        - name: filter_chain_http1
+          filters:
+            - name: http_gateway
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                httpFilters:
+                  - name: envoy.filters.http.router
+                    typedConfig:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                      start_child_span: false
+                codec_type: HTTP1                
+                rds:
+                  config_source:
+                    ads: {}                      
+                  route_config_name: "basic_http_route1"                
+
+    - name: listener_http2
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 8002 }
+      filter_chains:
+        - name: filter_chain_http2          
+          filters:
+            - name: http_gateway
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                httpFilters:
+                  - name: envoy.filters.http.router
+                    typedConfig:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                      start_child_span: false
+                codec_type: HTTP1
+                upgrade_configs:
+                  - upgrade_type: websocket
+                route_config:
+                  name: basic_http_route2
+                  virtual_hosts:
+                    - name: backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: ":method"
+                                exactMatch: "GET"
+                          route:
+                            cluster: cluster_http
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: ":method"
+                                exactMatch: "POST"
+                          route:
+                            cluster: cluster_http                            
+
+
+                            
+    - name: listener_tcp
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 8001 }
+      filter_chains:
+        - name: filter_chain_tcp          
+          filters:
+            - name: tcp_proxy_filter
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: ingress_tcp
+                cluster: cluster_http
+
+  clusters:
+    - name: xds_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 18000
+    - name: cluster_http
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+        
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          common_http_protocol_options:
+            idle_timeout: 1s        
+
+      load_assignment:
+        endpoints:            
+          - priority: 0
+            lb_endpoints:
+              - endpoint:                  
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4001
+                load_balancing_weight: 1
+              - endpoint:                
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4002
+                load_balancing_weight: 1                      
+          - priority: 0
+            lb_endpoints:
+              - endpoint:                
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4005
+                load_balancing_weight: 1                      
+              - endpoint:                
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 4006
+                load_balancing_weight: 1

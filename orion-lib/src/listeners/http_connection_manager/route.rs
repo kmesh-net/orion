@@ -51,7 +51,7 @@ impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
         // > The router filter will place the original path before rewrite into the x-envoy-original-path header.
 
         let hash_state = HashState::new(&self.hash_policy, &request, source_address);
-        let maybe_channel = clusters_manager::get_http_connection(&self.cluster_specifier, hash_state);
+        let maybe_channel = clusters_manager::get_http_connection(&self.cluster_specifier, Some(hash_state));
         match maybe_channel {
             Ok(svc_channel) => {
                 let ver = request.version();

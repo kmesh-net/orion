@@ -21,7 +21,9 @@
 mod direct_response;
 mod redirect;
 mod route;
+mod upgrade;
 use route::MatchedRequest;
+use upgrade::UpgradeRequestContext;
 
 use crate::{
     body::timeout_body::TimeoutBody,
@@ -36,7 +38,7 @@ use orion_configuration::config::network_filters::http_connection_manager::{
     http_filters::{http_rbac::HttpRbac, HttpFilter as HttpFilterConfig, HttpFilterType},
     route::Action,
     CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager as HttpConnectionManagerConfig, RdsSpecifier,
-    RouteSpecifier,
+    RouteSpecifier, UpgradeType,
 };
 use std::{
     fmt,
@@ -66,8 +68,14 @@ impl HttpConnectionManagerBuilder {
     pub fn build(self) -> Result<HttpConnectionManager> {
         let name = self.listener_name.ok_or("listener name is not set")?;
 
-        let PartialHttpConnectionManager { router, codec_type, dynamic_route_name, http_filters, request_timeout } =
-            self.connection_manager;
+        let PartialHttpConnectionManager {
+            router,
+            codec_type,
+            dynamic_route_name,
+            http_filters,
+            enabled_upgrades,
+            request_timeout,
+        } = self.connection_manager;
 
         let router_sender = watch::Sender::new(router.map(Arc::new));
 
@@ -77,6 +85,7 @@ impl HttpConnectionManagerBuilder {
             codec_type,
             dynamic_route_name,
             http_filters,
+            enabled_upgrades,
             request_timeout,
         })
     }
@@ -92,6 +101,7 @@ pub struct PartialHttpConnectionManager {
     codec_type: CodecType,
     dynamic_route_name: Option<CompactString>,
     http_filters: Vec<HttpFilter>,
+    enabled_upgrades: Vec<UpgradeType>,
     request_timeout: Option<Duration>,
 }
 
@@ -139,7 +149,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
     fn try_from(ctx: ConversionContext<HttpConnectionManagerConfig>) -> Result<Self> {
         let ConversionContext { envoy_object: configuration, secret_manager: _ } = ctx;
         let codec_type = configuration.codec_type;
-
+        let enabled_upgrades = configuration.enabled_upgrades;
         let http_filters = configuration.http_filters.into_iter().map(HttpFilter::from).collect();
         let request_timeout = configuration.request_timeout;
 
@@ -153,7 +163,14 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
             RouteSpecifier::RouteConfig(config) => (None, Some(config)),
         };
 
-        Ok(PartialHttpConnectionManager { router, codec_type, dynamic_route_name, http_filters, request_timeout })
+        Ok(PartialHttpConnectionManager {
+            router,
+            codec_type,
+            dynamic_route_name,
+            http_filters,
+            enabled_upgrades,
+            request_timeout,
+        })
     }
 }
 
@@ -191,6 +208,7 @@ pub struct HttpConnectionManager {
     pub codec_type: CodecType,
     dynamic_route_name: Option<CompactString>,
     http_filters: Vec<HttpFilter>,
+    enabled_upgrades: Vec<UpgradeType>,
     request_timeout: Option<Duration>,
 }
 
@@ -205,8 +223,9 @@ impl HttpConnectionManager {
         self.dynamic_route_name.as_ref()
     }
 
-    pub fn update_route(&self, route: Arc<RouteConfiguration>) {
-        let _ = self.router_sender.send_replace(Some(route));
+    pub fn update_route(&self, mut route: RouteConfiguration) {
+        route.expand_routes(&self.enabled_upgrades);
+        let _ = self.router_sender.send_replace(Some(Arc::new(route)));
     }
 
     pub fn remove_route(&self) {
@@ -238,9 +257,6 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, SocketAddr)> for Arc<RouteC
         self,
         (request, source_address): (Request<TimeoutBody<Incoming>>, SocketAddr),
     ) -> Result<Response<PolyBody>> {
-        // needs some way to resolve the request first, _then_ apply modifications on both request and response from there
-        // might just want to implement this whole thing as a hyper service "layer"
-
         let Some(chosen_vh) = self
             .virtual_hosts
             .iter()
@@ -272,6 +288,11 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, SocketAddr)> for Arc<RouteC
                         route_match: route_match_result,
                         source_address,
                     })
+                    .await
+            },
+            Action::Upgrade(handler) => {
+                handler
+                    .to_response(UpgradeRequestContext { request, route_match: route_match_result, source_address })
                     .await
             },
         }?;
