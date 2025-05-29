@@ -101,7 +101,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
             .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
             .collect::<Result<Vec<_>>>()?;
 
-        let certificates: Vec<_> = certificates.into_iter().map(CertificateDer::from).collect();
+        let certificates: Vec<_> = certificates.into_iter().collect();
         let Some(cert) = certificates.first() else {
             return Err("No certificates have been configured".into());
         };

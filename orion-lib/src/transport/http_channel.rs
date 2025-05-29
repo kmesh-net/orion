@@ -173,7 +173,7 @@ impl HttpChannelBuilder {
                 client_builder.http2_keep_alive_interval(settings.keep_alive_interval);
                 if let Some(timeout) = settings.keep_alive_timeout {
                     client_builder.http2_keep_alive_timeout(timeout);
-                };
+                }
                 client_builder.http2_keep_alive_while_idle(true);
             }
             client_builder.http2_initial_connection_window_size(http2_options.initial_connection_window_size());

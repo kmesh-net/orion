@@ -126,7 +126,7 @@ mod envoy_conversions {
                 application_log_config,
                 grpc_async_client_manager_config,
                 stats_flush,
-                memory_allocator_manager: _,
+                memory_allocator_manager,
             } = envoy;
             unsupported_field!(
                 // node,
@@ -166,7 +166,8 @@ mod envoy_conversions {
                 listener_manager,
                 application_log_config,
                 grpc_async_client_manager_config,
-                stats_flush
+                stats_flush,
+                memory_allocator_manager
             )?;
             let static_resources = convert_opt!(static_resources)?;
             let dynamic_resources =

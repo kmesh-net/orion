@@ -678,7 +678,7 @@ mod tests {
                 hash_policy: vec![],
             }),
         };
-        let routes_a = route_a.unfold_upgrades(&vec![]);
+        let routes_a = route_a.unfold_upgrades(&[]);
         assert_eq!(routes_a.len(), 3);
         match routes_a.as_slice() {
             [ws_upgrade_route, reject_connect_route, vanilla_http_route] => {
@@ -700,7 +700,7 @@ mod tests {
                     "expected to retain original http route when derving upgrade route matchers"
                 );
             },
-            _ => panic!("expected three dervied routes"),
+            _ => unimplemented!("expected three dervied routes"),
         }
         let route_b = Route {
             route_match: RouteMatch {
@@ -721,7 +721,7 @@ mod tests {
             }),
             ..route_a.clone()
         };
-        let routes_b = route_b.unfold_upgrades(&vec![UpgradeType::Connect]);
+        let routes_b = route_b.unfold_upgrades(&[UpgradeType::Connect]);
         assert_eq!(routes_b.len(), 3);
         match routes_b.as_slice() {
             [ws_reject_route, connect_matcher, vanilla_http_route] => {
@@ -739,7 +739,7 @@ mod tests {
                     "expected to retain original http route when derving the connec upgrade matcher"
                 );
             },
-            _ => panic!("expected three dervied routes"),
+            _ => unimplemented!("expected three dervied routes"),
         }
     }
 }

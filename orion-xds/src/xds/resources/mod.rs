@@ -416,7 +416,7 @@ mod test {
 
     #[test]
     fn test_cluster_conversion() {
-        const CLUSTER: &str = r#"
+        const CLUSTER: &str = r"
 name: cluster1
 type: STATIC
 load_assignment:
@@ -427,7 +427,7 @@ load_assignment:
               socket_address:
                 address: 192.168.2.10
                 port_value: 80
-"#;
+";
         let cluster: Cluster = from_yaml(CLUSTER).unwrap();
 
         let mut value: Vec<u8> = vec![];

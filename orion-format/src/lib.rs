@@ -70,7 +70,7 @@ impl Default for LogFormatter {
         if let Ok(log) = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT) {
             log
         } else {
-            panic!("Failed to create default LogFormatter")
+            unimplemented!("Failed to create default LogFormatter")
         }
     }
 }

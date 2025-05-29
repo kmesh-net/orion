@@ -101,7 +101,7 @@ pub struct Http2ProtocolOptions {
 
 impl Http2ProtocolOptions {
     pub fn max_concurrent_streams(&self) -> Option<usize> {
-        self.max_concurrent_streams.map(usize::from)
+        self.max_concurrent_streams
     }
     pub fn initial_stream_window_size(&self) -> Option<u32> {
         self.initial_stream_window_size.map(u32::from)

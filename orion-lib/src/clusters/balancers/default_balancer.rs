@@ -153,6 +153,7 @@ where
 #[cfg(test)]
 mod test {
     use compact_str::ToCompactString;
+    use orion_configuration::config::cluster::HttpProtocolOptions;
     use std::sync::Arc;
 
     use rustls::ClientConfig;
@@ -188,7 +189,7 @@ mod test {
                 healthy_endpoints: healthy,
                 total_endpoints: u32::try_from(len).expect("Too many endpoints"),
                 tls_configurator: Option::<TlsConfigurator<ClientConfig, WantsToBuildClient>>::None,
-                http_protocol_options: Default::default(),
+                http_protocol_options: HttpProtocolOptions::default(),
                 connection_timeout: None,
             });
         }

@@ -365,9 +365,7 @@ mod envoy_conversions {
                 EnvoyStringMatcherPattern::Prefix(s) => Ok(Self::Prefix(s.into())),
                 EnvoyStringMatcherPattern::Suffix(s) => Ok(Self::Suffix(s.into())),
                 EnvoyStringMatcherPattern::SafeRegex(r) => Ok(Self::Regex(regex_from_envoy(r)?)),
-                EnvoyStringMatcherPattern::Custom(_) => {
-                    Err(GenericError::UnsupportedField("EnvoyStringMatcherPattern::Custom"))
-                },
+                EnvoyStringMatcherPattern::Custom(_) => Err(GenericError::from_msg("Custom is not supported")),
             }
         }
     }

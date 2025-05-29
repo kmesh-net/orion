@@ -93,20 +93,6 @@ impl SyntheticHttpResponse {
         Self { http_status: StatusCode::METHOD_NOT_ALLOWED, body: Bytes::default(), close_connection: true }
     }
 
-    #[allow(dead_code)]
-    pub fn upgrade_required() -> Self {
-        Self { http_status: StatusCode::UPGRADE_REQUIRED, body: Bytes::default(), close_connection: true }
-    }
-
-    #[allow(dead_code)]
-    pub fn bad_request() -> Self {
-        Self { http_status: StatusCode::BAD_REQUEST, body: Bytes::default(), close_connection: true }
-    }
-
-    pub fn not_allowed() -> Self {
-        Self { http_status: StatusCode::METHOD_NOT_ALLOWED, body: Bytes::default(), close_connection: true }
-    }
-
     // TODO: Implement custom error responses - used for flexible error handling
     pub fn custom_error(http_status: StatusCode) -> Self {
         Self { http_status, body: Bytes::default(), close_connection: false }

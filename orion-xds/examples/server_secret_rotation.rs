@@ -14,10 +14,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,orion_xds=debug".into()),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
         .init();
 
     let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);
@@ -59,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).await.is_err() {
             return;
-        };
+        }
 
         tokio::time::sleep(Duration::from_secs(15)).await;
 
@@ -81,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).await.is_err() {
             return;
-        };
+        }
 
         tokio::time::sleep(Duration::from_secs(15)).await;
     });

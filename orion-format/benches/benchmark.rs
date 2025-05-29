@@ -27,7 +27,6 @@ where
     fmt.with_context(end);
 }
 
-#[inline(always)]
 fn header_lookup<'a>(name: &'a str, m: &'a HeaderMap, default_header: &'a HeaderValue) -> &'a HeaderValue {
     m.get(name).unwrap_or(default_header)
 }
@@ -45,7 +44,7 @@ impl<T> UnwrapClippyWorkaround for Option<T> {
     fn stealth_unwrap(self) -> Self::Target {
         match self {
             Some(value) => value,
-            None => panic!("Called stealth_unwrap on None"),
+            None => unimplemented!("Called stealth_unwrap on None"),
         }
     }
 }
@@ -59,7 +58,7 @@ where
     fn stealth_unwrap(self) -> Self::Target {
         match self {
             Ok(value) => value,
-            Err(e) => panic!("Called stealth_unwrap on Err({e})"),
+            Err(e) => unimplemented!("Called stealth_unwrap on Err({e})"),
         }
     }
 }

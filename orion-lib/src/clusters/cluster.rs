@@ -240,7 +240,7 @@ impl ClusterOps for DynamicCluster {
                 load_assignment.tls_configurator = Some(tls_configurator.clone());
                 let load_assignment = load_assignment.rebuild()?;
                 self.load_assignment = Some(load_assignment);
-            };
+            }
             self.tls_configurator = Some(tls_configurator);
         }
         Ok(())

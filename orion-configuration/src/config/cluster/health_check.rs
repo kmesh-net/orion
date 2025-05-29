@@ -331,8 +331,8 @@ mod envoy_conversions {
                 event_service,
                 always_log_health_check_failures,
                 tls_options,
-                transport_socket_match_criteria, // health_checker
-                always_log_health_check_success
+                transport_socket_match_criteria,
+                always_log_health_check_success // health_checker
             )?;
             let timeout = duration_from_envoy(required!(timeout)?).map_err(|e| {
                 GenericError::from_msg_with_cause("failed to convert {timeout} to std::time::Duration", e)
