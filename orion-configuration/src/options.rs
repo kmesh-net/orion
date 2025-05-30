@@ -43,6 +43,8 @@ pub struct Options {
     pub num_cpus: Option<NonZeroUsize>,
     #[arg(help = "Number of Tokio runtimes to use", short = 'R', long = "num-runtimes")]
     pub num_runtimes: Option<NonZeroU32>,
+    #[arg(help = "Number of Service threads to use", short = 'S', long = "num-service-threads")]
+    pub num_service_threads: Option<NonZeroU32>,
     #[arg(help = "Tokio global queue interval (ticks)", long = "global-queue-interval")]
     pub global_queue_interval: Option<NonZeroU32>,
     #[arg(help = "Tokio event interval (ticks)", long = "event-interval")]
@@ -73,6 +75,7 @@ impl Options {
             config_files: ConfigFiles { config: Some(path.into()), bootstrap_override: None },
             num_cpus: None,
             num_runtimes: None,
+            num_service_threads: None,
             global_queue_interval: None,
             event_interval: None,
             max_io_events_per_tick: None,
@@ -85,6 +88,7 @@ impl Options {
             config_files: ConfigFiles { config: None, bootstrap_override: Some(path.into()) },
             num_cpus: None,
             num_runtimes: None,
+            num_service_threads: None,
             global_queue_interval: None,
             event_interval: None,
             max_io_events_per_tick: None,

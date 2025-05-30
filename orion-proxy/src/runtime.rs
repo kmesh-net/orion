@@ -19,6 +19,7 @@
 //
 
 use crate::core_affinity::{self, AffinityStrategy};
+use orion_configuration::config::runtime::Affinity;
 use orion_lib::runtime_config;
 use std::{fmt::Display, ops::Deref};
 use tokio::runtime::{Builder, Runtime};
@@ -43,61 +44,47 @@ impl Deref for RuntimeId {
     }
 }
 
-pub fn build_tokio_runtime(num_threads: usize, runtime_id: RuntimeId) -> Runtime {
-    let thread_name = "proxytask";
+pub fn build_tokio_runtime(
+    thread_name: &str,
+    num_threads: usize,
+    affinity_info: Option<(RuntimeId, Affinity)>,
+) -> Runtime {
     let config = runtime_config();
-    if num_threads == 1 {
-        if let Some(affinity) = &config.affinity_strategy {
-            match affinity.run_strategy(runtime_id, num_threads) {
-                Ok(aff) => {
-                    if let Err(err) = core_affinity::set_cores_for_current(&aff) {
-                        warn!("{thread_name}: Couldn't pin thread to core {aff:?}: {err}");
-                    } else {
-                        info!("{thread_name}: ST-runtime[{runtime_id}] pinned to core {aff:?}");
-                    }
-                },
-                Err(e) => {
-                    warn!("{thread_name}: Strategy: {e}");
-                },
-            }
+
+    let thread_name: String = match affinity_info {
+        Some((runtime_id, _)) => format!("{thread_name}_{runtime_id}"),
+        None => thread_name.to_owned(),
+    };
+
+    if let Some((runtime_id, affinity)) = affinity_info {
+        match affinity.run_strategy(runtime_id, num_threads) {
+            Ok(aff) => {
+                if let Err(err) = core_affinity::set_cores_for_current(&aff) {
+                    warn!("{thread_name}: Couldn't pin thread to core {aff:?}: {err}");
+                } else {
+                    info!("{thread_name}: ST-runtime[{runtime_id}] pinned to core {aff:?}");
+                }
+            },
+            Err(e) => {
+                warn!("{thread_name}: Strategy: {e}");
+            },
         }
-
-        let mut builder = Builder::new_current_thread();
-        builder.enable_all();
-
-        config.global_queue_interval.map(|val| builder.global_queue_interval(val.into()));
-        config.event_interval.map(|val| builder.event_interval(val));
-        config.max_io_events_per_tick.map(|val| builder.max_io_events_per_tick(val.into()));
-        #[allow(clippy::expect_used)]
-        builder.thread_name(format!("{thread_name}{}", runtime_id.0)).build().expect("failed to build basic runtime")
-    } else {
-        if let Some(affinity) = &config.affinity_strategy {
-            match affinity.run_strategy(runtime_id, num_threads) {
-                Ok(aff) => {
-                    if let Err(err) = core_affinity::set_cores_for_current(&aff) {
-                        warn!("{thread_name}: Couldn't pin thread to core {aff:?}: {err}");
-                    } else {
-                        info!("{thread_name} MT-{num_threads}-runtime[{runtime_id}] pinned to cores {aff:?}");
-                    }
-                },
-                Err(e) => {
-                    warn!("{thread_name}: Strategy: {e}");
-                },
-            }
-        }
-
-        let mut builder = Builder::new_multi_thread();
-        builder.enable_all().worker_threads(num_threads).max_blocking_threads(num_threads);
-
-        config.global_queue_interval.map(|val| builder.global_queue_interval(val.into()));
-        config.event_interval.map(|val| builder.event_interval(val));
-        config.max_io_events_per_tick.map(|val| builder.max_io_events_per_tick(val.into()));
-
-        let name = thread_name.to_owned();
-        #[allow(clippy::expect_used)]
-        builder
-            .thread_name_fn(move || format!("{name}{}", runtime_id.0))
-            .build()
-            .expect("failed to build threaded runtime")
     }
+
+    let mut builder = if num_threads <= 1 {
+        let mut b = Builder::new_current_thread();
+        b.enable_all();
+        b
+    } else {
+        let mut b = Builder::new_multi_thread();
+        b.worker_threads(num_threads).max_blocking_threads(num_threads).enable_all();
+        b
+    };
+
+    config.global_queue_interval.map(|val| builder.global_queue_interval(val.into()));
+    config.event_interval.map(|val| builder.event_interval(val));
+    config.max_io_events_per_tick.map(|val| builder.max_io_events_per_tick(val.into()));
+
+    #[allow(clippy::expect_used)]
+    builder.thread_name(thread_name).build().expect("failed to build basic runtime")
 }

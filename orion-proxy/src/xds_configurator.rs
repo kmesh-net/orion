@@ -90,7 +90,7 @@ impl XdsConfigurationHandler {
             .map_err(Into::into)
     }
 
-    pub async fn run(
+    pub async fn xds_run(
         mut self,
         node: Node,
         initial_clusters: Vec<PartialClusterType>,
@@ -98,12 +98,12 @@ impl XdsConfigurationHandler {
     ) -> Result<Self> {
         select! {
             _ = tokio::signal::ctrl_c() => info!("CTRL+C catch (XDS runtime)!"),
-            result = self.run_loop(node, initial_clusters, ads_cluster_names) => result?,
+            result = self.xds_run_loop(node, initial_clusters, ads_cluster_names) => result?,
         }
         Ok(self)
     }
 
-    async fn run_loop(
+    async fn xds_run_loop(
         &mut self,
         node: Node,
         initial_clusters: Vec<PartialClusterType>,
