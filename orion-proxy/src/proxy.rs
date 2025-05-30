@@ -187,7 +187,7 @@ fn spawn_service_runtime_from_thread(
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info);
         rt.block_on(async {
             tokio::select! {
-                _ = run_services(service_info) => {
+                () = run_services(service_info) => {
                     info!("Service Runtime terminated!");
                     Ok(())
                 }

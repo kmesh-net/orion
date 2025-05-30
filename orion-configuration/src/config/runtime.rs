@@ -64,7 +64,7 @@ impl Runtime {
             num_service_threads: var("ORION_SERVICE_THREADS")
                 .ok()
                 .and_then(|v| v.parse::<NonZeroU32>().ok())
-                .or_else(|| opt.num_service_threads)
+                .or(opt.num_service_threads)
                 .unwrap_or(self.num_service_threads),
 
             num_runtimes: var("ORION_GATEWAY_RUNTIMES")
