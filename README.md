@@ -37,11 +37,34 @@ git submodule update --force
 cargo build
 ```
 
-
 ### Running
 ```console
 cargo run --bin orion -- --config orion/conf/orion-runtime.yaml
 ```
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+# Build
+docker build -t orion-proxy -f docker/Dockerfile .
+
+# Run (development mode - see logs)
+docker run -p 8000:8000 --name orion-proxy orion-proxy
+
+# Verify service
+curl -v http://localhost:8000/direct-response # Should return HTTP 200 with "meow! 🐱"
+
+# Alternative for production (detached mode)
+docker run -d -p 8000:8000 --name orion-proxy orion-proxy
+
+# View logs of running container
+docker logs orion-proxy
+```
+
+For detailed Docker configuration options, see [docker/README.md](docker/README.md).
+
 
 <!-- ## Contributing -->
 <!-- If you're interested in being a contributor and want to get involved in developing Orion Proxy, please see [CONTRIBUTING](CONTRIBUTING.md) for more details on submitting patches and the contribution workflow. -->
