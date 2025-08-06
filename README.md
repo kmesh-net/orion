@@ -45,7 +45,15 @@ cargo run --bin orion -- --config orion/conf/orion-runtime.yaml
 
 <!-- ## Contributing -->
 <!-- If you're interested in being a contributor and want to get involved in developing Orion Proxy, please see [CONTRIBUTING](CONTRIBUTING.md) for more details on submitting patches and the contribution workflow. -->
+### Docker 
 
+   ```console 
+   git clone https://github.com/kmesh-net/orion
+   cd orion
+   git submodule init
+   git submodule update --force
+   docker build -t orion2 -f docker/Dockerfile .
+   ```
 ## License
 
 Orion Proxy is licensed under the
