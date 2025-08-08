@@ -70,7 +70,8 @@ pub struct StaticClusterBuilder {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+// TODO: Implement dynamic cluster configuration builder
+// Used for clusters that are configured at runtime via xDS or other control plane mechanisms
 pub struct DynamicClusterBuilder {
     pub name: CompactString,
     pub bind_device: Option<BindDevice>,

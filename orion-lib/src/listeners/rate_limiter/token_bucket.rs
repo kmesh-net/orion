@@ -53,7 +53,8 @@ impl TokenBucket {
     /// Try consuming a number of tokens and returns a boolean
     /// that represents the outcome.
     /// * `tokens`: The number of tokens to consume.
-    #[allow(dead_code)]
+    // TODO: Implement token bucket consumption logic for rate limiting
+    // This is the core method for rate limiting - determines if request should be allowed
     pub fn consume(&self, tokens: u32) -> bool {
         let req_fill_period = self.time_per_token * tokens;
         let now = Instant::now();
@@ -79,13 +80,13 @@ impl TokenBucket {
     }
 
     /// Return the capacity of the bucket, in term of tokens.
-    #[allow(dead_code)]
+    // TODO: Implement capacity reporting for rate limiter monitoring and configuration
     pub fn capacity(&self) -> usize {
         self.max_tokens
     }
 
     /// Return the actual bucket size.
-    #[allow(dead_code)]
+    // TODO: Implement current bucket size calculation for rate limiter monitoring
     pub fn size(&self) -> usize {
         let now = Instant::now();
         let t = self.time.load(Ordering::Relaxed);

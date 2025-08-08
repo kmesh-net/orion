@@ -65,14 +65,14 @@ trait GrpcHealthChannel {
     fn check(
         &mut self,
         request: HealthCheckRequest,
-    ) -> BoxFuture<Result<TonicResponse<HealthCheckResponse>, TonicStatus>>;
+    ) -> BoxFuture<'_, Result<TonicResponse<HealthCheckResponse>, TonicStatus>>;
 }
 
 impl GrpcHealthChannel for HealthClient<GrpcService> {
     fn check(
         &mut self,
         request: HealthCheckRequest,
-    ) -> BoxFuture<Result<TonicResponse<HealthCheckResponse>, TonicStatus>> {
+    ) -> BoxFuture<'_, Result<TonicResponse<HealthCheckResponse>, TonicStatus>> {
         HealthClient::check(self, request).boxed()
     }
 }

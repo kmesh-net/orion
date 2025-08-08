@@ -26,6 +26,7 @@ use http::{Response, StatusCode};
 use http_body_util::Full;
 
 #[derive(Debug, thiserror::Error)]
+// TODO: Error type for synthetic response validation - implement validation logic or remove if unused
 pub enum InvalidSyntheticResponse {
     #[error(transparent)]
     InvalidHttpResponse(#[from] http::Error),
@@ -55,6 +56,7 @@ impl SyntheticHttpResponse {
         Self { http_status: StatusCode::BAD_GATEWAY, body: Bytes::default(), close_connection: true }
     }
 
+    // TODO: Implement forbidden response functionality - used for access control features
     pub fn forbidden(msg: &str) -> Self {
         Self {
             http_status: StatusCode::FORBIDDEN,
@@ -64,7 +66,7 @@ impl SyntheticHttpResponse {
         }
     }
 
-    #[allow(dead_code)]
+    // TODO: Implement unavailable response - used for service health checks
     pub fn unavailable() -> Self {
         Self { http_status: StatusCode::SERVICE_UNAVAILABLE, body: Bytes::default(), close_connection: true }
     }
@@ -77,7 +79,7 @@ impl SyntheticHttpResponse {
         Self { http_status: StatusCode::NOT_FOUND, body: Bytes::default(), close_connection: false }
     }
 
-    #[allow(dead_code)]
+    // TODO: Implement custom error responses - used for flexible error handling
     pub fn custom_error(http_status: StatusCode) -> Self {
         Self { http_status, body: Bytes::default(), close_connection: false }
     }

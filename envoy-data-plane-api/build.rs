@@ -44,7 +44,7 @@ fn main() -> std::io::Result<()> {
     }
 
     // Proceed w/ tonic_build
-    tonic_build::configure().build_server(true).build_client(true).compile_with_config(
+    tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
         config,
         &protos,
         &include_paths,
