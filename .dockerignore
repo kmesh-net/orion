@@ -1,0 +1,161 @@
+# .dockerignore for Orion (Rust project)
+# Purpose: reduce Docker build context, avoid copying local dev artifacts,
+# and keep images smaller/faster to build.
+
+# -------------------------
+# Version control
+# -------------------------
+.git/
+.gitattributes
+# (keep .gitignore tracked — no need to ignore it)
+
+# -------------------------
+# Rust build artifacts
+# -------------------------
+target/
+**/target/
+
+# Cargo registry and cache
+.cargo/
+.cargo-ok
+
+# -------------------------
+# Editor / IDE files
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.*.swp
+.~*
+
+# -------------------------
+# OS artifacts
+# -------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# -------------------------
+# Logs and envs
+# -------------------------
+*.log
+logs/
+.env
+.env.local
+.env.*.local
+
+# -------------------------
+# Temp and cache
+# -------------------------
+tmp/
+temp/
+*.tmp
+.cache/
+
+# -------------------------
+# Compiled binaries & libs
+# -------------------------
+*.exe
+*.dll
+*.so
+*.dylib
+
+# -------------------------
+# Archives & large files
+# -------------------------
+*.tar.gz
+*.zip
+*.rar
+# *.csv # Uncomment if you have large CSV data files you want to exclude from the build context.
+*.bak
+*.backup
+
+# -------------------------
+# Node / frontend artifacts (if any)
+# -------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -------------------------
+# Python virtual envs
+# -------------------------
+venv/
+env/
+.venv/
+
+# -------------------------
+# Toolchain / formatters (not needed inside image)
+# -------------------------
+rust-toolchain
+rust-toolchain.toml
+clippy.toml
+rustfmt.toml
+
+# -------------------------
+# Examples, demos, tests (prod images typically don't need these)
+# -------------------------
+examples/
+demos/
+benches/
+**/benches/
+
+# Exclude tests but keep some bootstrap files used in CI/runtime
+tests/
+**/tests/
+!orion-data-plane-api/tests/bootstrap*.yml
+
+# Docs and performance artifacts
+docs/_build/
+docs/build/
+docs/pics/
+docs/videos/
+docs/performance/
+
+# Tools and local scripts not needed in image
+tools/
+
+# Coverage / profiling
+coverage/
+*.profraw
+*.prof
+
+# PlantUML
+*.plantuml
+
+# Config examples to exclude
+orion-configuration/examples/
+orion-xds/examples/
+
+# Keep essential repo/build files (whitelist)
+!README.md
+!LICENSE
+!Cargo.toml
+!Cargo.lock
+
+# -------------------------
+# NOTE about Dockerfile / docker/ directory
+# -------------------------
+# DO NOT uncomment these lines unless you are absolutely sure your
+# normal build never needs the repository-level Dockerfile or contents
+# of the docker/ directory. Ignoring them will break common `docker build .`
+# workflows. If your build always runs from inside docker/, you may
+# choose to uncomment.
+# docker/
+# Dockerfile*
+# If you DO need specific scripts from docker/, explicitly ignore other files
+# instead of the whole directory (or ensure you build using -f docker/Dockerfile).
+
+# -------------------------
+# Shell scripts
+# -------------------------
+# Be cautious: ignore generic *.sh only if you are certain no build scripts are required.
+# Commented out by default to avoid excluding build helpers.
+# *.sh
+# If you want to exclude local helper scripts, list them explicitly, e.g.
+# scripts/local-only.sh
+!docker/*.sh
