@@ -42,6 +42,7 @@ use crate::{Error, HttpBody};
 
 #[derive(Debug, thiserror::Error)]
 #[error("invalid HTTP status range")]
+// TODO: This error type is defined for future HTTP status range validation functionality
 pub struct InvalidHttpStatusRange;
 
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.

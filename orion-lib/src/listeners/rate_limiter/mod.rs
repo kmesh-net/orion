@@ -34,12 +34,14 @@ use crate::listeners::synthetic_http_response::SyntheticHttpResponse;
 use crate::{runtime_config, HttpBody};
 
 #[derive(Debug, Clone)]
+// TODO: Implement rate limiting functionality - this struct defines the interface for local rate limits
 pub struct LocalRateLimit {
     pub status: StatusCode,
     pub token_bucket: Arc<TokenBucket>,
 }
 
 impl LocalRateLimit {
+    // TODO: Implement rate limit enforcement - used to check and consume tokens for incoming requests
     pub fn run<B>(&self, req: &Request<B>) -> Option<Response<HttpBody>> {
         if !self.token_bucket.consume(1) {
             let status = self.status;
