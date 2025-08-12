@@ -49,7 +49,7 @@ fn main() -> std::io::Result<()> {
             .type_attribute(full_name, pool_attribute);
     }
 
-    // Proceed w/ tonic_build
+    // Proceed w/ tonic_build (updated method name)
     tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
         config,
         &protos,
