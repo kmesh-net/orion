@@ -40,4 +40,4 @@ COPY ./docker/start_proxy.sh ./start_proxy.sh
 
 COPY --from=orion-builder /tmp/orion/target/release/orion /orion
 EXPOSE 8080 8000 50051
-ENTRYPOINT ["/start_proxy.sh"]
+ENTRYPOINT ["./orion"]

@@ -94,7 +94,6 @@ env/
 rust-toolchain
 rust-toolchain.toml
 clippy.toml
-rustfmt.toml
 
 # -------------------------
 # Examples, demos, tests (prod images typically don't need these)
@@ -136,6 +135,8 @@ orion-xds/examples/
 !LICENSE
 !Cargo.toml
 !Cargo.lock
+# perhaps needed
+!rustfmt.toml
 
 # -------------------------
 # NOTE about Dockerfile / docker/ directory
