@@ -6,47 +6,94 @@ on:
   pull_request:
     branches: [ main, master ]
 
+env:
+  CARGO_CACHE_PATH: ~/.cargo/registry
+  CARGO_GIT_PATH: ~/.cargo/git
+  TARGET_DIR: target
+
 jobs:
-  checks:
+  fmt:
+    name: fmt (rustfmt)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ env.CARGO_CACHE_PATH }}
+            ${{ env.CARGO_GIT_PATH }}
+          key: ${{ runner.os }}-cargo-rs-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+          profile: minimal
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-      - name: Setup Rust toolchain
+  clippy:
+    name: clippy (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_CACHE_PATH }}
+            ${{ env.CARGO_GIT_PATH }}
+            ${{ env.TARGET_DIR }}
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+          profile: minimal
+      - name: Run clippy (fail on warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  build:
+    name: build (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_CACHE_PATH }}
+            ${{ env.CARGO_GIT_PATH }}
+            ${{ env.TARGET_DIR }}
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
-          default: true
-          components: clippy, rustfmt
-
-      - name: Show rustc & cargo versions
-        run: |
-          rustc --version
-          cargo --version
-
-      - name: Check formatting (rustfmt)
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy (lint)
-        run: |
-          # fail on warnings to keep the repo clean
-          cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Build (release)
         run: cargo build --workspace --release --locked
 
+  test:
+    name: test (depends on build)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_CACHE_PATH }}
+            ${{ env.CARGO_GIT_PATH }}
+            ${{ env.TARGET_DIR }}
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
       - name: Run tests
         run: cargo test --workspace --release --locked
