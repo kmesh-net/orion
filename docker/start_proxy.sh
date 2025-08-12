@@ -1,9 +1,9 @@
 #!/bin/bash
-#./replace_control_plane.sh
-#./orion --config orion-config.yaml
+set -e
 
-echo "$@"
-#echo "Config file "
+if [[ -n "${CONTROL_PLANE_IP}" ]]; then
+  sed -i "s|CONTROL_PLANE_IP|${CONTROL_PLANE_IP}|g" /etc/orion/orion-runtime.yaml
+fi
+
 export RUST_BACKTRACE=1
-#more /orion-config/orion-bootstrap.yaml
-./orion --config /orion-config/orion-bootstrap.yaml
+exec /orion --config /etc/orion/orion-runtime.yaml
