@@ -1,0 +1,52 @@
+name: CI — fmt, clippy, build, test
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+          components: clippy, rustfmt
+
+      - name: Show rustc & cargo versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Check formatting (rustfmt)
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy (lint)
+        run: |
+          # fail on warnings to keep the repo clean
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build (release)
+        run: cargo build --workspace --release --locked
+
+      - name: Run tests
+        run: cargo test --workspace --release --locked
