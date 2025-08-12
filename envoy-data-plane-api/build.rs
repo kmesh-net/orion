@@ -44,7 +44,7 @@ fn main() -> std::io::Result<()> {
             .type_attribute(full_name, pool_attribute);
     }
 
-    // Proceed w/ tonic_build - using compile_protos_with_config (not deprecated)
+    // Proceed w/ tonic_build
     tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
         config,
         &protos,
