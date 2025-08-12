@@ -14,13 +14,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);
-    let (_stream_resource_tx, stream_resources_rx) = tokio::sync::mpsc::channel(100);
+    let (delta_resource_tx, _delta_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
+    let (stream_resource_tx, _stream_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
     let addr = "127.0.0.1:50051".parse()?;
+    let delta_tx_clone = delta_resource_tx.clone();
+    let stream_tx_clone = stream_resource_tx.clone();
 
     let grpc_server = tokio::spawn(async move {
         info!("Server started");
-        let res = start_aggregate_server(addr, delta_resources_rx, stream_resources_rx).await;
+        let res = start_aggregate_server(addr, delta_tx_clone, stream_tx_clone).await;
         info!("Server stopped {res:?}");
     });
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -38,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Adding Cluster Load Assignment for cluster {cluster_id}");
         let load_assigment_resource = resources::create_load_assignment_resource(&cluster_id, &cla);
 
-        if delta_resource_tx.send(ServerAction::Add(load_assigment_resource.clone())).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Add(load_assigment_resource.clone())).is_err() {
             return;
         };
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -49,20 +51,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let route_configuration_resource =
             resources::create_route_configuration_resource(&route_id, &route_configuration);
 
-        if delta_resource_tx.send(ServerAction::Add(route_configuration_resource.clone())).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Add(route_configuration_resource.clone())).is_err() {
             return;
         };
 
         tokio::time::sleep(Duration::from_secs(15)).await;
 
         info!("Removing cluster load assignment {cluster_id}");
-        if delta_resource_tx.send(ServerAction::Remove(load_assigment_resource)).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Remove(load_assigment_resource)).is_err() {
             return;
         };
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         info!("Removing route configuration {route_id}");
-        if delta_resource_tx.send(ServerAction::Remove(route_configuration_resource)).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Remove(route_configuration_resource)).is_err() {
             return;
         };
         tokio::time::sleep(Duration::from_secs(5)).await;

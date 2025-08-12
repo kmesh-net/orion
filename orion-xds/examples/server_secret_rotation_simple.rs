@@ -4,7 +4,10 @@ use orion_data_plane_api::envoy_data_plane_api::envoy::{
     config::core::v3::{data_source::Specifier, DataSource},
     extensions::transport_sockets::tls::v3::{secret, CertificateValidationContext},
 };
-use orion_xds::xds::{resources, server::start_aggregate_server};
+use orion_xds::xds::{
+    resources,
+    server::{start_aggregate_server, ServerAction},
+};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -15,13 +18,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let (_, delta_resources_rx) = tokio::sync::mpsc::channel(100);
-    let (_stream_resource_tx, stream_resources_rx) = tokio::sync::mpsc::channel(100);
+    let (delta_resource_tx, _delta_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
+    let (stream_resource_tx, _stream_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
     let addr = "127.0.0.1:50051".parse()?;
+    let delta_tx_clone = delta_resource_tx.clone();
+    let stream_tx_clone = stream_resource_tx.clone();
 
     let grpc_server = tokio::spawn(async move {
         info!("Server started");
-        let res = start_aggregate_server(addr, delta_resources_rx, stream_resources_rx).await;
+        let res = start_aggregate_server(addr, delta_tx_clone, stream_tx_clone).await;
         info!("Server stopped {res:?}");
     });
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
