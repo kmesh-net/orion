@@ -46,6 +46,10 @@ jobs:
             ${{ env.CARGO_GIT_PATH }}
             ${{ env.TARGET_DIR }}
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Check protoc version
+        run: protoc --version
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -68,6 +72,10 @@ jobs:
             ${{ env.CARGO_GIT_PATH }}
             ${{ env.TARGET_DIR }}
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Check protoc version
+        run: protoc --version
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -90,6 +98,10 @@ jobs:
             ${{ env.CARGO_GIT_PATH }}
             ${{ env.TARGET_DIR }}
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Check protoc version
+        run: protoc --version
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
