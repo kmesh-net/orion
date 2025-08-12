@@ -22,3 +22,6 @@
 [submodule "envoy-data-plane-api/cel-spec"]
 	path = envoy-data-plane-api/cel-spec
 	url = https://github.com/google/cel-spec.git
+[submodule "envoy-data-plane-api/google-proto"]
+	path = envoy-data-plane-api/google-proto
+	url = https://github.com/protocolbuffers/protobuf.git
