@@ -29,8 +29,9 @@ fn main() -> std::io::Result<()> {
     // cannot use it due to different versions of prost_build in dependencies
     //
     // This requires our crate to provide FILE_DESCRIPTOR_SET_BYTES an include bytes
-    // of descriptor_path
-    config.compile_protos(&protos, &include_paths)?;
+    // of descriptor_path. Run a first pass to emit the descriptor set, then
+    // read it to apply prost_reflect attributes before generating final code.
+    // config.compile_protos(&protos, &include_paths)?;
     let pool_attribute = r#"#[prost_reflect(file_descriptor_set_bytes = "crate::FILE_DESCRIPTOR_SET_BYTES")]"#;
 
     let buf = std::fs::read(&descriptor_path)?;
