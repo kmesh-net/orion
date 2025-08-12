@@ -31,7 +31,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-    let var_name = async move {
+    let delta_resource_tx_clone = delta_resource_tx.clone();
+
+    let _xds_resource_producer = tokio::spawn(async move {
         // the secret name needs to match ../orion-proxy/conf/orion-bootstap-sds-simple.yaml
         // we are trying to change secret beefcake_ca to point to a different cert store
         // initially the proxy should return 502 error as it can't set up tls to upstream
@@ -54,9 +56,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let secret_type = secret::Type::ValidationContext(validation_context);
         let secret = resources::create_secret(secret_id, secret_type);
         info!("Adding upstream secret {secret_id}");
-        let _secret_resource = resources::create_secret_resource(secret_id, &secret);
-    };
-    let _xds_resource_producer = tokio::spawn(var_name);
+        let secret_resource = resources::create_secret_resource(secret_id, &secret);
+
+        if delta_resource_tx_clone.send(ServerAction::Add(secret_resource)).is_err() {
+            info!("Failed to send secret resource");
+        }
+    });
 
     let _ = grpc_server.into_future().await;
     Ok(())
