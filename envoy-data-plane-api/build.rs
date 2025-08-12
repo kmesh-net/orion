@@ -16,6 +16,7 @@ fn main() -> std::io::Result<()> {
         "opentelemetry-proto/",
         "prometheus-client-model/",
         "cel-spec/proto",
+        "protobuf/src/",
     ];
 
     let mut config = prost_build::Config::new();
@@ -29,14 +30,8 @@ fn main() -> std::io::Result<()> {
     // cannot use it due to different versions of prost_build in dependencies
     //
     // This requires our crate to provide FILE_DESCRIPTOR_SET_BYTES an include bytes
-    // of descriptor_path. Run a first pass to emit the descriptor set, then
-    // read it to apply prost_reflect attributes before generating final code.
-        // #[allow(deprecated)]
-        // {
-        //     // Some prost-build versions flag compile_protos as deprecated, but we
-        //     // keep this first pass to generate the descriptor set needed below.
-        //     config.compile_protos(&protos, &include_paths)?;
-        // }
+    // of descriptor_path
+    config.compile_protos(&protos, &include_paths)?;
     let pool_attribute = r#"#[prost_reflect(file_descriptor_set_bytes = "crate::FILE_DESCRIPTOR_SET_BYTES")]"#;
 
     let buf = std::fs::read(&descriptor_path)?;
@@ -49,7 +44,7 @@ fn main() -> std::io::Result<()> {
             .type_attribute(full_name, pool_attribute);
     }
 
-    // Proceed w/ tonic_build (updated method name)
+    // Proceed w/ tonic_build
     tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
         config,
         &protos,
