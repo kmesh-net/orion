@@ -38,14 +38,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache cargo
+    - name: Cache cargo (no target)
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CARGO_CACHE_PATH }}
             ${{ env.CARGO_GIT_PATH }}
-            ${{ env.TARGET_DIR }}
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock') }}
+      key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check protoc version
@@ -64,14 +63,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache cargo + target
+    - name: Cache cargo (no target)
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CARGO_CACHE_PATH }}
             ${{ env.CARGO_GIT_PATH }}
-            ${{ env.TARGET_DIR }}
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+      key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check protoc version
@@ -90,14 +88,13 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
-      - name: Cache cargo + target
+    - name: Cache cargo (no target)
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CARGO_CACHE_PATH }}
             ${{ env.CARGO_GIT_PATH }}
-            ${{ env.TARGET_DIR }}
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check protoc version
