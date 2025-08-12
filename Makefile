@@ -1,8 +1,3 @@
-lint:
-	cargo clippy --all -- -D warnings
-build:
-	cargo build --all --release
-
 .PHONY: fmt fmt-check lint build test ci
 
 fmt:
