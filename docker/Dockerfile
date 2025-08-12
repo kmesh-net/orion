@@ -1,43 +1,28 @@
-FROM rust:1.84 AS orion-builder
+FROM rust:1.88 as builder
 
-#RUN rustup component add rustfmt
+RUN apt-get update && apt-get install -y protobuf-compiler
 
-WORKDIR /tmp/orion
-
-RUN <<EOF
-apt update
-apt install -y protobuf-compiler
-EOF
+WORKDIR /usr/src/orion
 
 
-COPY ./orion-xds ./orion-xds
-COPY ./orion-proxy ./orion-proxy
-COPY ./orion-data-plane-api ./orion-data-plane-api
-COPY ./orion-error ./orion-error
-COPY ./orion-lib ./orion-lib
-COPY ./envoy-data-plane-api ./envoy-data-plane-api
-COPY ./orion-configuration ./orion-configuration
-
-
-COPY rustfmt.toml ./
-COPY Cargo.toml ./
-COPY Cargo.lock ./
+COPY . .
 
 
 RUN cargo build --release
 
-### Split into two files; one to build and one to actually run it
-###https://docs.docker.com/develop/develop-images/multistage-build/
-
+# Stage 2:
 FROM debian:bookworm-slim
-RUN <<EOF
-apt update
-apt upgrade -y
-apt install -y ca-certificates libssl3
-EOF
 
-COPY ./docker/start_proxy.sh ./start_proxy.sh
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=orion-builder /tmp/orion/target/release/orion /orion
-EXPOSE 8080 8000 50051
-ENTRYPOINT ["/start_proxy.sh"]
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /usr/src/orion/target/release/orion /app/orion
+
+# Copy runtime config
+COPY orion-proxy/conf/orion-runtime.yaml /app/orion-runtime.yaml
+
+EXPOSE 8000 8001
+
+CMD ["./orion", "--config", "/app/orion-runtime.yaml"]
