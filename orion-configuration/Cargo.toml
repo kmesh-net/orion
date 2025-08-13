@@ -46,6 +46,7 @@ url.workspace = true
 
 [dev-dependencies]
 tracing-test.workspace = true
+tempfile = "3.8"
 
 [features]
 default           = ["envoy-conversions"]
