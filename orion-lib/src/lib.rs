@@ -34,7 +34,7 @@ use std::sync::OnceLock;
 
 use listeners::listeners_manager;
 use orion_configuration::config::Runtime;
-use tokio::{sync::mpsc, task::JoinSet};
+use tokio::sync::mpsc;
 
 pub use crate::configuration::get_listeners_and_clusters;
 
@@ -105,19 +105,17 @@ pub fn new_configuration_channel(capacity: usize) -> (ConfigurationSenders, Conf
     (ConfigurationSenders::new(listener_tx, route_tx), ConfigurationReceivers::new(listener_rx, route_rx))
 }
 
-pub fn start_ng_on_joinset(configuration_receivers: ConfigurationReceivers) -> Result<JoinSet<Result<()>>> {
+/// Start the listeners manager directly without spawning a background task.
+/// Caller must be inside a Tokio runtime and await this async function.
+pub async fn start_listener_manager(configuration_receivers: ConfigurationReceivers) -> Result<()> {
     let ConfigurationReceivers { listener_configuration_receiver, route_configuration_receiver } =
         configuration_receivers;
-
-    let mut set = JoinSet::new();
-
-    set.spawn(async move {
-        let listeners_manager = ListenersManager::new(listener_configuration_receiver, route_configuration_receiver);
-        if let Err(err) = listeners_manager.start().await {
-            tracing::warn!("{err}");
-        }
-        Ok(())
-    });
-
-    Ok(set)
+    tracing::debug!("listeners manager starting");
+    let mgr = ListenersManager::new(listener_configuration_receiver, route_configuration_receiver);
+    if let Err(err) = mgr.start().await {
+        tracing::warn!(error = %err, "listeners manager exited with error");
+        return Err(err);
+    }
+    tracing::debug!("listeners manager finished cleanly");
+    Ok(())
 }
