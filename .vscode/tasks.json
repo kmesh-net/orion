@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "cargo test (orion-configuration)",
+			"type": "shell",
+			"command": "cargo test -p orion-configuration",
+			"group": "test"
+		}
+	]
+}
