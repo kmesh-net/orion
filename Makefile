@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint build test ci ci-parallel
+.PHONY: fmt fmt-check lint build test ci ci-parallel init
 
 fmt:
 	cargo fmt --all
@@ -37,3 +37,7 @@ ci-parallel:
 	# If we reach here, build succeeded, so run tests \
 	cargo test --workspace --release --locked; \
 	'
+
+init:
+	@echo "Initializing git submodules..."
+	@git submodule update --init --recursive
