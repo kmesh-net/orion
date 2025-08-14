@@ -201,7 +201,6 @@ async fn configure_initial_resources(
 }
 
 async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {
-    let mut set = orion_lib::start_ng_on_joinset(configuration_receivers)?;
-    while set.join_next().await.is_some() {}
+    orion_lib::start_listener_manager(configuration_receivers).await?;
     Ok(())
 }
