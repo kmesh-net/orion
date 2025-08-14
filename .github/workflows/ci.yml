@@ -12,110 +12,70 @@ env:
   TARGET_DIR: target
 
 jobs:
-  fmt:
-    name: fmt (rustfmt)
+  # Fast checks that run in parallel (no build artifacts needed)
+  checks:
+    name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache cargo registry
+      
+      - name: Initialize git submodules
+        run: git submodule update --init --recursive
+      
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CARGO_CACHE_PATH }}
             ${{ env.CARGO_GIT_PATH }}
-          key: ${{ runner.os }}-cargo-rs-${{ hashFiles('**/Cargo.lock') }}
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
-          profile: minimal
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-  clippy:
-    name: clippy (lint)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Clear cache
-        run: |
-          rm -rf ${{ env.CARGO_CACHE_PATH }}
-          rm -rf ${{ env.CARGO_GIT_PATH }}
-          rm -rf ${{ env.TARGET_DIR }}
-      - name: Cache cargo (no target)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.CARGO_CACHE_PATH }}
-            ${{ env.CARGO_GIT_PATH }}
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
+          key: ${{ runner.os }}-cargo-checks-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
+      
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Check protoc version
-        run: protoc --version
+      
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          components: clippy
+          components: rustfmt, clippy
           profile: minimal
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
       - name: Run clippy (fail on warnings)
         run: cargo clippy --all-targets --all-features -- -D warnings
 
-  build:
-    name: build (release)
+  # Build and test that share artifacts
+  build-and-test:
+    name: build + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache cargo (no target)
+      
+      - name: Initialize git submodules
+        run: git submodule update --init --recursive
+      
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.CARGO_CACHE_PATH }}
             ${{ env.CARGO_GIT_PATH }}
+            ${{ env.TARGET_DIR }}
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
+      
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Check protoc version
-        run: protoc --version
+      
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
+      
       - name: Build (release)
         run: cargo build --workspace --release --locked
-
-  test:
-    name: test (depends on build)
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-      - name: Cache cargo (no target)
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ env.CARGO_CACHE_PATH }}
-            ${{ env.CARGO_GIT_PATH }}
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock', 'envoy-data-plane-api/build.rs') }}
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Check protoc version
-        run: protoc --version
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
+      
       - name: Run tests
         run: cargo test --workspace --release --locked

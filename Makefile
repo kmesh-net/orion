@@ -16,10 +16,14 @@ test:
 	cargo test --workspace --release --locked
 
 # Sequential CI (keep for local/dev reproducibility)
-ci: fmt-check lint build test
+ci: init
+	cargo fmt --all -- --check
+	cargo clippy --all-targets --all-features -- -D warnings
+	cargo build --workspace --release --locked
+	cargo test --workspace --release --locked
 
 # Parallel CI: run fmt-check, lint and build concurrently; if build succeeds, run tests.
-ci-parallel:
+ci-parallel: init
 	@echo "Starting parallel CI: fmt-check, lint, build"
 	@bash -ec '\
 	set -o pipefail; \
