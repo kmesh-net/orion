@@ -1,7 +1,7 @@
-// SPDX-FileCopyrightText: © 2025 Huawei Cloud Computing Technologies Co., Ltd
+// SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Copyright 2025 Huawei Cloud Computing Technologies Co., Ltd
+// Copyright 2025 kmesh authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
