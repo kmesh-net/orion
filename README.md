@@ -37,11 +37,47 @@ git submodule update --force
 cargo build
 ```
 
-
 ### Running
 ```console
 cargo run --bin orion -- --config orion/conf/orion-runtime.yaml
 ```
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+# Build
+docker build -t orion-proxy -f docker/Dockerfile .
+
+# Run
+docker run -p 8000:8000 --name orion-proxy orion-proxy
+
+# Verify service
+curl -v http://localhost:8000/direct-response # Should return HTTP 200 with "meow! 🐱"
+```
+
+### Testing with Backend Servers
+
+For testing load balancing with real backend servers:
+
+```bash
+# Start two nginx containers
+docker run -d -p 4001:80 --name backend1 nginx:alpine
+docker run -d -p 4002:80 --name backend2 nginx:alpine
+
+# Start Orion Proxy (uses host networking to access localhost:4001/4002)
+docker run -d --network host --name orion-proxy orion-proxy
+
+# Test load balancing
+curl http://localhost:8000/  # Proxies to nginx backends!
+
+# Cleanup
+docker rm -f backend1 backend2 orion-proxy
+```
+
+For detailed Docker configuration options, see [docker/README.md](docker/README.md).
+
 
 <!-- ## Contributing -->
 <!-- If you're interested in being a contributor and want to get involved in developing Orion Proxy, please see [CONTRIBUTING](CONTRIBUTING.md) for more details on submitting patches and the contribution workflow. -->
