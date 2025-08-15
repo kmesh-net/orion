@@ -33,7 +33,6 @@ use crate::{
 };
 use crate::{
     secrets::{TlsConfigurator, WantsToBuildClient},
-    utils::TokioExecutor,
     Error, Result,
 };
 use http::Version;
@@ -44,8 +43,7 @@ use http::{
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Uri};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
-use hyper_util::client::legacy::connect::Connect;
-use hyper_util::client::legacy::{Builder, Client};
+use hyper_util::client::legacy::{connect::Connect, Builder, Client};
 use hyper_util::rt::tokio::TokioTimer;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
@@ -63,6 +61,8 @@ use std::{
 };
 use tracing::debug;
 use webpki::types::ServerName;
+
+const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 type IncomingResult = (std::result::Result<Response<Incoming>, Error>, Duration);
 
@@ -119,16 +119,22 @@ impl LocalBuilder<HttpsConnector<LocalConnectorWithDNSResolver>, Arc<HttpsClient
     }
 }
 
-impl HttpChannelBuilder {
-    pub fn new(bind_device: Option<BindDevice>) -> Self {
+impl Default for HttpChannelBuilder {
+    fn default() -> Self {
         Self {
             tls: None,
             authority: None,
-            bind_device,
-            http_protocol_options: Default::default(),
+            bind_device: None,
             server_name: None,
+            http_protocol_options: HttpProtocolOptions::default(),
             connection_timeout: None,
         }
+    }
+}
+
+impl HttpChannelBuilder {
+    pub fn new(bind_device: Option<BindDevice>) -> Self {
+        Self { bind_device, ..Default::default() }
     }
 
     pub fn with_tls(self, tls_configurator: TlsConfigurator<ClientConfig, WantsToBuildClient>) -> Self {
@@ -153,25 +159,76 @@ impl HttpChannelBuilder {
 
     #[allow(clippy::cast_sign_loss)]
     pub fn build(self) -> crate::Result<HttpChannel> {
-        let authority = self.authority.clone().ok_or("Authority is mandatory")?;
-        let mut client_builder = Client::builder(TokioExecutor);
-        client_builder.timer(TokioTimer::new());
-        // note: legacy client builder is not persistent struct (&mut Self -> &mut Self)
+        let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
+        let client_builder = self.configure_hyper_client();
+
+        if let Some(tls_context) = self.tls {
+            // Build TLS client inline to avoid ownership issues
+            let mut builder =
+                hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls_context.into_inner()).https_or_http();
+
+            builder = if let Some(server_name) = self.server_name {
+                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
+            } else {
+                let server_name = ServerName::try_from(authority.host().to_owned())?;
+                debug!("Server name is not configured in bootstrap.. using endpoint authority {:?}", server_name);
+                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
+            };
+
+            let connector = LocalConnectorWithDNSResolver {
+                addr: authority,
+                bind_device: self.bind_device,
+                timeout: self.connection_timeout,
+            };
+
+            let tls_connector = match self.http_protocol_options.codec {
+                Codec::Http2 => builder.enable_http2().wrap_connector(connector),
+                Codec::Http1 => builder.enable_http1().wrap_connector(connector),
+            };
+
+            Ok(HttpChannel {
+                client: HttpChannelClient::Tls(ClientContext::new(
+                    self.http_protocol_options.codec,
+                    Arc::new(LocalObject::new(client_builder, tls_connector)),
+                )),
+                http_version: self.http_protocol_options.codec,
+            })
+        } else {
+            // Build plain client inline
+            let connector = LocalConnectorWithDNSResolver {
+                addr: authority,
+                bind_device: self.bind_device,
+                timeout: self.connection_timeout,
+            };
+
+            Ok(HttpChannel {
+                client: HttpChannelClient::Plain(Arc::new(LocalObject::new(client_builder, connector))),
+                http_version: self.http_protocol_options.codec,
+            })
+        }
+    }
+
+    fn configure_hyper_client(&self) -> Builder {
+        let mut client_builder = Client::builder(hyper_util::rt::TokioExecutor::new());
         client_builder
-            // Set an optional timeout for idle sockets being kept-alive. A Timer is required for this to take effect.
-            .pool_idle_timeout(
-                self.http_protocol_options.common.idle_timeout.unwrap_or(std::time::Duration::from_secs(30)),
-            )
-            // Pass a timer for the timeout...
+            .timer(TokioTimer::new())
+            .pool_idle_timeout(self.http_protocol_options.common.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT))
             .pool_timer(TokioTimer::new())
             .pool_max_idle_per_host(usize::MAX)
             .set_host(false);
 
         let configured_upstream_http_version = self.http_protocol_options.codec;
 
-        if matches!(configured_upstream_http_version, Codec::Http2) {
+        self.configure_http2_if_needed(&mut client_builder, configured_upstream_http_version);
+
+        client_builder
+    }
+
+    fn configure_http2_if_needed(&self, client_builder: &mut Builder, version: Codec) {
+        if matches!(version, Codec::Http2) {
             client_builder.http2_only(true);
-            let http2_options = self.http_protocol_options.http2_options;
+            let http2_options = &self.http_protocol_options.http2_options;
+
             if let Some(settings) = &http2_options.keep_alive_settings {
                 client_builder.http2_keep_alive_interval(settings.keep_alive_interval);
                 if let Some(timeout) = settings.keep_alive_timeout {
@@ -179,56 +236,13 @@ impl HttpChannelBuilder {
                 }
                 client_builder.http2_keep_alive_while_idle(true);
             }
+
             client_builder.http2_initial_connection_window_size(http2_options.initial_connection_window_size());
             client_builder.http2_initial_stream_window_size(http2_options.initial_stream_window_size());
-            //fixme(hayley): this is not max_concurrent_streams! this is reset streams
+
             if let Some(max) = http2_options.max_concurrent_streams() {
                 client_builder.http2_max_concurrent_reset_streams(max);
             }
-        }
-
-        if let Some(tls_context) = self.tls {
-            let builder = hyper_rustls::HttpsConnectorBuilder::new();
-            let builder = builder.with_tls_config(tls_context.into_inner());
-            let builder = builder.https_or_http();
-            let builder = if let Some(server_name) = self.server_name {
-                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
-            } else {
-                let server_name = ServerName::try_from(authority.host().to_owned())?;
-                debug!("Server name is not configured in boostrap.. using endpoint authority {:?}", server_name);
-                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
-            };
-            let tls_connector = match self.http_protocol_options.codec {
-                Codec::Http2 => builder.enable_http2().wrap_connector(LocalConnectorWithDNSResolver {
-                    addr: authority,
-                    bind_device: self.bind_device,
-                    timeout: self.connection_timeout,
-                }),
-
-                Codec::Http1 => builder.enable_http1().wrap_connector(LocalConnectorWithDNSResolver {
-                    addr: authority,
-                    bind_device: self.bind_device,
-                    timeout: self.connection_timeout,
-                }),
-            };
-            Ok(HttpChannel {
-                client: HttpChannelClient::Tls(ClientContext::new(
-                    configured_upstream_http_version,
-                    Arc::new(LocalObject::new(client_builder, tls_connector)),
-                )),
-                http_version: configured_upstream_http_version,
-            })
-        } else {
-            let arg = LocalConnectorWithDNSResolver {
-                addr: authority,
-                bind_device: self.bind_device,
-                timeout: self.connection_timeout,
-            };
-
-            Ok(HttpChannel {
-                client: HttpChannelClient::Plain(Arc::new(LocalObject::new(client_builder, arg))),
-                http_version: configured_upstream_http_version,
-            })
         }
     }
 }
