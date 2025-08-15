@@ -32,7 +32,6 @@ fn check_config_file(file_path: &str) -> Result<(), orion_error::Error> {
     with_current_dir(&d, || get_listeners_and_clusters(bootstrap).map(|_| ()))
 }
 
-
 #[traced_test]
 #[test]
 fn bootstrap_demo_static() -> Result<(), orion_error::Error> {
