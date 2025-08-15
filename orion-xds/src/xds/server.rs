@@ -20,7 +20,6 @@
 
 use std::{net::SocketAddr, pin::Pin};
 
-use atomic_take::AtomicTake;
 use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::{
     aggregated_discovery_service_server::{AggregatedDiscoveryService, AggregatedDiscoveryServiceServer},
     DeltaDiscoveryRequest, DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse, Resource, ResourceName,
@@ -28,12 +27,16 @@ use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::{
 use orion_data_plane_api::envoy_data_plane_api::tonic::{
     self, transport::Server, IntoStreamingRequest, Response, Status,
 };
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::sync::{
+    broadcast::Receiver,
+    mpsc::{self},
+};
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tracing::info;
 
 use crate::xds::{self, model::XdsError};
 
+#[derive(Debug, Clone)]
 pub enum ServerAction {
     Add(Resource),
     Remove(Resource),
@@ -42,16 +45,13 @@ pub enum ServerAction {
 pub type ResourceAction = ServerAction;
 #[derive(Debug)]
 pub struct AggregateServer {
-    delta_resources_rx: AtomicTake<Receiver<ServerAction>>,
-    stream_resources_rx: AtomicTake<Receiver<ServerAction>>,
+    delta_resources_rx: Receiver<ServerAction>,
+    stream_resources_rx: Receiver<ServerAction>,
 }
 
 impl AggregateServer {
     pub fn new(delta_resources_rx: Receiver<ServerAction>, stream_resources_rx: Receiver<ServerAction>) -> Self {
-        Self {
-            delta_resources_rx: AtomicTake::new(delta_resources_rx),
-            stream_resources_rx: AtomicTake::new(stream_resources_rx),
-        }
+        Self { delta_resources_rx, stream_resources_rx }
     }
 }
 
@@ -70,10 +70,9 @@ impl AggregatedDiscoveryService for AggregateServer {
         info!("\tclient connected from: {:?}", req.remote_addr());
 
         let (tx, rx) = mpsc::channel(128);
-        let mut resources_rx =
-            self.stream_resources_rx.take().ok_or(Status::internal("Resource stream is unavailable"))?;
+        let mut resources_rx = self.stream_resources_rx.resubscribe();
         tokio::spawn(async move {
-            while let Some(action) = resources_rx.recv().await {
+            while let Ok(action) = resources_rx.recv().await {
                 let item = match action {
                     xds::server::ServerAction::Add(resource) => {
                         let Some(resource) = resource.resource else {
@@ -136,9 +135,9 @@ impl AggregatedDiscoveryService for AggregateServer {
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
         let (tx, rx) = mpsc::channel(128);
-        let mut resources_rx = self.delta_resources_rx.take().ok_or(Status::internal("Delta stream is unavailable"))?;
+        let mut resources_rx = self.delta_resources_rx.resubscribe();
         tokio::spawn(async move {
-            while let Some(action) = resources_rx.recv().await {
+            while let Ok(action) = resources_rx.recv().await {
                 let item = match action {
                     xds::server::ServerAction::Add(r) => {
                         let Some(ref resource) = r.resource else {

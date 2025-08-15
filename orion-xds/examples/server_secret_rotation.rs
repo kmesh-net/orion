@@ -20,13 +20,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);
-    let (_stream_resource_tx, stream_resources_rx) = tokio::sync::mpsc::channel(100);
+    let (delta_resource_tx, _delta_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
+    let (_, _stream_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
     let addr = "127.0.0.1:50051".parse()?;
 
     let grpc_server = tokio::spawn(async move {
         info!("Server started");
-        let res = start_aggregate_server(addr, delta_resources_rx, stream_resources_rx).await;
+        let res = start_aggregate_server(addr, _delta_resources_rx, _stream_resources_rx).await;
         info!("Server stopped {res:?}");
     });
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Adding downstream secret {secret_id}");
         let secret_resource = resources::create_secret_resource(secret_id, &secret);
 
-        if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).is_err() {
             return;
         };
 
@@ -79,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Adding upstream secret {secret_id}");
         let secret_resource = resources::create_secret_resource(secret_id, &secret);
 
-        if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).await.is_err() {
+        if delta_resource_tx.send(ServerAction::Add(secret_resource.clone())).is_err() {
             return;
         };
 
