@@ -5,6 +5,7 @@
 # -------------------------
 # Version control
 # -------------------------
+.git
 .gitattributes
 # (keep .gitignore tracked — no need to ignore it)
 
