@@ -14,12 +14,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (delta_resource_tx, _delta_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
     let (stream_resource_tx, _stream_resources_rx) = tokio::sync::broadcast::channel::<ServerAction>(100);
     let addr = "127.0.0.1:50051".parse()?;
-    let delta_tx_clone = delta_resource_tx.clone();
-    let stream_tx_clone = stream_resource_tx.clone();
 
     let grpc_server = tokio::spawn(async move {
         info!("Server started");
-        let res = start_aggregate_server(addr, delta_tx_clone, stream_tx_clone).await;
+        let res = start_aggregate_server(addr, _delta_resources_rx, _stream_resources_rx).await;
         info!("Server stopped {res:?}");
     });
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -42,6 +40,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if delta_resource_tx.send(ServerAction::Add(cluster_resource.clone())).is_err() {
                 break;
             };
+            if stream_resource_tx.send(ServerAction::Add(cluster_resource.clone())).is_err() {
+                break;
+            };
             tokio::time::sleep(Duration::from_secs(5)).await;
             let listener = resources::create_listener(
                 &listener_id,
@@ -52,13 +53,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let listener_resource = resources::create_listener_resource(&listener);
             info!("Adding listener {listener_resource:?}");
-            if delta_resource_tx.send(ServerAction::Add(listener_resource)).is_err() {
+            if delta_resource_tx.send(ServerAction::Add(listener_resource.clone())).is_err() {
+                break;
+            };
+            if stream_resource_tx.send(ServerAction::Add(listener_resource)).is_err() {
                 break;
             };
             tokio::time::sleep(Duration::from_secs(15)).await;
 
             info!("Removing cluster {cluster_id}");
-            if delta_resource_tx.send(ServerAction::Remove(cluster_resource)).is_err() {
+            if delta_resource_tx.send(ServerAction::Remove(cluster_resource.clone())).is_err() {
+                break;
+            };
+            if stream_resource_tx.send(ServerAction::Remove(cluster_resource)).is_err() {
                 break;
             };
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -71,7 +78,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let listener_resource = resources::create_listener_resource(&listener);
             info!("Removing listener {listener_resource:?}");
-            if delta_resource_tx.send(ServerAction::Remove(listener_resource)).is_err() {
+            if delta_resource_tx.send(ServerAction::Remove(listener_resource.clone())).is_err() {
+                break;
+            };
+            if stream_resource_tx.send(ServerAction::Remove(listener_resource)).is_err() {
                 break;
             };
         }

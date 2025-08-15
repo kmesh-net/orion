@@ -28,7 +28,7 @@ use orion_data_plane_api::envoy_data_plane_api::tonic::{
     self, transport::Server, IntoStreamingRequest, Response, Status,
 };
 use tokio::sync::{
-    broadcast::Sender,
+    broadcast::Receiver,
     mpsc::{self},
 };
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
@@ -45,12 +45,12 @@ pub enum ServerAction {
 pub type ResourceAction = ServerAction;
 #[derive(Debug)]
 pub struct AggregateServer {
-    delta_resources_rx: Sender<ServerAction>,
-    stream_resources_rx: Sender<ServerAction>,
+    delta_resources_rx: Receiver<ServerAction>,
+    stream_resources_rx: Receiver<ServerAction>,
 }
 
 impl AggregateServer {
-    pub fn new(delta_resources_rx: Sender<ServerAction>, stream_resources_rx: Sender<ServerAction>) -> Self {
+    pub fn new(delta_resources_rx: Receiver<ServerAction>, stream_resources_rx: Receiver<ServerAction>) -> Self {
         Self { delta_resources_rx, stream_resources_rx }
     }
 }
@@ -70,7 +70,7 @@ impl AggregatedDiscoveryService for AggregateServer {
         info!("\tclient connected from: {:?}", req.remote_addr());
 
         let (tx, rx) = mpsc::channel(128);
-        let mut resources_rx = self.stream_resources_rx.subscribe();
+        let mut resources_rx = self.stream_resources_rx.resubscribe();
         tokio::spawn(async move {
             while let Ok(action) = resources_rx.recv().await {
                 let item = match action {
@@ -135,7 +135,7 @@ impl AggregatedDiscoveryService for AggregateServer {
         // spawn and channel are required if you want handle "disconnect" functionality
         // the `out_stream` will not be polled after client disconnect
         let (tx, rx) = mpsc::channel(128);
-        let mut resources_rx = self.delta_resources_rx.subscribe();
+        let mut resources_rx = self.delta_resources_rx.resubscribe();
         tokio::spawn(async move {
             while let Ok(action) = resources_rx.recv().await {
                 let item = match action {
@@ -197,8 +197,8 @@ impl AggregatedDiscoveryService for AggregateServer {
 
 pub async fn start_aggregate_server(
     addr: SocketAddr,
-    delta_resources_rx: Sender<ResourceAction>,
-    stream_resources_rx: Sender<ResourceAction>,
+    delta_resources_rx: Receiver<ResourceAction>,
+    stream_resources_rx: Receiver<ResourceAction>,
 ) -> Result<(), XdsError> {
     info!("Server started {addr:?}");
     let server = AggregateServer::new(delta_resources_rx, stream_resources_rx);
