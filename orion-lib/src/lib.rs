@@ -28,7 +28,6 @@ mod body;
 mod secrets;
 pub(crate) mod thread_local;
 mod transport;
-pub(crate) mod utils;
 
 use std::sync::OnceLock;
 
