@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint build test ci ci-parallel init
+.PHONY: fmt fmt-check lint build test ci ci-parallel init docker-build
 
 fmt:
 	cargo fmt --all
@@ -45,3 +45,7 @@ ci-parallel: init
 init:
 	@echo "Initializing git submodules..."
 	@git submodule update --init --recursive
+
+docker-build: init
+	@echo "Building Docker image: orion-proxy"
+	docker build -t orion-proxy -f docker/Dockerfile .
