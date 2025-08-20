@@ -55,6 +55,7 @@ fn read_dynamic_resource() {
     path.push("bootstrap_with_http_connection_manager.yml");
 
     let loader = BootstrapLoader::load(path.into_os_string().into_string().unwrap());
+    #[allow(deprecated)]
     let xds_configs = loader.get_xds_configs().unwrap();
     assert_eq!(xds_configs.len(), 1);
     assert_eq!(
@@ -120,6 +121,7 @@ static_resources:
     let bootstrap: Bootstrap = from_yaml(ADS_BOOTSTRAP).unwrap();
     let loader = BootstrapLoader::from(bootstrap);
 
+    #[allow(deprecated)]
     let xds_configs = loader.get_xds_configs().unwrap();
     assert_eq!(xds_configs.len(), 1);
 
@@ -258,6 +260,7 @@ static_resources:
     let bootstrap: Bootstrap = from_yaml(BOOTSTRAP).unwrap();
     let loader = BootstrapLoader::from(bootstrap);
 
+    #[allow(deprecated)]
     let xds_configs = loader.get_xds_configs().unwrap();
     assert_eq!(xds_configs.len(), 3);
 

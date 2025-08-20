@@ -48,6 +48,7 @@ use std::{
 use tokio::sync::watch;
 use tracing::debug;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct HttpConnectionManagerBuilder {
     listener_name: Option<CompactString>,
@@ -62,6 +63,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for HttpConnect
     }
 }
 
+#[allow(dead_code)]
 impl HttpConnectionManagerBuilder {
     pub fn build(self) -> Result<HttpConnectionManager> {
         let name = self.listener_name.ok_or("listener name is not set")?;
@@ -86,6 +88,7 @@ impl HttpConnectionManagerBuilder {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PartialHttpConnectionManager {
     router: Option<RouteConfiguration>,
@@ -98,6 +101,7 @@ pub struct PartialHttpConnectionManager {
 #[derive(Clone, Debug)]
 // TODO: Implement HTTP filter chain functionality - this struct defines filters for request processing
 // Used for rate limiting, RBAC, and other HTTP middleware features
+#[allow(dead_code)]
 pub struct HttpFilter {
     pub name: CompactString,
     pub disabled: bool,
@@ -107,6 +111,7 @@ pub struct HttpFilter {
 #[derive(Clone, Debug)]
 // TODO: Implement HTTP filter value types - defines the different types of HTTP filters
 // Currently supports rate limiting and RBAC (Role-Based Access Control)
+#[allow(dead_code)]
 pub enum HttpFilterValue {
     RateLimit(LocalRateLimit),
     Rbac(HttpRbac),
@@ -126,6 +131,7 @@ impl From<HttpFilterConfig> for HttpFilter {
 impl HttpFilterValue {
     // TODO: Implement HTTP filter application logic - this method applies filters to incoming requests
     // Should return Some(Response) to short-circuit request processing, or None to continue
+    #[allow(dead_code)]
     pub fn apply(&self, request: &Request<Incoming>) -> Option<Response<HttpBody>> {
         match self {
             HttpFilterValue::Rbac(rbac) => apply_authorization_rules(rbac, request),
@@ -185,6 +191,7 @@ impl AlpnCodecs {
 #[derive(Debug)]
 // TODO: Implement HTTP connection management - this struct manages HTTP connections and routing
 // Contains filter chain, routing configuration, and connection settings
+#[allow(dead_code)]
 pub struct HttpConnectionManager {
     pub listener_name: CompactString,
     router_sender: watch::Sender<Option<Arc<RouteConfiguration>>>,
@@ -201,8 +208,8 @@ impl fmt::Display for HttpConnectionManager {
 }
 
 impl HttpConnectionManager {
-    pub fn get_route_id(&self) -> &Option<CompactString> {
-        &self.dynamic_route_name
+    pub fn get_route_id(&self) -> Option<&CompactString> {
+        self.dynamic_route_name.as_ref()
     }
 
     pub fn update_route(&self, route: Arc<RouteConfiguration>) {
@@ -321,11 +328,12 @@ impl Service<HttpHandlerRequest> for HttpRequestHandler {
 
 // TODO: Implement RBAC (Role-Based Access Control) authorization logic
 // This function should check permissions and return forbidden response if access is denied
+#[allow(dead_code)]
 fn apply_authorization_rules<B>(rbac: &HttpRbac, req: &Request<B>) -> Option<Response<HttpBody>> {
     debug!("Applying authorization rules {rbac:?} {:?}", &req.headers());
-    if !rbac.is_permitted(req) {
-        Some(SyntheticHttpResponse::forbidden("RBAC: access denied").into_response(req.version()))
-    } else {
+    if rbac.is_permitted(req) {
         None
+    } else {
+        Some(SyntheticHttpResponse::forbidden("RBAC: access denied").into_response(req.version()))
     }
 }

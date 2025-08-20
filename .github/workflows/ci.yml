@@ -43,8 +43,17 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       
-      - name: Run clippy (fail on warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run clippy (default features, recommended)
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Optionally, test allocators individually (never together):
+      - name: Run clippy (jemalloc)
+        run: cargo clippy --all-targets --no-default-features --features jemalloc -- -D warnings
+
+      - name: Run clippy (dhat-heap)
+        run: cargo clippy --all-targets --no-default-features --features dhat-heap -- -D warnings
+
+      # Do NOT use --all-features: jemalloc and dhat-heap are mutually exclusive and will cause a build failure.
 
   # Build and test that share artifacts
   build-and-test:

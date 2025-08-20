@@ -54,6 +54,7 @@ where
     })
 }
 
+#[allow(clippy::ref_option)]
 fn serialize_log_level<S: Serializer>(
     value: &Option<EnvFilter>,
     serializer: S,

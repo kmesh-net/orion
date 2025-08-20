@@ -55,7 +55,7 @@ pub struct ClusterHealthCheck {
     /// An optional jitter amount from 0.0 to 1.0.
     /// If specified, during every interval we will add `interval` * `interval_jitter_percent` to the wait time.
     /// If `interval_jitter` and `interval_jitter_percent` are both set, both of them will be used to increase the wait time.
-    #[serde(skip_serializing_if = "f32_is_zero", default = "Default::default")]
+    #[serde(skip_serializing_if = "crate::config::cluster::health_check::f32_is_zero", default = "Default::default")]
     pub interval_jitter_percent: f32,
     /// The “unhealthy interval” is a health check interval that is used for hosts that are marked as unhealthy.
     /// As soon as the host is marked as healthy, Envoy will shift back to using the standard health check
@@ -79,7 +79,8 @@ pub struct ClusterHealthCheck {
     pub healthy_edge_interval: Option<Duration>,
 }
 
-fn f32_is_zero(x: &f32) -> bool {
+#[allow(clippy::trivially_copy_pass_by_ref)]
+pub fn f32_is_zero(x: &f32) -> bool {
     *x == 0.0
 }
 
@@ -197,6 +198,7 @@ pub struct HttpHealthCheck {
     pub path: Option<PathAndQuery>,
 }
 
+#[allow(clippy::single_range_in_vec_init)]
 fn default_expected_statuses() -> Vec<Range<u16>> {
     vec![200..201]
 }
@@ -282,6 +284,7 @@ mod envoy_conversions {
     };
     use std::{ops::Range, str::FromStr};
 
+    #[allow(clippy::too_many_lines)]
     impl TryFrom<EnvoyHealthCheck> for HealthCheck {
         type Error = GenericError;
         fn try_from(value: EnvoyHealthCheck) -> Result<Self, Self::Error> {
@@ -348,7 +351,9 @@ mod envoy_conversions {
                 GenericError::from_msg_with_cause("failed to convert {interval_jitter} to std::time::Duration", e)
                     .with_node("interval_jitter")
             })?;
+            #[allow(clippy::cast_precision_loss)]
             let interval_jitter_percent = {
+                #[allow(clippy::cast_precision_loss)]
                 let as_float = interval_jitter_percent as f32;
                 if !as_float.is_finite() || as_float > 1.0 || as_float.is_sign_negative() {
                     Err(GenericError::from_msg(format!(
@@ -357,8 +362,7 @@ mod envoy_conversions {
                 } else {
                     Ok(as_float)
                 }
-            }
-            .with_node("interval_jitter_percent")?;
+            }?;
             let unhealthy_threshold = required!(unhealthy_threshold)?.value;
             let unhealthy_threshold = unhealthy_threshold
                 .try_into()
@@ -431,6 +435,7 @@ mod envoy_conversions {
                 } else if start < 100 || end >= 600 {
                     Err(GenericError::from_msg("invalid range [{start},{end}). Range has to be within [100,600)."))
                 } else {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                     Ok((start as u16)..(end as u16))
                 }
             })

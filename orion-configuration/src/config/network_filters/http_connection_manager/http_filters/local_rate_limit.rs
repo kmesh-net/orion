@@ -40,6 +40,7 @@ const DEFAULT_RATE_LIMIT_STATUSCODE: StatusCode = StatusCode::TOO_MANY_REQUESTS;
 const fn default_statuscode_deser() -> StatusCode {
     DEFAULT_RATE_LIMIT_STATUSCODE
 }
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_statuscode(code: &StatusCode) -> bool {
     *code == DEFAULT_RATE_LIMIT_STATUSCODE
 }

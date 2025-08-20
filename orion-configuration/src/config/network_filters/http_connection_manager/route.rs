@@ -87,7 +87,6 @@ pub enum PathRewriteSpecifier {
 
 impl PathRewriteSpecifier {
     /// will preserve the query part of the input if the replacement does not contain one
-    #[must_use]
     pub fn apply(
         &self,
         path_and_query: Option<&PathAndQuery>,
@@ -104,9 +103,8 @@ impl PathRewriteSpecifier {
                 let replacement = regex.pattern.replace_all(old_path, regex.substitution.as_str());
                 if let Cow::Borrowed(_) = replacement {
                     return Ok(None);
-                } else {
-                    replacement
                 }
+                replacement
             },
             PathRewriteSpecifier::Prefix(prefix) => {
                 if let Some(matched_range) = route_match_result.matched_range() {
@@ -246,6 +244,7 @@ const DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE: StatusCode = StatusCode::SERVICE_UNA
 const fn default_statuscode_deser() -> StatusCode {
     DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_statuscode(code: &StatusCode) -> bool {
     *code == DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
@@ -255,6 +254,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 const fn default_timeout_deser() -> Option<Duration> {
     Some(DEFAULT_TIMEOUT)
 }
+#[allow(clippy::ref_option)]
 fn is_default_timeout(timeout: &Option<Duration>) -> bool {
     *timeout == default_timeout_deser()
 }
@@ -726,11 +726,12 @@ mod envoy_conversions {
                 // cluster_specifier,
                 host_rewrite_specifier
             )?;
-            let cluster_not_found_response_code = cluster_not_found_response_code
-                .is_used()
-                .then(|| http_status_from(cluster_not_found_response_code))
-                .unwrap_or(Ok(super::DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE))
-                .with_node("cluster_not_found_response_code")?;
+            let cluster_not_found_response_code = if cluster_not_found_response_code.is_used() {
+                http_status_from(cluster_not_found_response_code)
+            } else {
+                Ok(super::DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE)
+            }
+            .with_node("cluster_not_found_response_code")?;
             let timeout = timeout.map(duration_from_envoy).unwrap_or(Ok(DEFAULT_TIMEOUT)).with_node("timeout")?;
             // in envoy, the default value for the timeout (if not set) is 15s, but setting the timeout disables it.
             // in order to better match the rest of the code/rust, we map disabled to None and the default to Some(15s)

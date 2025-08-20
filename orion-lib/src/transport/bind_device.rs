@@ -1,3 +1,5 @@
+#![allow(clippy::manual_c_str_literals)]
+#![allow(clippy::needless_borrow)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //

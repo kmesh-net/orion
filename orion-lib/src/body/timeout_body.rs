@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity)]
+#![allow(clippy::redundant_pattern_matching)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //

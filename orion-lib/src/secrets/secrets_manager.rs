@@ -101,6 +101,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
             .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
             .collect::<Result<Vec<_>>>()?;
 
+        #[allow(clippy::useless_conversion)]
         let certificates: Vec<_> = certificates.into_iter().map(CertificateDer::from).collect();
         let Some(cert) = certificates.first() else {
             return Err("No certificates have been configured".into());
@@ -138,6 +139,7 @@ impl SecretManager {
         Self { certificate_secrets: HashMap::default(), validation_contexts: HashMap::default() }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add(&mut self, secret: Secret) -> Result<TransportSecret> {
         let secret_id = secret.name();
         let secret = match secret.kind() {
