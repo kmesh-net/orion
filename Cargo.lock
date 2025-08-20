@@ -1651,6 +1651,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_regex",
  "serde_yaml",
+ "tempfile",
  "thiserror 2.0.12",
  "tracing",
  "tracing-subscriber",
