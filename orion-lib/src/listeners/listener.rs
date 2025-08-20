@@ -480,6 +480,7 @@ socket_options:
         let fcm = [
             (
                 FilterChainMatch {
+                    name: CompactString::new(""),
                     destination_port: None,
                     destination_prefix_ranges: Vec::new(),
                     server_names: vec![
@@ -491,7 +492,7 @@ socket_options:
                 },
                 0,
             ),
-            (FilterChainMatch::default(), 1),
+            (FilterChainMatch { name: CompactString::new(""), ..Default::default() }, 1),
         ];
         let hashmap: HashMap<_, _> = fcm.iter().cloned().collect();
         let srcaddr = (Ipv4Addr::new(127, 0, 0, 1), 33000).into();

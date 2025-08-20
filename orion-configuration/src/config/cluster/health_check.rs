@@ -592,7 +592,10 @@ mod envoy_conversions {
         use crate::config::cluster::health_check::envoy_conversions::try_convert_text_payload;
 
         fn assert_parsed(payload: &str, expected: &[u8]) {
-            assert_eq!(try_convert_text_payload(payload).expect("payload parsing failed"), expected);
+            assert_eq!(
+                try_convert_text_payload(payload).unwrap_or_else(|_| panic!("payload parsing failed")),
+                expected
+            );
         }
 
         fn assert_err(payload: &str) {
