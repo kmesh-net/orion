@@ -6,7 +6,6 @@ use orion_xds::{
 };
 use std::future::IntoFuture;
 use tracing::{debug, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use tracing_subscriber::EnvFilter;
 

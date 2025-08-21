@@ -18,9 +18,6 @@
 //
 //
 
-#[cfg(all(feature = "jemalloc", feature = "dhat-heap"))]
-compile_error!("feature \"jemalloc\" and feature \"dhat-heap\" cannot be enabled at the same time");
-
 #[cfg(all(feature = "jemalloc", not(target_env = "msvc")))]
 use tikv_jemallocator::Jemalloc;
 
@@ -28,11 +25,12 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-#[cfg(feature = "dhat-heap")]
+#[cfg(all(feature = "dhat-heap", not(feature = "jemalloc")))]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() -> orion_error::Result<()> {
-    #[cfg(feature = "dhat-heap")]
+    #[cfg(all(feature = "dhat-heap", not(feature = "jemalloc")))]
     let _profiler = dhat::Profiler::new_heap();
     orion_proxy::run()
 }

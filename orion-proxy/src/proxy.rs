@@ -31,10 +31,9 @@ use orion_lib::{
     ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
 };
 use std::{
-    sync::atomic::AtomicUsize,
     thread::{self, JoinHandle},
 };
-use tokio::{runtime::Builder, sync::mpsc::Sender, task::JoinSet};
+use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
 pub fn run_proxy(bootstrap: Bootstrap) -> Result<()> {

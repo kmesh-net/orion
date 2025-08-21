@@ -649,6 +649,7 @@ mod tests {
     #[test]
     fn test_unfold_upgrades() {
         let route_a = Route {
+            name: "test_route".to_string(),
             response_header_modifier: HeaderModifier::default(),
             request_headers_to_add: vec![],
             request_headers_to_remove: vec![],
