@@ -19,6 +19,8 @@
 //
 
 use abort_on_drop::ChildTask;
+#[cfg(feature = "tracing")]
+use compact_str::ToCompactString;
 use futures::future::join_all;
 use orion_configuration::config::{Listener, bootstrap::Node, cluster::ClusterSpecifier};
 use orion_lib::{
@@ -188,7 +190,7 @@ impl XdsConfigurationHandler {
                     }
                 },
                 XdsResourceUpdate::Remove(id, resource) => {
-                    if let Err(e) = self.process_remove_events(&id, resource).await {
+                    if let Err(e) = self.process_remove_event(&id, resource).await {
                         rejected_updates.push(RejectedConfig::from((id, e)));
                     }
                 },
@@ -197,7 +199,7 @@ impl XdsConfigurationHandler {
         rejected_updates
     }
 
-    async fn process_remove_events(&mut self, id: &str, resource: TypeUrl) -> Result<()> {
+    async fn process_remove_event(&mut self, id: &str, resource: TypeUrl) -> Result<()> {
         match resource {
             orion_xds::xds::model::TypeUrl::Cluster => {
                 orion_lib::clusters::remove_cluster(id)?;
@@ -207,7 +209,11 @@ impl XdsConfigurationHandler {
             orion_xds::xds::model::TypeUrl::Listener => {
                 let change = ListenerConfigurationChange::Removed(id.to_owned());
                 let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
+                // remove access logs configuration...
                 self.access_log_listener_remove(id).await;
+                // remove tracer configuration...
+                #[cfg(feature = "tracing")]
+                self.tracer_listener_remove(id);
                 Ok(())
             },
             orion_xds::xds::model::TypeUrl::ClusterLoadAssignment => {
@@ -242,6 +248,10 @@ impl XdsConfigurationHandler {
                         let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
                         // update access logs configuration...
                         self.access_log_listener_update(&id, &listener).await;
+
+                        // update tracer configuration...
+                        #[cfg(feature = "tracing")]
+                        self.tracer_listener_update(&id, &listener);
                         Ok(())
                     },
                     Err(err) => {
@@ -305,6 +315,18 @@ impl XdsConfigurationHandler {
                 }
             },
         }
+    }
+
+    #[cfg(feature = "tracing")]
+    fn tracer_listener_update(&mut self, id: &str, listener: &Listener) {
+        orion_tracing::otel_update_tracers(listener.get_tracing_configurations())
+            .unwrap_or_else(|err| warn!("Failed to update tracer for listener {id}: {err}"));
+    }
+
+    #[cfg(feature = "tracing")]
+    fn tracer_listener_remove(&mut self, id: &str) {
+        orion_tracing::otel_remove_tracers_by_listeners(&[id.to_compact_string()])
+            .unwrap_or_else(|err| warn!("Failed to remove tracer for listener {id}: {err}"));
     }
 
     async fn access_log_listener_update(&mut self, id: &str, listener: &Listener) {

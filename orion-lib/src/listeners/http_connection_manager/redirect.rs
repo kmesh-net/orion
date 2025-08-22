@@ -18,7 +18,7 @@
 //
 //
 
-use super::{RequestHandler, TransactionContext};
+use super::{RequestHandler, TransactionHandler};
 
 use crate::{
     Error, PolyBody, Result,
@@ -39,7 +39,7 @@ use std::str::FromStr;
 impl RequestHandler<(Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, RouteMatchResult)> for &RedirectAction {
     async fn to_response(
         self,
-        _trans_ctx: &TransactionContext,
+        _trans_handler: &TransactionHandler,
         (request, route_match_result): (Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, RouteMatchResult),
     ) -> Result<Response<PolyBody>> {
         let (parts, _) = request.into_parts();

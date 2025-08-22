@@ -42,6 +42,7 @@ use crate::{
 
 use dynamic::{DynamicCluster, DynamicClusterBuilder};
 use original_dst::{OriginalDstCluster, OriginalDstClusterBuilder};
+use orion_interner::StringInterner;
 use r#static::{StaticCluster, StaticClusterBuilder};
 
 impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
@@ -67,7 +68,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 
                 let cla = ClusterLoadAssignmentBuilder::builder()
                     .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
-                    .with_cluster_name(orion_interner::to_static_str(&cluster.name))
+                    .with_cluster_name(cluster.name.to_static_str())
                     .with_bind_device(bind_device)
                     .with_lb_policy(load_balancing_policy)
                     .with_connection_timeout(cluster.connect_timeout)
@@ -77,7 +78,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     .prepare();
 
                 Ok(PartialClusterType::Static(StaticClusterBuilder {
-                    name: orion_interner::to_static_str(&cluster.name),
+                    name: cluster.name.to_static_str(),
                     load_assignment: cla,
                     transport_socket,
                     health_check,
@@ -94,7 +95,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 
                 let cla = ClusterLoadAssignmentBuilder::builder()
                     .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
-                    .with_cluster_name(orion_interner::to_static_str(&cluster.name))
+                    .with_cluster_name(cluster.name.to_static_str())
                     .with_bind_device(bind_device)
                     .with_lb_policy(load_balancing_policy)
                     .with_connection_timeout(cluster.connect_timeout)
@@ -104,7 +105,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     .prepare();
 
                 Ok(PartialClusterType::Static(StaticClusterBuilder {
-                    name: orion_interner::to_static_str(&cluster.name),
+                    name: cluster.name.to_static_str(),
                     load_assignment: cla,
                     transport_socket,
                     health_check,
@@ -113,7 +114,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
             },
 
             ClusterDiscoveryType::Eds(None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
-                name: orion_interner::to_static_str(&cluster.name),
+                name: cluster.name.to_static_str(),
                 bind_device,
                 transport_socket,
                 health_check,
@@ -131,7 +132,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     .transpose()?;
 
                 Ok(PartialClusterType::OnDemand(OriginalDstClusterBuilder {
-                    name: orion_interner::to_static_str(&cluster.name),
+                    name: cluster.name.to_static_str(),
                     bind_device,
                     transport_socket,
                     connect_timeout: cluster.connect_timeout,

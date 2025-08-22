@@ -24,27 +24,27 @@ use super::{
     policy::{RequestContext, RequestExt},
 };
 use crate::{
-    Error, PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
     clusters::retry_policy::{EventError, RetryCondition, TryInferFrom},
     listeners::{
-        http_connection_manager::{RequestHandler, TransactionContext},
+        http_connection_manager::{RequestHandler, TransactionHandler},
         synthetic_http_response::SyntheticHttpResponse,
     },
     secrets::{TlsConfigurator, WantsToBuildClient},
     thread_local::{LocalBuilder, LocalObject},
     utils::tokio::TokioExecutor,
+    Error, PolyBody, Result,
 };
 use http::{
-    HeaderValue, Response, Version,
     uri::{Authority, Parts},
+    HeaderValue, Response, Version,
 };
 use http_body_util::BodyExt;
-use hyper::{Request, Uri, body::Incoming};
+use hyper::{body::Incoming, Request, Uri};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
 use opentelemetry::KeyValue;
 use orion_client::{
-    client::legacy::{Builder, Client, connect::Connect},
+    client::legacy::{connect::Connect, Builder, Client},
     rt::tokio::TokioTimer,
 };
 use orion_configuration::config::{
@@ -71,8 +71,8 @@ use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
 use {
-    orion_client::client::legacy::PoolKey,
     orion_client::client::legacy::pool::{ConnectionEvent, EventHandler, Tag},
+    orion_client::client::legacy::PoolKey,
     std::any::Any,
 };
 
@@ -323,7 +323,7 @@ fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
 impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for &HttpChannel {
     async fn to_response(
         self,
-        _trans_ctx: &TransactionContext,
+        _trans_handler: &TransactionHandler,
         request: RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>,
     ) -> Result<Response<crate::PolyBody>> {
         let version = request.req.version();

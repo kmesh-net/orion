@@ -36,6 +36,7 @@ use http::{HeaderName, HeaderValue, Request, uri::Authority};
 use hyper::body::Incoming;
 use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
 use rand::{prelude::SliceRandom, thread_rng};
+use orion_interner::StringInterner;
 use std::{
     cell::RefCell,
     collections::{BTreeMap, btree_map::Entry as BTreeEntry},
@@ -96,11 +97,11 @@ thread_local! {
 
 pub fn resolve_cluster(selector: &ClusterSpecifierConfig) -> Option<ClusterID> {
     match selector {
-        ClusterSpecifierConfig::Cluster(cluster_name) => Some(orion_interner::to_static_str(cluster_name)),
+        ClusterSpecifierConfig::Cluster(cluster_name) => Some(cluster_name.to_static_str()),
         ClusterSpecifierConfig::WeightedCluster(weighted_clusters) => weighted_clusters
             .choose_weighted(&mut thread_rng(), |cluster| u32::from(cluster.weight))
             .ok()
-            .map(|cluster| orion_interner::to_static_str(&cluster.cluster)),
+            .map(|cluster| cluster.cluster.to_static_str()),
     }
 }
 

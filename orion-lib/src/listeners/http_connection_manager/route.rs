@@ -17,30 +17,36 @@
 // limitations under the License.
 //
 //
-
-use super::{RequestHandler, TransactionContext, http_modifiers, upgrades as upgrade_utils};
+use super::{http_modifiers, upgrades as upgrade_utils, RequestHandler, TransactionHandler};
 use crate::{
-    PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
     clusters::{
         balancers::hash_policy::HashState,
         clusters_manager::{self, RoutingContext},
         retry_policy::{EventError, TryInferFrom},
     },
-    listeners::{access_log::AccessLogContext, synthetic_http_response::SyntheticHttpResponse},
+    listeners::{
+        access_log::AccessLogContext, http_connection_manager::HttpConnectionManager,
+        synthetic_http_response::SyntheticHttpResponse,
+    },
     transport::policy::{RequestContext, RequestExt},
+    PolyBody, Result,
 };
-use http::{Uri, uri::Parts as UriParts};
-use hyper::{Request, Response, body::Incoming};
+use http::{uri::Parts as UriParts, Uri};
+use hyper::{body::Incoming, Request, Response};
+use opentelemetry::trace::Span;
+use opentelemetry::KeyValue;
 use orion_configuration::config::network_filters::http_connection_manager::{
-    RetryPolicy,
     route::{RouteAction, RouteMatchResult},
+    RetryPolicy,
 };
 use orion_error::Context;
 use orion_format::{
     context::{UpstreamContext, UpstreamRequest},
     types::{ResponseFlagsLong, ResponseFlagsShort},
 };
+use orion_tracing::attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME};
+use orion_tracing::http_tracer::{SpanKind, SpanName};
 use smol_str::ToSmolStr;
 use std::net::SocketAddr;
 use tracing::debug;
@@ -53,12 +59,12 @@ pub struct MatchedRequest<'a> {
     pub websocket_enabled_by_default: bool,
 }
 
-impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
+impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &RouteAction {
     #[allow(clippy::too_many_lines)]
     async fn to_response(
         self,
-        trans_ctx: &TransactionContext,
-        request: MatchedRequest<'a>,
+        trans_handler: &TransactionHandler,
+        (request, connection_manager): (MatchedRequest<'a>, &HttpConnectionManager),
     ) -> Result<Response<PolyBody>> {
         let MatchedRequest {
             request: downstream_request,
@@ -76,14 +82,15 @@ impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
 
         match maybe_channel {
             Ok(svc_channel) => {
-                trans_ctx.access_log_ctx.as_ref().inspect(|ctx| {
+                if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
                     ctx.access_loggers.lock().with_context(&UpstreamContext {
                         authority: &svc_channel.upstream_authority,
                         cluster_name: svc_channel.cluster_name,
                     })
-                });
+                }
 
                 let ver = downstream_request.version();
+
                 let mut upstream_request: Request<BodyWithMetrics<PolyBody>> = {
                     let (mut parts, body) = downstream_request.into_parts();
                     let path_and_query_replacement = if let Some(rewrite) = &self.rewrite {
@@ -106,10 +113,32 @@ impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
                     Request::from_parts(parts, body.map_into())
                 };
 
-                trans_ctx
-                    .access_log_ctx
-                    .as_ref()
-                    .inspect(|ctx| ctx.access_loggers.lock().with_context(&UpstreamRequest(&upstream_request)));
+                let mut client_span = connection_manager.http_tracer.try_create_span(
+                    trans_handler.trace_ctx.as_ref(),
+                    &connection_manager.get_tracing_key(),
+                    SpanKind::Client,
+                    SpanName::Str::<()>(svc_channel.upstream_authority.as_str()),
+                );
+
+                if let Some(ref mut client_span) = client_span {
+                    // set default attributes to span, using upstream request information...
+                    connection_manager.http_tracer.set_attributes_from_request(client_span, &upstream_request);
+
+                    // set additional attributes for client span...
+                    client_span.set_attributes([
+                        KeyValue::new(UPSTREAM_CLUSTER_NAME, svc_channel.cluster_name),
+                        KeyValue::new(UPSTREAM_ADDRESS, svc_channel.upstream_authority.to_string()),
+                    ]);
+                }
+
+                // ... store the span in the span_state
+                if let Some(ref span_state) = trans_handler.span_state {
+                    *span_state.client_span.lock() = client_span;
+                }
+
+                if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
+                    ctx.access_loggers.lock().with_context(&UpstreamRequest(&upstream_request));
+                }
 
                 let websocket_enabled = if let Some(upgrade_config) = self.upgrade_config {
                     upgrade_config.is_websocket_enabled(websocket_enabled_by_default)
@@ -128,7 +157,8 @@ impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
                     false
                 };
                 if should_upgrade_websocket {
-                    return upgrade_utils::handle_websocket_upgrade(trans_ctx, upstream_request, &svc_channel).await;
+                    return upgrade_utils::handle_websocket_upgrade(trans_handler, upstream_request, &svc_channel)
+                        .await;
                 }
                 if let Some(direct_response) = http_modifiers::apply_preflight_functions(&mut upstream_request) {
                     return Ok(direct_response);
@@ -137,7 +167,7 @@ impl<'a> RequestHandler<MatchedRequest<'a>> for &RouteAction {
                 // send the request to the upstream service channel and wait for the response...
                 let resp = svc_channel
                     .to_response(
-                        trans_ctx,
+                        trans_handler,
                         RequestExt::with_context(
                             RequestContext { route_timeout: self.timeout, retry_policy },
                             upstream_request,

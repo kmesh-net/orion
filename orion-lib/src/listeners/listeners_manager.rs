@@ -179,7 +179,7 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234),
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -218,7 +218,7 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1234),
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,

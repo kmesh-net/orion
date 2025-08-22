@@ -12,11 +12,11 @@ path = "src/main.rs"
 
 [features]
 config-dump = []
-console     = ["dep:console-subscriber"]
 dhat-heap   = ["dep:dhat"]
 jemalloc    = ["dep:tikv-jemallocator", "orion-metrics/jemalloc"]
 metrics     = ["orion-metrics/metrics"]
 prometheus  = ["metrics"]
+tracing     = []
 
 [dependencies]
 abort-on-drop.workspace        = true
@@ -28,6 +28,7 @@ orion-error.workspace          = true
 orion-format.workspace         = true
 orion-lib.workspace            = true
 orion-metrics.workspace        = true
+orion-tracing.workspace        = true
 orion-xds.workspace            = true
 parking_lot                    = "0.12.3"
 tokio.workspace                = true
@@ -37,7 +38,6 @@ tracing.workspace              = true
 affinity = "0.1.2"
 axum = "0.8.1"
 compact_str.workspace = true
-console-subscriber = { version = "0.4.0", optional = true }
 http.workspace = true
 opentelemetry = "0.29.0"
 prometheus = { version = "0.13.4", features = ["process"] }

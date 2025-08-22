@@ -35,7 +35,7 @@ use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use crate::config::{
     common::*,
-    network_filters::{access_log::AccessLog, tracing::Tracing},
+    network_filters::{access_log::AccessLog, tracing::TracingConfig},
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -69,7 +69,7 @@ pub struct HttpConnectionManager {
     pub preserve_external_request_id: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub always_set_request_id_in_response: bool,
-    pub tracing: Option<Tracing>,
+    pub tracing: Option<TracingConfig>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]

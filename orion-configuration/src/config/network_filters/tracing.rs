@@ -18,7 +18,7 @@
 //
 //
 
-use bounded_integer::BoundedU16;
+use ::bounded_integer::BoundedU16;
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +36,7 @@ use crate::config::grpc::GrpcService;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum SupportedTracingProvider {
-    OpenTelemtry(OpenTelemetryConfig),
+    OpenTelemetry(OpenTelemetryConfig),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -46,7 +46,7 @@ pub struct OpenTelemetryConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct Tracing {
+pub struct TracingConfig {
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub client_sampling: Option<BoundedU16<0, 100>>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -63,6 +63,12 @@ pub struct Tracing {
     pub provider: Option<SupportedTracingProvider>,
 }
 
+type ListenerName = &'static str;
+type FilterChainMatchHash = u64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TracingKey(pub ListenerName, pub FilterChainMatchHash);
+
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     use crate::config::{common::envoy_conversions::IsUsed, unsupported_field, GenericError};
@@ -71,7 +77,7 @@ mod envoy_conversions {
 
     use super::*;
 
-    impl TryFrom<EnvoyTracing> for Tracing {
+    impl TryFrom<EnvoyTracing> for TracingConfig {
         type Error = GenericError;
         fn try_from(envoy: EnvoyTracing) -> Result<Self, Self::Error> {
             let EnvoyTracing { client_sampling, random_sampling, overall_sampling, .. } = envoy;
@@ -148,7 +154,7 @@ mod envoy_conversions {
 
             let grpc_service = grpc_service.map(GrpcService::try_from).transpose()?;
 
-            Ok(SupportedTracingProvider::OpenTelemtry(OpenTelemetryConfig {
+            Ok(SupportedTracingProvider::OpenTelemetry(OpenTelemetryConfig {
                 grpc_service,
                 service_name: service_name.to_compact_string(),
             }))

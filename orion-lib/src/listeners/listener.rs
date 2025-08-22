@@ -33,6 +33,7 @@ use orion_configuration::config::{
     listener::{FilterChainMatch, Listener as ListenerConfig, MatchResult},
     listener_filters::DownstreamProxyProtocolConfig,
 };
+use orion_interner::StringInterner;
 use orion_metrics::{
     metrics::{http, listeners},
     with_histogram, with_metric,
@@ -72,7 +73,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
     type Error = Error;
     fn try_from(ctx: ConversionContext<'_, ListenerConfig>) -> std::result::Result<Self, Self::Error> {
         let ConversionContext { envoy_object: listener, secret_manager } = ctx;
-        let name = orion_interner::to_static_str(&listener.name);
+        let name = listener.name.to_static_str();
         let addr = listener.address;
         let with_tls_inspector = listener.with_tls_inspector;
         let proxy_protocol_config = listener.proxy_protocol_config;
@@ -168,7 +169,7 @@ impl Listener {
         use std::net::{IpAddr, Ipv4Addr};
         Listener {
             name,
-            socket_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
+            socket_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             bind_device: None,
             filter_chains: HashMap::new(),
             with_tls_inspector: false,
@@ -618,7 +619,7 @@ socket_options:
         ];
         let hashmap: HashMap<_, _> = fcm.iter().cloned().collect();
         let metadata = DownstreamConnectionMetadata::FromSocket {
-            peer_address: (Ipv4Addr::new(127, 0, 0, 1), 33000).into(),
+            peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
         };
         let selected = Listener::select_filterchain(&hashmap, &metadata, None).unwrap();
@@ -721,7 +722,7 @@ filter_chains:
             .collect::<std::result::Result<HashMap<_, _>, _>>()
             .unwrap();
         let metadata = DownstreamConnectionMetadata::FromSocket {
-            peer_address: (Ipv4Addr::new(127, 0, 0, 1), 33000).into(),
+            peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
         };
         assert_eq!(Listener::select_filterchain(&m, &metadata, None).unwrap().copied(), Some(3));

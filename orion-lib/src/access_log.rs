@@ -38,7 +38,7 @@ use tokio::{
     sync::mpsc::{Permit, Sender},
     task::JoinSet,
 };
-use tracing::error;
+use tracing::{error, info};
 
 /// Represents the destination for an access logging event.
 ///
@@ -150,7 +150,8 @@ pub fn start_access_loggers(
         receivers.push(receiver);
     }
 
-    error!("Initializing access loggers...");
+    info!("Initializing access loggers...");
+
     if SENDER_POOL.set(LoggerPool(senders)).is_err() {
         error!("Unable to initialize logger pool!");
         return JoinSet::new(); // Return an empty JoinSet on error

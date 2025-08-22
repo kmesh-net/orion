@@ -18,7 +18,7 @@
 //
 //
 
-use super::{RequestHandler, TransactionContext};
+use super::{RequestHandler, TransactionHandler};
 use crate::{
     PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
@@ -73,7 +73,7 @@ pub fn is_websocket_enabled_by_hcm(hcm_enabled_upgrades: &[UpgradeType]) -> bool
 }
 
 pub async fn handle_websocket_upgrade(
-    trans_ctx: &TransactionContext,
+    trans_handler: &TransactionHandler,
     mut request: Request<BodyWithMetrics<PolyBody>>,
     svc_channel: &HttpChannel,
 ) -> Result<Response<PolyBody>> {
@@ -81,7 +81,7 @@ pub async fn handle_websocket_upgrade(
     match version {
         Version::HTTP_11 => {
             let request_upgrade = hyper::upgrade::on(&mut request);
-            match svc_channel.to_response(trans_ctx, RequestExt::new(request)).await {
+            match svc_channel.to_response(trans_handler, RequestExt::new(request)).await {
                 Ok(mut upstream_response) if upstream_response.status() == StatusCode::SWITCHING_PROTOCOLS => {
                     let response_upgrade = hyper::upgrade::on(&mut upstream_response);
                     tokio::spawn(async move {

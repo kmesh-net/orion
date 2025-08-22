@@ -10,6 +10,7 @@ members = [
   "orion-lib",
   "orion-metrics",
   "orion-proxy",
+  "orion-tracing",
   "orion-xds",
 ]
 
@@ -36,9 +37,11 @@ orion-http-header    = { path = "orion-http-header" }
 orion-interner       = { path = "orion-interner" }
 orion-lib            = { path = "orion-lib" }
 orion-metrics        = { path = "orion-metrics" }
+orion-tracing        = { path = "orion-tracing" }
 orion-xds            = { path = "orion-xds" }
 
 abort-on-drop       = "0.2"
+bounded-integer     = "0.5.8"
 bytes               = "1"
 compact_str         = { version = "0.8.0", features = ["serde"] }
 exponential-backoff = "1.2.0"

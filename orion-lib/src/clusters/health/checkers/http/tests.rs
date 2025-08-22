@@ -33,12 +33,12 @@ use tokio::sync::mpsc;
 
 use super::*;
 use crate::{
-    PolyBody, Result,
     clusters::health::{
+        checkers::tests::{deref, TestFixture},
         HealthStatus,
-        checkers::tests::{TestFixture, deref},
     },
-    listeners::http_connection_manager::TransactionContext,
+    listeners::http_connection_manager::TransactionHandler,
+    PolyBody, Result,
 };
 
 /// Channels to report every time an HTTP request is made, `requests`,
@@ -63,7 +63,7 @@ impl MockHttpStack {
 impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for &MockHttpStack {
     async fn to_response(
         self,
-        _trans_ctx: &TransactionContext,
+        _trans_handler: &TransactionHandler,
         request: RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>,
     ) -> Result<Response<PolyBody>> {
         let state = &mut self.0.lock();

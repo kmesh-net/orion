@@ -92,6 +92,7 @@ impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
 pub struct FilterchainBuilder {
     name: CompactString,
     listener_name: Option<&'static str>,
+    filter_chain_match_hash: u64,
     main_filter: MainFilterBuilder,
     rbac_filters: Vec<NetworkRbac>,
     tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
@@ -111,9 +112,12 @@ impl FilterchainBuilder {
             rbac_filters: self.rbac_filters,
         };
         let handler = match self.main_filter {
-            MainFilterBuilder::Http(http_connection_manager) => {
-                ConnectionHandler::Http(Arc::new(http_connection_manager.with_listener_name(listener_name).build()?))
-            },
+            MainFilterBuilder::Http(http_connection_manager) => ConnectionHandler::Http(Arc::new(
+                http_connection_manager
+                    .with_listener_name(listener_name)
+                    .with_filter_chain_match_hash(self.filter_chain_match_hash)
+                    .build()?,
+            )),
             MainFilterBuilder::Tcp(tcp_proxy) => {
                 ConnectionHandler::Tcp(tcp_proxy.with_listener_name(listener_name).build()?)
             },
@@ -133,6 +137,7 @@ impl TryFrom<ConversionContext<'_, FilterChainConfig>> for FilterchainBuilder {
             tls_config.map(|tls_config| TlsConfigurator::try_from((tls_config, secret_manager))).transpose()?;
         Ok(FilterchainBuilder {
             name: filter_chain.name,
+            filter_chain_match_hash: filter_chain.filter_chain_match_hash,
             listener_name: None,
             main_filter,
             rbac_filters,
@@ -361,7 +366,7 @@ mod tests {
         .unwrap();
         let m: FilterChainMatch = m.try_into().unwrap();
         let dstport = 443;
-        let sourceip = Ipv4Addr::new(127, 0, 0, 1).into();
+        let sourceip = Ipv4Addr::LOCALHOST.into();
         let srcport = 33000;
         assert_eq!(m.matches_destination_ip(sourceip), MatchResult::NoRule);
         assert_eq!(m.matches_source_ip(sourceip), MatchResult::NoRule);

@@ -30,7 +30,7 @@ use tower::Service;
 
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind},
-    listeners::http_connection_manager::{RequestHandler, TransactionContext},
+    listeners::http_connection_manager::{RequestHandler, TransactionHandler},
     transport::{HttpChannel, policy::RequestExt},
 };
 
@@ -72,7 +72,7 @@ impl GrpcService {
         );
 
         let svc_resp =
-            self.inner.to_response(&Arc::new(TransactionContext::default()), RequestExt::new(http_req)).await?;
+            self.inner.to_response(&Arc::new(TransactionHandler::default()), RequestExt::new(http_req)).await?;
         Ok(svc_resp.map(to_grpc_body))
     }
 }

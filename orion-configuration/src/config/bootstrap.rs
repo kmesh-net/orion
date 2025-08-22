@@ -54,6 +54,18 @@ pub struct Node {
     pub cluster_id: CompactString,
 }
 
+impl Node {
+    pub fn service_name(&self) -> &str {
+        if !self.id.is_empty() {
+            &self.id
+        } else if !self.cluster_id.is_empty() {
+            &self.cluster_id
+        } else {
+            "unknown_service:orion"
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DynamicResources {
     pub grpc_cluster_specifiers: Vec<CompactString>,

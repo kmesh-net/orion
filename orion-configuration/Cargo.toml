@@ -30,6 +30,7 @@ opentelemetry-otlp = { version = "0.29.0", features = [
 orion-data-plane-api = { workspace = true, optional = true }
 orion-error.workspace = true
 orion-format.workspace = true
+orion-interner.workspace = true
 regex.workspace = true
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true

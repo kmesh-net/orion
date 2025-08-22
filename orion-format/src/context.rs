@@ -20,7 +20,6 @@
 
 use std::{
     net::SocketAddr,
-    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -31,8 +30,9 @@ use crate::{
 };
 use ahash::AHasher;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use http::{Request, Response, Version, uri::Authority};
+use http::{Request, Response, uri::Authority};
 use orion_http_header::*;
+use orion_interner::StringInterner;
 use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr, format_smolstr};
 use uuid::Uuid;
 
@@ -186,7 +186,7 @@ pub struct InitHttpContext<'a, T> {
     pub start_time: SystemTime,
     pub downstream_request: &'a Request<T>,
     pub request_head_size: usize,
-    pub trace_id: Option<&'a Arc<str>>,
+    pub trace_id: Option<u128>,
 }
 
 impl<T> Context for InitHttpContext<'_, T> {
@@ -292,7 +292,7 @@ impl Context for FinishContext {
 pub struct DownstreamContext<'a, T> {
     pub request: &'a Request<T>,
     pub request_head_size: usize,
-    pub trace_id: Option<&'a Arc<str>>,
+    pub trace_id: Option<u128>,
 }
 
 pub struct DownstreamResponse<'a, T> {
@@ -348,12 +348,12 @@ impl<T> Context for DownstreamContext<'_, T> {
             },
             Operator::TraceId => {
                 if let Some(trace_id) = self.trace_id {
-                    StringType::Smol(SmolStr::from(trace_id.clone()))
+                    StringType::Smol(format_smolstr!("{:032x}", trace_id))
                 } else {
                     StringType::None
                 }
             },
-            Operator::Protocol => StringType::Smol(SmolStr::new_static(into_protocol(self.request.version()))),
+            Operator::Protocol => StringType::Smol(SmolStr::new_static(self.request.version().to_static_str())),
             _ => StringType::None,
         }
     }
@@ -365,7 +365,7 @@ impl<T> Context for UpstreamRequest<'_, T> {
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::UpstreamProtocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
+            Operator::UpstreamProtocol => StringType::Smol(SmolStr::new_static(self.0.version().to_static_str())),
             Operator::UniqueId => {
                 let uuid = self
                     .0
@@ -428,17 +428,6 @@ const TWO_DIGITS: [&str; 100] = [
     "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87", "88", "89", "90", "91", "92", "93", "94",
     "95", "96", "97", "98", "99",
 ];
-
-#[inline]
-fn into_protocol(ver: Version) -> &'static str {
-    match ver {
-        Version::HTTP_10 => "HTTP/1.0",
-        Version::HTTP_11 => "HTTP/1.1",
-        Version::HTTP_2 => "HTTP/2",
-        Version::HTTP_3 => "HTTP/3",
-        _ => "HTTP/UNKNOWN",
-    }
-}
 
 pub fn format_system_time(time: SystemTime) -> SmolStr {
     let datetime: DateTime<Utc> = time.into();

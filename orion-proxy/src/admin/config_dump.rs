@@ -256,6 +256,7 @@ mod config_dump_tests {
                     FilterChainMatch::default(),
                     FilterChain {
                         name: CompactString::from("fc1"),
+                        filter_chain_match_hash: 0,
                         tls_config: None,
                         rbac: vec![],
                         terminal_filter: MainFilter::Http(HttpConnectionManager {

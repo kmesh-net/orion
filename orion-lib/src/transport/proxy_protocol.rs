@@ -417,8 +417,8 @@ mod tests {
             disallowed_versions: Vec::new(),
             pass_through_tlvs: None,
         };
-        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 54321);
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
+        let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 54321);
         let reader = ProxyProtocolReader::new(Arc::new(config));
 
         let v1_header = b"PROXY TCP4 192.168.1.100 10.0.0.1 54321 80\r\n";
@@ -459,8 +459,8 @@ mod tests {
             disallowed_versions: Vec::new(),
             pass_through_tlvs: None,
         };
-        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 54321);
+        let local_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
+        let peer_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 54321);
         let reader = ProxyProtocolReader::new(Arc::new(config));
 
         let source_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 100)), 12345);

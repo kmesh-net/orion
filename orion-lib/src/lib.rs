@@ -27,7 +27,6 @@ pub mod clusters;
 mod listeners;
 mod secrets;
 pub(crate) mod thread_local;
-pub(crate) mod trace;
 mod transport;
 pub(crate) mod utils;
 

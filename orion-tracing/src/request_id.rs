@@ -63,7 +63,6 @@ impl RequestId {
         }
     }
 
-    #[allow(dead_code)]
     pub fn propagate_ref(&self) -> Option<&HeaderValue> {
         match self {
             RequestId::Propagate(id) => Some(id),
@@ -71,7 +70,6 @@ impl RequestId {
         }
     }
 
-    #[allow(dead_code)]
     pub fn internal_ref(&self) -> Option<&HeaderValue> {
         match self {
             RequestId::Internal(id) => Some(id),

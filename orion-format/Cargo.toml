@@ -11,10 +11,11 @@ workspace = true
 [dependencies]
 http.workspace              = true
 orion-http-header.workspace = true
-thiserror.workspace         = true
+orion-interner.workspace = true
+thiserror.workspace      = true
 
 ahash          = "0.8.11"
-bitflags       = { version = "2.9.0", features = ["serde"] }
+bitflags        = { version = "2.9.0", features = ["serde"] }
 chrono         = "0.4.40"
 compact_str    = "0.8.0"
 criterion      = "0.5.1"

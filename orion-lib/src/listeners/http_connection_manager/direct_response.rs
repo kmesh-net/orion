@@ -17,7 +17,7 @@
 // limitations under the License.
 //
 //
-use super::{RequestHandler, TransactionContext};
+use super::{RequestHandler, TransactionHandler};
 use crate::{
     PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
@@ -29,7 +29,7 @@ use orion_configuration::config::network_filters::http_connection_manager::route
 impl RequestHandler<Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>> for &DirectResponseAction {
     async fn to_response(
         self,
-        _ctx: &TransactionContext,
+        _ctx: &TransactionHandler,
         request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
     ) -> Result<Response<PolyBody>> {
         let body = Full::new(self.body.as_ref().map(|b| bytes::Bytes::copy_from_slice(b.data())).unwrap_or_default());

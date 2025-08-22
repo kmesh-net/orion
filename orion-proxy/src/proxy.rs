@@ -26,18 +26,23 @@ use crate::{
 };
 use compact_str::ToCompactString;
 use futures::future::join_all;
-use orion_configuration::config::{bootstrap::Node, log::AccessLogConfig, runtime::Affinity, Bootstrap};
+use orion_configuration::config::{
+    bootstrap::Node,
+    log::AccessLogConfig,
+    network_filters::tracing::{TracingConfig, TracingKey},
+    runtime::Affinity,
+    Bootstrap,
+};
 use orion_error::Context;
 use orion_lib::{
     access_log::{start_access_loggers, update_configuration, Target},
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
     ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
 };
-use orion_metrics::{
-    launch_metrics_exporter, metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics,
-};
+use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
 use parking_lot::RwLock;
 use std::{
+    collections::HashMap,
     sync::Arc,
     thread::{self, JoinHandle},
 };
@@ -86,6 +91,8 @@ struct ServiceInfo {
     clusters: Vec<orion_lib::PartialClusterType>,
     ads_cluster_names: Vec<String>,
     access_log_config: Option<AccessLogConfig>,
+    tracing: HashMap<TracingKey, TracingConfig>,
+    metrics: Vec<Metrics>,
 }
 
 fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
@@ -93,38 +100,24 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
 
-    // launch metrics exporters...
+    // build the XDS configuration channels...
+    //
+
+    let (config_senders, config_receivers): (Vec<ConfigurationSenders>, Vec<ConfigurationReceivers>) =
+        (0..num_runtimes).map(|_| new_configuration_channel(100)).collect::<Vec<_>>().into_iter().unzip();
+
+    // launch services runtime...
     //
 
     let metrics = VecMetrics::from(&bootstrap).0;
-    let metrics_handle = spawn_metrics_runtime_from_thread("metrics", 1, None, metrics.clone())?;
+    let are_metrics_empty = metrics.is_empty();
 
-    info!("Waiting for metrics setup to complete...");
-    wait_for_metrics_setup();
-
-    let num_threads_per_runtime = calculate_num_threads_per_runtime(num_cpus, num_runtimes)
-        .with_context_msg("failed to calculate number of threads to use per runtime")?;
-    info!("using {} runtimes with {num_threads_per_runtime} threads each", rt_config.num_runtimes());
-
-    // initialize global metrics...
-    init_global_metrics(&metrics, num_threads_per_runtime * num_runtimes);
-
-    info!("Launching with {} cpus, {} runtimes", num_cpus, num_runtimes);
-
-    let handles = {
-        (0..num_runtimes)
-            .map(|id| {
-                spawn_proxy_runtime_from_thread(
-                    "proxy",
-                    num_threads_per_runtime,
-                    metrics.clone(),
-                    rt_config.affinity_strategy.clone().map(|affinity| (RuntimeId(id), affinity)),
-                )
-            })
-            .collect::<Result<Vec<_>>>()?
-    };
-
-    let (proxy_handles, configuration_senders): (Vec<_>, Vec<_>) = handles.into_iter().unzip();
+    let tracing = bootstrap
+        .static_resources
+        .listeners
+        .iter()
+        .flat_map(|l| l.get_tracing_configurations())
+        .collect::<HashMap<_, _>>();
 
     // The xDS runtime always runs - this is necessary for initialization even if we do not
     // use dynamic updates from remote xDS servers. The decision on whether dynamic updates
@@ -149,13 +142,15 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
 
     let service_info = ServiceInfo {
         node,
-        configuration_senders: configuration_senders.clone(),
+        configuration_senders: config_senders,
         secret_manager,
         listener_factories,
         bootstrap,
         clusters,
         ads_cluster_names,
         access_log_config,
+        tracing,
+        metrics: metrics.clone(),
     };
 
     let services_handle = spawn_services_runtime_from_thread(
@@ -165,11 +160,40 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         service_info,
     )?;
 
-    let handles = proxy_handles
-        .into_iter()
-        .chain(std::iter::once(metrics_handle))
-        .chain(std::iter::once(services_handle))
-        .collect::<Vec<_>>();
+    if !are_metrics_empty {
+        info!("Waiting for metrics setup to complete...");
+        wait_for_metrics_setup();
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////////////
+    // run the proxy runtimes...
+    //
+
+    let num_threads_per_runtime = calculate_num_threads_per_runtime(num_cpus, num_runtimes)
+        .with_context_msg("failed to calculate number of threads to use per runtime")?;
+    info!("using {} runtimes with {num_threads_per_runtime} threads each", rt_config.num_runtimes());
+
+    // initialize global metrics...
+    init_global_metrics(&metrics, num_threads_per_runtime * num_runtimes);
+
+    info!("Launching with {} cpus, {} runtimes", num_cpus, num_runtimes);
+
+    let proxy_handles = {
+        (0..num_runtimes)
+            .zip(config_receivers.into_iter())
+            .map(|(id, config_receivers)| {
+                spawn_proxy_runtime_from_thread(
+                    "proxy",
+                    num_threads_per_runtime,
+                    metrics.clone(),
+                    rt_config.affinity_strategy.clone().map(|affinity| (RuntimeId(id), affinity)),
+                    config_receivers,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    let handles = proxy_handles.into_iter().chain(std::iter::once(services_handle)).collect::<Vec<_>>();
 
     for h in handles {
         if let Err(err) = h.join() {
@@ -186,9 +210,8 @@ fn spawn_proxy_runtime_from_thread(
     num_threads: usize,
     metrics: Vec<Metrics>,
     affinity_info: Option<(RuntimeId, Affinity)>,
-) -> Result<(RuntimeHandle, ConfigurationSenders)> {
-    let (configuration_senders, configuration_receivers) = new_configuration_channel(100);
-
+    configuration_receivers: ConfigurationReceivers,
+) -> Result<RuntimeHandle> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
 
     let handle: JoinHandle<Result<()>> = thread::Builder::new().name(thread_name.clone()).spawn(move || {
@@ -206,26 +229,7 @@ fn spawn_proxy_runtime_from_thread(
             }
         })
     })?;
-    Ok((handle, configuration_senders))
-}
-
-fn spawn_metrics_runtime_from_thread(
-    thread_name: &'static str,
-    num_threads: usize,
-    affinity_info: Option<(RuntimeId, Affinity)>,
-    metrics: Vec<Metrics>,
-) -> Result<RuntimeHandle> {
-    let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
-    let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
-        let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, None);
-        rt.block_on(async {
-            launch_metrics_exporter(&metrics).await?;
-            tokio::signal::ctrl_c().await?;
-            info!("CTRL+C received. Shutting down metrics runtime.");
-            Ok(())
-        })
-    })?;
-    Ok(rt_handle)
+    Ok(handle)
 }
 
 fn spawn_services_runtime_from_thread(
@@ -240,7 +244,10 @@ fn spawn_services_runtime_from_thread(
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, None);
         rt.block_on(async {
             tokio::select! {
-                () = spawn_services(service_info) => {
+                result = spawn_services(service_info) => {
+                    if let Err(err) = result {
+                        warn!("Error in services runtime: {err:?}");
+                    }
                     info!("Service Runtime terminated!");
                     Ok(())
                 }
@@ -262,7 +269,7 @@ fn build_thread_name(thread_name: &'static str, affinity_info: Option<&(RuntimeI
     }
 }
 
-async fn spawn_services(info: ServiceInfo) {
+async fn spawn_services(info: ServiceInfo) -> Result<()> {
     let ServiceInfo {
         bootstrap,
         node,
@@ -272,6 +279,9 @@ async fn spawn_services(info: ServiceInfo) {
         clusters,
         ads_cluster_names,
         access_log_config,
+        metrics,
+        #[allow(unused_variables)]
+        tracing,
     } = info;
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
@@ -323,7 +333,24 @@ async fn spawn_services(info: ServiceInfo) {
         });
     }
 
+    // spawn metrics exporter...
+    if metrics.is_empty() {
+        info!("OTEL metrics: stats_sink not configured (skipped)");
+    } else {
+        #[cfg(feature = "tracing")]
+        orion_metrics::otel_launch_exporter(&metrics).await?;
+    }
+
+    // spawn tracing exporters...
+    #[cfg(feature = "tracing")]
+    if tracing.is_empty() {
+        info!("OTEL tracing: no tracers configured (skipped)");
+    } else {
+        orion_tracing::otel_update_tracers(tracing)?;
+    }
+
     set.join_all().await;
+    Ok(())
 }
 
 async fn configure_initial_resources(

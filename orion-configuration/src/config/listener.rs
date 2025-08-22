@@ -27,14 +27,18 @@ use super::{
     GenericError,
 };
 use crate::config::listener;
+use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
 use compact_str::CompactString;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize, Serializer};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     str::FromStr,
 };
+
+use orion_interner::StringInterner;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Listener {
@@ -55,14 +59,35 @@ impl Listener {
         self.filter_chains
             .iter()
             .flat_map(|(_, filter_chain)| match &filter_chain.terminal_filter {
-                crate::config::listener::MainFilter::Http(http_connection_manager) => {
+                MainFilter::Http(http_connection_manager) => {
                     http_connection_manager.access_log.iter().map(AccessLog::get_config).cloned().collect::<Vec<_>>()
                 },
-                crate::config::listener::MainFilter::Tcp(tcp_proxy) => {
+                MainFilter::Tcp(tcp_proxy) => {
                     tcp_proxy.access_log.iter().map(AccessLog::get_config).cloned().collect::<Vec<_>>()
                 },
             })
             .collect::<Vec<_>>()
+    }
+
+    pub fn get_tracing_configurations(&self) -> HashMap<TracingKey, TracingConfig> {
+        self.filter_chains
+            .iter()
+            .filter_map(|(filter_chain_match, filter_chain)| {
+                let mut filter_chain_match_hash = DefaultHasher::new();
+                filter_chain_match.hash(&mut filter_chain_match_hash);
+
+                match &filter_chain.terminal_filter {
+                    MainFilter::Http(http_connection_manager) => match http_connection_manager.tracing {
+                        Some(ref tracing) => Some((
+                            TracingKey(self.name.to_static_str(), filter_chain_match_hash.finish()),
+                            tracing.clone(),
+                        )),
+                        None => None,
+                    },
+                    MainFilter::Tcp(_) => None,
+                }
+            })
+            .collect::<HashMap<_, _>>()
     }
 }
 
@@ -111,6 +136,7 @@ mod serde_filterchains {
 }
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FilterChain {
+    pub filter_chain_match_hash: u64,
     pub name: CompactString,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub tls_config: Option<listener::TlsConfig>,
@@ -290,7 +316,9 @@ pub struct TlsConfig {
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use std::{collections::HashMap, str::FromStr};
+    use std::collections::HashMap;
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    use std::str::FromStr;
 
     use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
     use crate::config::{
@@ -544,7 +572,13 @@ mod envoy_conversions {
                     .transpose()
                     .with_node("transport_socket")?
                     .flatten();
-                Ok(FilterChainWrapper((filter_chain_match, FilterChain { name, rbac, terminal_filter, tls_config })))
+
+                let mut s = DefaultHasher::new();
+                filter_chain_match.hash(&mut s);
+                Ok(FilterChainWrapper((
+                    filter_chain_match,
+                    FilterChain { filter_chain_match_hash: s.finish(), name, rbac, terminal_filter, tls_config },
+                )))
             }())
             .with_name(name)
         }
