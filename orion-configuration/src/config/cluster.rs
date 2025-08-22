@@ -255,223 +255,134 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: EnvoyCluster) -> Result<Self, Self::Error> {
             let EnvoyCluster {
-                transport_socket_matches,
                 name,
-                alt_stat_name,
-                eds_cluster_config,
                 connect_timeout,
-                per_connection_buffer_limit_bytes,
                 lb_policy,
                 load_assignment,
                 health_checks,
-                max_requests_per_connection,
-                circuit_breakers,
-                upstream_http_protocol_options,
-                common_http_protocol_options,
-                http_protocol_options,
-                http2_protocol_options,
-                typed_extension_protocol_options,
-                dns_refresh_rate,
-                dns_failure_refresh_rate,
-                respect_dns_ttl,
-                dns_lookup_family,
-                dns_resolvers,
-                use_tcp_for_dns_lookups,
-                dns_resolution_config,
-                typed_dns_resolver_config,
-                wait_for_warm_on_init,
-                outlier_detection,
-                cleanup_interval,
                 upstream_bind_config,
-                lb_subset_config,
-                common_lb_config,
                 transport_socket,
-                metadata,
-                protocol_selection,
-                upstream_connection_options,
-                close_connections_on_host_health_failure,
-                ignore_health_on_host_removal,
-                filters,
-                load_balancing_policy,
-                lrs_server,
-                track_timeout_budgets,
-                upstream_config,
-                track_cluster_stats,
-                preconnect_policy,
-                connection_pool_per_downstream_connection,
+                typed_extension_protocol_options,
                 cluster_discovery_type,
                 lb_config,
-                dns_jitter: _,
-                lrs_report_endpoint_metrics: _,
+                ..
             } = envoy;
-            let name = required!(name)?;
-            (|| -> Result<Self, GenericError> {
-                unsupported_field!(
-                    transport_socket_matches,
-                    // name,
-                    alt_stat_name,
-                    eds_cluster_config,
-                    // connect_timeout,
-                    per_connection_buffer_limit_bytes,
-                    // lb_policy,
-                    // load_assignment,
-                    // health_checks,
-                    max_requests_per_connection,
-                    circuit_breakers,
-                    upstream_http_protocol_options,
-                    common_http_protocol_options,
-                    http_protocol_options,
-                    http2_protocol_options,
-                    // typed_extension_protocol_options,
-                    dns_refresh_rate,
-                    dns_failure_refresh_rate,
-                    respect_dns_ttl,
-                    dns_lookup_family,
-                    dns_resolvers,
-                    use_tcp_for_dns_lookups,
-                    dns_resolution_config,
-                    typed_dns_resolver_config,
-                    wait_for_warm_on_init,
-                    outlier_detection,
-                    cleanup_interval,
-                    // upstream_bind_config,
-                    lb_subset_config,
-                    common_lb_config,
-                    // transport_socket,
-                    metadata,
-                    protocol_selection,
-                    upstream_connection_options,
-                    close_connections_on_host_health_failure,
-                    ignore_health_on_host_removal,
-                    filters,
-                    load_balancing_policy,
-                    lrs_server,
-                    track_timeout_budgets,
-                    upstream_config,
-                    track_cluster_stats,
-                    preconnect_policy,
-                    connection_pool_per_downstream_connection
-                    // cluster_discovery_type,                                                              
-                    // lb_config
-                )?;
 
-                if let Some(lb_config_type) = &lb_config {
-                    // `lb_config` is a synthetic enum created when parsing the configuration,
-                    // we can't report it as the actual offending field
-                    let err = match lb_config_type {
-                        EnvoyLbConfig::RingHashLbConfig(_) => GenericError::UnsupportedField("ring_hash_lb_config"),
-                        EnvoyLbConfig::MaglevLbConfig(_) => GenericError::UnsupportedField("maglev_lb_config"),
-                        EnvoyLbConfig::OriginalDstLbConfig(_) => {
-                            GenericError::UnsupportedField("original_dst_lb_config")
-                        },
-                        EnvoyLbConfig::LeastRequestLbConfig(_) => {
-                            GenericError::UnsupportedField("least_request_lb_config")
-                        },
-                        EnvoyLbConfig::RoundRobinLbConfig(_) => GenericError::UnsupportedField("round_robin_lb_config"),
-                    };
-                    Err(err)?
-                }
+            if let Some(lb_config_type) = &lb_config {
+                // `lb_config` is a synthetic enum created when parsing the configuration,
+                // we can't report it as the actual offending field
+                let err = match lb_config_type {
+                    EnvoyLbConfig::RingHashLbConfig(_) => GenericError::UnsupportedField("ring_hash_lb_config"),
+                    EnvoyLbConfig::MaglevLbConfig(_) => GenericError::UnsupportedField("maglev_lb_config"),
+                    EnvoyLbConfig::OriginalDstLbConfig(_) => GenericError::UnsupportedField("original_dst_lb_config"),
+                    EnvoyLbConfig::LeastRequestLbConfig(_) => GenericError::UnsupportedField("least_request_lb_config"),
+                    EnvoyLbConfig::RoundRobinLbConfig(_) => GenericError::UnsupportedField("round_robin_lb_config"),
+                };
+                Err(err)?
+            }
 
-                let name = CompactString::from(&name);
-                // let cluster_discovery_type = convert_opt!(cluster_discovery_type)?;
-                let discovery_settings = (
-                    required!(cluster_discovery_type)?,
-                    load_assignment.map(ClusterLoadAssignment::try_from).transpose().with_node("load_assignment")?,
-                )
-                    .try_into()
-                    .with_node("cluster_discovery_type")?;
-                //fixme(hayley): the envoy protobuf documentation says:
-                // > If the address and port are empty, no bind will be performed.
-                // but its unclear what adress this is refering to. For now we will always bind.
-                let bind_device = upstream_bind_config
-                    .map(bind_device_from_bind_config)
-                    .transpose()
-                    .with_node("upstream_bind_config")?
-                    .flatten();
-                let tls_config = transport_socket.map(TlsConfig::try_from).transpose().with_node("transport_socket")?;
-                let load_balancing_policy = lb_policy.try_into().with_node("lb_policy")?;
-                let http_protocol_options = typed_extension_protocol_options
-                    .into_values()
-                    .map(HttpProtocolOptions::try_from)
-                    .collect::<Result<Vec<_>, GenericError>>()
-                    .with_node("typed_extension_protocol_options")?;
-                if http_protocol_options.len() > 1 {
-                    return Err(GenericError::from_msg(
-                        "Only one set of http protocol options can be specified per upstream",
-                    ))
-                    .with_node("typed_extension_protocol_options");
-                }
-                let http_protocol_options = http_protocol_options.into_iter().next().unwrap_or_default();
-                if health_checks.len() > 1 {
-                    return Err(GenericError::from_msg("only one healthcheck per cluster is supported")
-                        .with_node("health_check"));
-                }
-                let health_check = health_checks
-                    .into_iter()
-                    .next()
-                    .map(HealthCheck::try_from)
-                    .transpose()
-                    .with_index(0)
-                    .with_node("health_checks")?;
+            let name = CompactString::from(&name);
+            if name.is_empty() {
+                return Err(GenericError::MissingField("name"));
+            }
+            let name_for_with_name = name.clone();
+            // let cluster_discovery_type = convert_opt!(cluster_discovery_type)?;
+            let discovery_settings = (
+                required!(cluster_discovery_type)?,
+                load_assignment.map(ClusterLoadAssignment::try_from).transpose().with_node("load_assignment")?,
+            )
+                .try_into()
+                .with_node("cluster_discovery_type")?;
+            //fixme(hayley): the envoy protobuf documentation says:
+            // > If the address and port are empty, no bind will be performed.
+            // but its unclear what adress this is refering to. For now we will always bind.
+            let bind_device = upstream_bind_config
+                .map(bind_device_from_bind_config)
+                .transpose()
+                .with_node("upstream_bind_config")?
+                .flatten();
+            let tls_config = transport_socket.map(TlsConfig::try_from).transpose().with_node("transport_socket")?;
+            let load_balancing_policy = lb_policy.try_into().with_node("lb_policy")?;
+            let http_protocol_options = typed_extension_protocol_options
+                .into_values()
+                .map(HttpProtocolOptions::try_from)
+                .collect::<Result<Vec<_>, GenericError>>()
+                .with_node("typed_extension_protocol_options")?;
+            if http_protocol_options.len() > 1 {
+                return Err(GenericError::from_msg(
+                    "Only one set of http protocol options can be specified per upstream",
+                ))
+                .with_node("typed_extension_protocol_options");
+            }
+            let http_protocol_options = http_protocol_options.into_iter().next().unwrap_or_default();
+            if health_checks.len() > 1 {
+                return Err(
+                    GenericError::from_msg("only one healthcheck per cluster is supported").with_node("health_check")
+                );
+            }
+            let health_check = health_checks
+                .into_iter()
+                .next()
+                .map(HealthCheck::try_from)
+                .transpose()
+                .with_index(0)
+                .with_node("health_checks")?;
 
-                // These are soft validations related to the health checkers that are hard to encode in the type system,
-                // so we'll try to detect as many of them here and fail now. These validations are done again in the
-                // actual health checking code, but since we validated the data here, they should always come clean.
-                if let Some(health_check_value) = &health_check {
-                    match &health_check_value.protocol {
-                        HealthCheckProtocol::Http(http_check) => {
-                            // Validate the host name for the HTTP request
-                            match http_check.host(&name) {
-                                Ok(_) => (),
-                                Err(err @ ClusterHostnameError) => {
-                                    return Err(GenericError::from_msg_with_cause(
-                                        "tried to use the cluster name as the HTTP health check host name (since http_health_check.host was not specified) but failed",
-                                        err,
-                                    )
-                                    .with_node("name"))
-                                },
-                            }
-
-                            // Validate the HTTP version of the health checker is supported by the HTTP options
-                            if http_check.http_version != http_protocol_options.codec {
-                                return Err(GenericError::from_msg(
-                                    "health check and cluster HTTP versions don't match",
+            // These are soft validations related to the health checkers that are hard to encode in the type system,
+            // so we'll try to detect as many of them here and fail now. These validations are done again in the
+            // actual health checking code, but since we validated the data here, they should always come clean.
+            if let Some(health_check_value) = &health_check {
+                match &health_check_value.protocol {
+                    HealthCheckProtocol::Http(http_check) => {
+                        // Validate the host name for the HTTP request
+                        match http_check.host(&name) {
+                            Ok(_) => (),
+                            Err(err @ ClusterHostnameError) => {
+                                return Err(GenericError::from_msg_with_cause(
+                                    "tried to use the cluster name as the HTTP health check host name (since http_health_check.host was not specified) but failed",
+                                    err,
                                 )
+                                .with_node("name"))
+                            },
+                        }
+
+                        // Validate the HTTP version of the health checker is supported by the HTTP options
+                        if http_check.http_version != http_protocol_options.codec {
+                            return Err(GenericError::from_msg("health check and cluster HTTP versions don't match")
                                 .with_node("codec_client_type")
                                 .with_node("http_health_check")
                                 .with_index(0)
                                 .with_node("health_checks"));
-                            }
-                        },
-                        HealthCheckProtocol::Grpc(_) => {
-                            if !http_protocol_options.codec.is_http2() {
-                                return Err(GenericError::from_msg("gRPC health checker requires HTTP 2")
-                                    .with_node("grpc_health_check")
-                                    .with_index(0)
-                                    .with_node("health_checks"));
-                            }
-                        },
-                        HealthCheckProtocol::Tcp(_) => (),
-                    }
+                        }
+                    },
+                    HealthCheckProtocol::Grpc(_) => {
+                        if !http_protocol_options.codec.is_http2() {
+                            return Err(GenericError::from_msg("gRPC health checker requires HTTP 2")
+                                .with_node("grpc_health_check")
+                                .with_index(0)
+                                .with_node("health_checks"));
+                        }
+                    },
+                    HealthCheckProtocol::Tcp(_) => (),
                 }
+            }
 
-                let connect_timeout = connect_timeout
-                    .map(duration_from_envoy)
-                    .transpose()
-                    .map_err(|_| GenericError::from_msg("Failed to convert connect_timeout into Duration"))
-                    .with_node("connect_timeout")?;
-                Ok(Self {
-                    name,
-                    discovery_settings,
-                    bind_device,
-                    tls_config,
-                    load_balancing_policy,
-                    http_protocol_options,
-                    health_check,
-                    connect_timeout,
-                })
-            })()
-            .with_name(name)
+            let connect_timeout = connect_timeout
+                .map(duration_from_envoy)
+                .transpose()
+                .map_err(|_| GenericError::from_msg("Failed to convert connect_timeout into Duration"))
+                .with_node("connect_timeout")?;
+            Ok(Self {
+                name,
+                discovery_settings,
+                bind_device,
+                tls_config,
+                load_balancing_policy,
+                http_protocol_options,
+                health_check,
+                connect_timeout,
+            })
+            .with_name(name_for_with_name)
         }
     }
 

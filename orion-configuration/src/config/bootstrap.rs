@@ -87,87 +87,7 @@ mod envoy_conversions {
     impl TryFrom<EnvoyBootstrap> for Bootstrap {
         type Error = GenericError;
         fn try_from(envoy: EnvoyBootstrap) -> Result<Self, Self::Error> {
-            let EnvoyBootstrap {
-                node,
-                node_context_params,
-                static_resources,
-                dynamic_resources,
-                cluster_manager,
-                hds_config,
-                flags_path,
-                stats_sinks,
-                deferred_stat_options,
-                stats_config,
-                stats_flush_interval,
-                watchdog,
-                watchdogs,
-                tracing,
-                layered_runtime,
-                admin,
-                overload_manager,
-                enable_dispatcher_stats,
-                header_prefix,
-                stats_server_version_override,
-                use_tcp_for_dns_lookups,
-                dns_resolution_config,
-                typed_dns_resolver_config,
-                bootstrap_extensions,
-                fatal_actions,
-                config_sources,
-                default_config_source,
-                default_socket_interface,
-                certificate_provider_instances,
-                inline_headers,
-                perf_tracing_file_path,
-                default_regex_engine,
-                xds_delegate_extension,
-                xds_config_tracker_extension,
-                listener_manager,
-                application_log_config,
-                grpc_async_client_manager_config,
-                stats_flush,
-                memory_allocator_manager: _,
-            } = envoy;
-            unsupported_field!(
-                // node,
-                node_context_params,
-                // static_resources,
-                // dynamic_resources,
-                cluster_manager,
-                hds_config,
-                flags_path,
-                stats_sinks,
-                deferred_stat_options,
-                stats_config,
-                stats_flush_interval,
-                watchdog,
-                watchdogs,
-                tracing,
-                layered_runtime,
-                admin,
-                overload_manager,
-                enable_dispatcher_stats,
-                header_prefix,
-                stats_server_version_override,
-                use_tcp_for_dns_lookups,
-                dns_resolution_config,
-                typed_dns_resolver_config,
-                bootstrap_extensions,
-                fatal_actions,
-                config_sources,
-                default_config_source,
-                default_socket_interface,
-                certificate_provider_instances,
-                inline_headers,
-                perf_tracing_file_path,
-                default_regex_engine,
-                xds_delegate_extension,
-                xds_config_tracker_extension,
-                listener_manager,
-                application_log_config,
-                grpc_async_client_manager_config,
-                stats_flush
-            )?;
+            let EnvoyBootstrap { node, static_resources, dynamic_resources, .. } = envoy;
             let static_resources = convert_opt!(static_resources)?;
             let dynamic_resources =
                 dynamic_resources.map(DynamicResources::try_from).transpose().with_node("dynamic_resources")?;
@@ -215,61 +135,23 @@ mod envoy_conversions {
                 cds_config,
                 cds_resources_locator,
                 ads_config,
+                ..
             } = value;
             unsupported_field!(lds_config, lds_resources_locator, cds_config, cds_resources_locator)?;
-            let EnvoyApiConfigSource {
-                api_type,
-                transport_api_version,
-                cluster_names,
-                grpc_services,
-                refresh_delay,
-                request_timeout,
-                rate_limit_settings,
-                set_node_on_first_message_only,
-                config_validators,
-            } = required!(ads_config)?;
-            let grpc_cluster_specifiers = (|| -> Result<_, GenericError> {
-                unsupported_field!(
-                    //todo(hayley): are these required to be set?
-                    api_type,
-                    transport_api_version,
-                    cluster_names,
-                    // grpc_services,
-                    refresh_delay,
-                    request_timeout,
-                    rate_limit_settings,
-                    set_node_on_first_message_only,
-                    config_validators
-                )?;
-                (|| -> Result<_, GenericError> {
-                    let mut cluster_specifiers = Vec::new();
-                    for EnvoyGrpcService { timeout, initial_metadata, target_specifier, retry_policy: _ } in
-                        required!(grpc_services)?
-                    {
-                        unsupported_field!(timeout, initial_metadata)?;
-                        match required!(target_specifier)? {
-                            EnvoyGrpcTargetSpecifier::EnvoyGrpc(EnvoyGrpc {
-                                cluster_name,
-                                authority,
-                                retry_policy,
-                                max_receive_message_length: _,
-                                skip_envoy_headers: _,
-                            }) => {
-                                unsupported_field!(authority, retry_policy).with_node("target_specifier")?;
-                                let cluster_name = required!(cluster_name).with_node("target_specifier")?;
-                                cluster_specifiers.push(CompactString::from(cluster_name))
-                            },
-                            EnvoyGrpcTargetSpecifier::GoogleGrpc(_) => {
-                                return Err(GenericError::unsupported_variant("GoogleGrpc"))
-                                    .with_node("target_specifier")
-                            },
-                        }
-                    }
-                    Ok(cluster_specifiers)
-                })()
-                .with_node("grpc_services")
-            })()
-            .with_node("ads_config")?;
+            let grpc_cluster_specifiers: Vec<compact_str::CompactString> = ads_config
+                .map(|config| {
+                    config
+                        .grpc_services
+                        .into_iter()
+                        .filter_map(|service| match service.target_specifier {
+                            Some(EnvoyGrpcTargetSpecifier::EnvoyGrpc(grpc)) if !grpc.cluster_name.is_empty() => {
+                                Some(grpc.cluster_name.into())
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
             Ok(DynamicResources { grpc_cluster_specifiers })
         }
     }
