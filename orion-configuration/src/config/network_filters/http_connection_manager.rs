@@ -880,50 +880,13 @@ mod envoy_conversions {
                 name,
                 domains,
                 routes,
-                matcher,
-                require_tls,
-                virtual_clusters,
-                rate_limits,
                 request_headers_to_add,
                 request_headers_to_remove,
                 response_headers_to_add,
                 response_headers_to_remove,
-                cors,
-                typed_per_filter_config,
-                include_request_attempt_count,
-                include_attempt_count_in_response,
                 retry_policy,
-                retry_policy_typed_config,
-                hedge_policy,
-                include_is_timeout_retry_header,
-                per_request_buffer_limit_bytes,
-                request_mirror_policies,
-                metadata,
+                ..
             } = envoy;
-            unsupported_field!(
-                // name,
-                // domains,
-                // routes,
-                matcher,
-                require_tls,
-                virtual_clusters,
-                rate_limits,
-                // request_headers_to_add,
-                // request_headers_to_remove,
-                // response_headers_to_add,
-                // response_headers_to_remove,
-                cors,
-                typed_per_filter_config,
-                include_request_attempt_count,
-                include_attempt_count_in_response,
-                // retry_policy,
-                retry_policy_typed_config,
-                hedge_policy,
-                include_is_timeout_retry_header,
-                per_request_buffer_limit_bytes,
-                request_mirror_policies,
-                metadata
-            )?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let response_headers_to_add = convert_vec!(response_headers_to_add)?;
@@ -1063,31 +1026,14 @@ mod envoy_conversions {
             let EnvoyRoute {
                 name,
                 r#match,
-                metadata,
-                decorator,
                 typed_per_filter_config,
                 request_headers_to_add,
                 request_headers_to_remove,
                 response_headers_to_add,
                 response_headers_to_remove,
-                tracing,
-                per_request_buffer_limit_bytes,
-                stat_prefix,
                 action,
+                ..
             } = envoy;
-            unsupported_field!(
-                // r#match,
-                metadata,
-                decorator,
-                // typed_per_filter_config,
-                // request_headers_to_add,
-                // request_headers_to_remove,
-                // response_headers_to_add,
-                // response_headers_to_remove,
-                tracing,
-                per_request_buffer_limit_bytes,
-                stat_prefix // action
-            )?;
             let response_headers_to_add = convert_vec!(response_headers_to_add)?;
             let request_headers_to_add = convert_vec!(request_headers_to_add)?;
             let response_headers_to_remove = response_headers_to_remove
