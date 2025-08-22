@@ -5,7 +5,6 @@ publish = ["rust-inhuawei-com"]
 version = "0.1.0"
 
 [dependencies]
-bytes.workspace                = true
 futures.workspace              = true
 http.workspace                 = true
 orion-configuration.workspace  = true

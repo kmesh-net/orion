@@ -6,14 +6,11 @@ version = "0.1.0"
 
 [dependencies]
 abort-on-drop.workspace       = true
-async-stream                  = "0.3"
 atomic-time                   = "0.1.4"
 bytes.workspace               = true
 compact_str.workspace         = true
 enum_dispatch                 = "0.3.13"
-exponential-backoff.workspace = true
 futures.workspace             = true
-futures-util                  = { version = "0.3", default-features = false }
 h2                            = "0.4.5"
 hickory-resolver              = { version = "0.24", features = ["system-config"] }
 http.workspace                = true
@@ -22,8 +19,6 @@ http-body-util.workspace      = true
 hyper                         = { version = "1", features = ["full"] }
 hyper-rustls                  = { version = "0.27.1", features = ["default", "http2"] }
 hyper-util.workspace          = true
-ipnet                         = "2.9"
-once_cell                     = { version = "1.19" }
 orion-configuration.workspace = true
 orion-error.workspace         = true
 orion-xds.workspace           = true
@@ -32,7 +27,6 @@ pin-project                   = "1.1.5"
 pingora-timeout               = "0.3.0"
 pretty-duration               = "0.1.1"
 rand                          = { version = "0.8.5", features = ["small_rng"] }
-regex.workspace               = true
 rustc-hash                    = "2.1.1"
 rustls                        = "0.23"
 rustls-pemfile                = "2.1"
@@ -43,13 +37,10 @@ thiserror.workspace           = true
 thread_local                  = "1.1.8"
 tokio.workspace               = true
 tokio-rustls                  = "0.26"
-tokio-stream.workspace        = true
 tower.workspace               = true
-tower-service                 = "0.3.2"
 tracing.workspace             = true
 twox-hash                     = "1.6.3"
 typed-builder                 = "0.18.2"
-url.workspace                 = true
 x509-parser                   = { version = "0.16", features = ["default"] }
 
 [dev-dependencies]

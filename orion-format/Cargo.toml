@@ -18,7 +18,6 @@ chrono = "0.4.40"
 dhat = "0.3.3"
 bitflags = "2.9.0"
 itoa = "1.0.15"
-compact_str = "0.8.0"
 serde = { workspace = true, features = ["rc"] }
 http-serde-ext = "1.0.2"
 strum = { version = "0.27.1", features = ["derive"] }
