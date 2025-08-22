@@ -104,9 +104,8 @@ impl PathRewriteSpecifier {
                 let replacement = regex.pattern.replace_all(old_path, regex.substitution.as_str());
                 if let Cow::Borrowed(_) = replacement {
                     return Ok(None);
-                } else {
-                    replacement
                 }
+                replacement
             },
             PathRewriteSpecifier::Prefix(prefix) => {
                 if let Some(matched_range) = route_match_result.matched_range() {
@@ -665,6 +664,32 @@ mod envoy_conversions {
         }
     }
 
+    impl TryFrom<EnvoyRouteMatch> for RouteMatch {
+        type Error = GenericError;
+        fn try_from(value: EnvoyRouteMatch) -> Result<Self, Self::Error> {
+            let EnvoyRouteMatch {
+                case_sensitive,
+                path_specifier,
+                headers,
+                query_parameters,
+                grpc,
+                tls_context,
+                dynamic_metadata,
+                filter_state,
+                runtime_fraction: _,
+            } = value;
+            unsupported_field!(query_parameters, grpc, tls_context, dynamic_metadata, filter_state)?;
+            let ignore_case = !case_sensitive.map(|v| v.value).unwrap_or(true);
+            let path_matcher = path_specifier
+                .map(PathSpecifier::try_from)
+                .transpose()
+                .with_node("path_specifier")?
+                .map(|specifier| PathMatcher { specifier, ignore_case });
+            let headers = convert_vec!(headers)?;
+            Ok(Self { path_matcher, headers })
+        }
+    }
+
     impl TryFrom<EnvoyRouteAction> for RouteAction {
         type Error = GenericError;
         fn try_from(value: EnvoyRouteAction) -> Result<Self, Self::Error> {
@@ -695,7 +720,7 @@ mod envoy_conversions {
                 hedge_policy,
                 max_stream_duration,
                 cluster_specifier,
-                host_rewrite_specifier,
+                host_rewrite_specifier: _,
             } = value;
             unsupported_field!(
                 // cluster_not_found_response_code,
@@ -722,9 +747,8 @@ mod envoy_conversions {
                 internal_redirect_action,
                 max_internal_redirects,
                 hedge_policy,
-                max_stream_duration,
-                // cluster_specifier,
-                host_rewrite_specifier
+                max_stream_duration // cluster_specifier,
+                                    // host_rewrite_specifier is handled separately
             )?;
             let cluster_not_found_response_code = cluster_not_found_response_code
                 .is_used()
@@ -776,38 +800,6 @@ mod envoy_conversions {
                 EnvoyPolicySpecifier::Cookie(_) => return Err(GenericError::unsupported_variant("Cookie")),
                 EnvoyPolicySpecifier::FilterState(_) => return Err(GenericError::unsupported_variant("FilterState")),
             })
-        }
-    }
-
-    impl TryFrom<EnvoyRouteMatch> for RouteMatch {
-        type Error = GenericError;
-        fn try_from(value: EnvoyRouteMatch) -> Result<Self, Self::Error> {
-            let EnvoyRouteMatch {
-                case_sensitive,
-                runtime_fraction,
-                headers,
-                query_parameters,
-                grpc,
-                tls_context,
-                dynamic_metadata,
-                path_specifier,
-                filter_state,
-            } = value;
-            unsupported_field!(
-                // case_sensitive,
-                runtime_fraction,
-                // headers,
-                query_parameters,
-                grpc,
-                tls_context,
-                dynamic_metadata, // path_specifier,
-                filter_state
-            )?;
-            let ignore_case = !case_sensitive.map(|v| v.value).unwrap_or(true);
-            let path_specifier = path_specifier.map(PathSpecifier::try_from).transpose().with_node("path_specifier")?;
-            let headers = convert_vec!(headers)?;
-            let path_matcher = path_specifier.map(|specifier| PathMatcher { specifier, ignore_case });
-            Ok(Self { path_matcher, headers })
         }
     }
 

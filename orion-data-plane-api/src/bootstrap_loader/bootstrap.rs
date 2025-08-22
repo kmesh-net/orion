@@ -97,6 +97,8 @@ pub enum BootstrapResolveErr {
     InvalidYaml,
     InvalidSocketAddress,
     MissingRdsConfigSource,
+    MissingBootstrap,
+    MissingConfigType,
 }
 
 pub trait BootstrapResolver {
@@ -246,7 +248,7 @@ impl BootstrapResolver for BootstrapLoader {
         for listener in self
             .bootstrap
             .as_ref()
-            .unwrap()
+            .ok_or(BootstrapResolveErr::MissingBootstrap)?
             .static_resources
             .as_ref()
             .map(|static_resource| static_resource.listeners.as_slice())
@@ -254,7 +256,10 @@ impl BootstrapResolver for BootstrapLoader {
         {
             for filter_chain in &listener.filter_chains {
                 for filter in &filter_chain.filters {
-                    let config_type = filter.config_type.as_ref().unwrap();
+                    let config_type = match filter.config_type.as_ref() {
+                        Some(ct) => ct,
+                        None => return Err(BootstrapResolveErr::MissingConfigType),
+                    };
                     if let ConfigType::TypedConfig(filter_any) = config_type {
                         if filter_any.type_url != EXT_HTTP_CONN_MANAGER {
                             continue;

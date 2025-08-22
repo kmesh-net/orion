@@ -18,7 +18,7 @@
 //
 //
 
-use super::{
+use crate::config::{
     network_filters::{HttpConnectionManager, NetworkRbac, TcpProxy},
     transport::{BindDevice, CommonTlsContext},
     GenericError,
@@ -38,10 +38,10 @@ pub struct Listener {
     pub address: SocketAddr,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub bind_device: Option<BindDevice>,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub with_tls_inspector: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub bind_device: Option<BindDevice>,
 }
 
 mod serde_filterchains {
@@ -123,6 +123,8 @@ impl FromStr for ServerNameMatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize, Default)]
 pub struct FilterChainMatch {
+    #[serde(skip_serializing_if = "CompactString::is_empty", default)]
+    pub name: CompactString,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub destination_port: Option<u16>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
@@ -272,7 +274,7 @@ mod envoy_conversions {
     use std::str::FromStr;
 
     use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
-    use crate::config::transport::SupportedEnvoyTransportSocket;
+    use crate::config::transport::{BindDevice, SupportedEnvoyTransportSocket};
     use crate::config::{
         common::*,
         core::{Address, CidrRange},
@@ -395,13 +397,13 @@ mod envoy_conversions {
                         .with_node("listener_filters");
                 }
                 let with_tls_inspector = !listener_filters.is_empty();
-                let bind_device = convert_vec!(socket_options)?;
-                if bind_device.len() > 1 {
+                let bind_device_vec: Vec<BindDevice> = convert_vec!(socket_options)?;
+                if bind_device_vec.len() > 1 {
                     return Err(GenericError::from_msg("at most one bind device is supported"))
                         .with_node("socket_options");
                 }
-                let bind_device = bind_device.into_iter().next();
-                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector })
+                let bind_device = bind_device_vec.into_iter().next();
+                Ok(Self { name, address, filter_chains, with_tls_inspector, bind_device })
             }())
             .with_name(name)
         }
@@ -523,6 +525,7 @@ mod envoy_conversions {
                 server_names,
                 transport_protocol,
                 application_protocols,
+                ..
             } = envoy;
             unsupported_field!(
                 // destination_port,
@@ -560,7 +563,14 @@ mod envoy_conversions {
                 .map(|envoy| CidrRange::try_from(envoy).map(CidrRange::into_ipnet))
                 .collect::<Result<_, _>>()
                 .with_node("source_prefix_ranges")?;
-            Ok(Self { server_names, destination_port, source_ports, destination_prefix_ranges, source_prefix_ranges })
+            Ok(Self {
+                name: CompactString::new(""),
+                server_names,
+                destination_port,
+                source_ports,
+                destination_prefix_ranges,
+                source_prefix_ranges,
+            })
         }
     }
 

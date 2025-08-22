@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_host_exact() {
-        let e: MatchHost = "test.com".parse().expect("test.com error parsing");
+        let e: MatchHost = "test.com".parse().unwrap_or_else(|_| panic!("test.com error parsing"));
         assert_eq!(e, MatchHost::Exact("test.com".into()));
         assert_eq!(
             e.eval_lpm_request(&request_uri("http://test.com/foo/bar")),
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_host_suffix() {
-        let rule: MatchHost = "*.test.com".parse().expect("*.test.com error parsing");
+        let rule: MatchHost = "*.test.com".parse().unwrap_or_else(|_| panic!("*.test.com error parsing"));
         assert_eq!(rule, MatchHost::Suffix(".test.com".into()));
         assert_eq!(
             rule.eval_lpm_request(&request_uri("http://foo.test.com/bar")),
@@ -440,7 +440,7 @@ mod tests {
         assert_eq!(rule.eval_lpm_request(&request_uri("http://foo.bar.test2.com/foo/bar")), None);
         assert_eq!(rule.eval_lpm_request(&request_uri("http://*test.com/foo/bar")), None);
 
-        let rule: MatchHost = "*-bar.foo.com".parse().expect("*-bar.foo.com error parsing");
+        let rule: MatchHost = "*-bar.foo.com".parse().unwrap_or_else(|_| panic!("*-bar.foo.com error parsing"));
         assert_eq!(rule, MatchHost::Suffix("-bar.foo.com".into()));
 
         assert_eq!(
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn test_host_prefix() {
-        let rule: MatchHost = "www.test.*".parse().expect("www.test.* error parsing");
+        let rule: MatchHost = "www.test.*".parse().unwrap_or_else(|_| panic!("www.test.* error parsing"));
         assert_eq!(rule, MatchHost::Prefix("www.test.".into()));
         assert_eq!(
             rule.eval_lpm_request(&request_uri("http://www.test.com/bar")),
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn test_host_wildcard() {
-        let rule: MatchHost = "*".parse().expect("* error parsing");
+        let rule: MatchHost = "*".parse().unwrap_or_else(|_| panic!("* error parsing"));
         assert_eq!(rule, MatchHost::Wildcard);
 
         assert_eq!(rule.eval_lpm_request(&request_uri("http://www.test.com/bar")), Some(MatchHostScoreLPM::Wildcard));
@@ -899,6 +899,7 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 request_mirror_policies,
                 metadata,
+                ..
             } = envoy;
             unsupported_field!(
                 // name,
@@ -1074,6 +1075,7 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 stat_prefix,
                 action,
+                ..
             } = envoy;
             unsupported_field!(
                 // r#match,

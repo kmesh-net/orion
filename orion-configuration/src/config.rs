@@ -201,7 +201,7 @@ mod envoy_conversions {
                     let deserialized: Config = serde_yaml::from_str(&serialized)?;
                     if new_conf != deserialized {
                         tracing::info!("\n{}\n", serde_yaml::to_string(&deserialized)?);
-                        panic!("failed to roundtrip config transcoding")
+                        panic!("failed to roundtrip config transcoding");
                     }
                 } else {
                     tracing::info!("skipping {}", path.display())
