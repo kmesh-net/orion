@@ -1,0 +1,18 @@
+[package]
+edition.workspace      = true
+license-file.workspace = true
+name                   = "orion-interner"
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lasso = { version = "0.7.3", features = [
+  "ahash",
+  "ahasher",
+  "dashmap",
+  "multi-threaded",
+] }
+serde.workspace = true
