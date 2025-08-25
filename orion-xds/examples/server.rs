@@ -1,14 +1,17 @@
 use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::CodecType;
 use orion_xds::xds::{resources, server::{start_aggregate_server, ServerAction}};
 use tracing::info;
-// Removed unused import: layer::SubscriberExt, util::SubscriberInitExt
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use std::{future::IntoFuture, time::Duration};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,orion_xds=debug".into()),
+        )
         .init();
 
     let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);
@@ -39,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if delta_resource_tx.send(ServerAction::Add(cluster_resource.clone())).await.is_err() {
                 break;
-            }
+            };
             tokio::time::sleep(Duration::from_secs(5)).await;
             let listener = resources::create_listener(
                 &listener_id,
@@ -52,13 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Adding listener {listener_resource:?}");
             if delta_resource_tx.send(ServerAction::Add(listener_resource)).await.is_err() {
                 break;
-            }
+            };
             tokio::time::sleep(Duration::from_secs(15)).await;
 
             info!("Removing cluster {cluster_id}");
             if delta_resource_tx.send(ServerAction::Remove(cluster_resource)).await.is_err() {
                 break;
-            }
+            };
             tokio::time::sleep(Duration::from_secs(5)).await;
             let listener = resources::create_listener(
                 &listener_id,
@@ -71,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Removing listener {listener_resource:?}");
             if delta_resource_tx.send(ServerAction::Remove(listener_resource)).await.is_err() {
                 break;
-            }
+            };
         }
     });
 

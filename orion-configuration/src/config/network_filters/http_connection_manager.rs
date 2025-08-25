@@ -717,8 +717,7 @@ mod envoy_conversions {
             let mut http_filters: Vec<SupportedEnvoyHttpFilter> = convert_non_empty_vec!(http_filters)?;
             match http_filters.pop() {
                 Some(SupportedEnvoyHttpFilter { filter: SupportedEnvoyFilter::Router(rtr), name, disabled: false }) => {
-                    let _ = name;
-                    Router::try_from(*rtr)
+                    Router::try_from(rtr).with_node(name)
                 },
                 Some(SupportedEnvoyHttpFilter { filter: SupportedEnvoyFilter::Router(_), name, disabled: true }) => {
                     Err(GenericError::from_msg("router cannot be disabled").with_node(name))
@@ -900,7 +899,6 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 request_mirror_policies,
                 metadata,
-                ..
             } = envoy;
             unsupported_field!(
                 // name,
@@ -1076,7 +1074,6 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 stat_prefix,
                 action,
-                ..
             } = envoy;
             unsupported_field!(
                 // r#match,

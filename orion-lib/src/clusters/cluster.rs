@@ -137,20 +137,20 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     .with_protocol_options(Some(protocol_options))
                     .prepare();
 
-                Ok(PartialClusterType::Static(Box::new(StaticClusterBuilder {
+                Ok(PartialClusterType::Static(StaticClusterBuilder {
                     name: cluster.name.to_compact_string(),
                     load_assignment: cla,
                     tls_configurator: cluster_tls_configurator,
                     health_check,
-                })))
+                }))
             },
-            ClusterDiscoveryType::Eds => Ok(PartialClusterType::Dynamic(Box::new(DynamicClusterBuilder {
+            ClusterDiscoveryType::Eds => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
                 name: cluster.name.to_compact_string(),
                 bind_device,
                 tls_configurator: cluster_tls_configurator,
                 health_check,
                 load_balancing_policy,
-            }))),
+            })),
         }
     }
 }
@@ -178,15 +178,15 @@ pub enum ClusterType {
 
 #[derive(Debug, Clone)]
 pub enum PartialClusterType {
-    Static(Box<StaticClusterBuilder>),
-    Dynamic(Box<DynamicClusterBuilder>),
+    Static(StaticClusterBuilder),
+    Dynamic(DynamicClusterBuilder),
 }
 
 impl PartialClusterType {
     pub fn build(self) -> Result<ClusterType> {
         match self {
-            Self::Static(cluster_builder) => (*cluster_builder).build(),
-            Self::Dynamic(cluster_builder) => Ok((*cluster_builder).build()),
+            Self::Static(cluster_builder) => cluster_builder.build(),
+            Self::Dynamic(cluster_builder) => Ok(cluster_builder.build()),
         }
     }
 
@@ -240,7 +240,7 @@ impl ClusterOps for DynamicCluster {
                 load_assignment.tls_configurator = Some(tls_configurator.clone());
                 let load_assignment = load_assignment.rebuild()?;
                 self.load_assignment = Some(load_assignment);
-            }
+            };
             self.tls_configurator = Some(tls_configurator);
         }
         Ok(())

@@ -17,25 +17,62 @@
 // limitations under the License.
 //
 //
-#![allow(clippy::unnecessary_semicolon)]
-use crate::secrets::tls_configurator::configurator::{
-    get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert,
-};
-use rustls::client::WebPkiServerVerifier;
-use rustls::server::WebPkiClientVerifier;
-use rustls::sign::CertifiedKey;
-use rustls::{ClientConfig, RootCertStore, ServerConfig, SupportedProtocolVersion};
-use tracing::{debug, warn};
 
-use compact_str::CompactString;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use compact_str::CompactString;
+use rustls::{
+    client::WebPkiServerVerifier, server::WebPkiClientVerifier, sign::CertifiedKey, ClientConfig, RootCertStore,
+    ServerConfig, SupportedProtocolVersion,
+};
+use tracing::{debug, warn};
+
+use super::configurator::{get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert};
+
+#[derive(Debug, Clone)]
+pub struct WantsCertStore {
+    pub supported_versions: Vec<&'static SupportedProtocolVersion>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WantsServerCert {
+    supported_versions: Vec<&'static SupportedProtocolVersion>,
+    validation_context_secret_id: Option<String>,
+    certificate_store: Option<Arc<RootCertStore>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WantsClientCert {
+    supported_versions: Vec<&'static SupportedProtocolVersion>,
+    validation_context_secret_id: Option<String>,
+    certificate_store: Arc<RootCertStore>,
+}
+
+#[derive(Debug, Clone)]
 pub struct SecretHolder {
     pub name: CompactString,
     pub server_cert: ServerCert,
 }
 
+impl PartialEq for SecretHolder {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for SecretHolder {}
+
+impl PartialOrd for SecretHolder {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SecretHolder {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.name.cmp(&other.name)
+    }
+}
 impl SecretHolder {
     pub fn new(name: CompactString, server_cert: ServerCert) -> Self {
         Self { name, server_cert }
@@ -176,7 +213,6 @@ impl TlsContextBuilder<WantsClientCert> {
             },
         }
     }
-
     pub fn with_no_client_auth(self) -> TlsContextBuilder<WantsSni> {
         TlsContextBuilder {
             state: WantsSni {
@@ -285,23 +321,4 @@ impl TlsContextBuilder<WantsToBuildClient> {
             Ok(builder.with_no_client_auth())
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct WantsCertStore {
-    pub supported_versions: Vec<&'static SupportedProtocolVersion>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WantsServerCert {
-    pub supported_versions: Vec<&'static SupportedProtocolVersion>,
-    pub validation_context_secret_id: Option<String>,
-    pub certificate_store: Option<Arc<RootCertStore>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WantsClientCert {
-    pub supported_versions: Vec<&'static SupportedProtocolVersion>,
-    pub validation_context_secret_id: Option<String>,
-    pub certificate_store: Arc<RootCertStore>,
 }

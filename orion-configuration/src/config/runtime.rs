@@ -97,7 +97,7 @@ impl Runtime {
 }
 
 pub(crate) fn non_zero_num_cpus() -> NonZeroUsize {
-    NonZeroUsize::try_from(num_cpus::get()).unwrap_or(NonZeroUsize::MIN)
+    NonZeroUsize::try_from(num_cpus::get()).expect("found zero cpus")
 }
 
 impl Default for Runtime {

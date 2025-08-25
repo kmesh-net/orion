@@ -37,7 +37,7 @@ pub struct RandomBalancer<E> {
 
 impl<E> RandomBalancer<E> {
     pub fn new(items: impl IntoIterator<Item = LbItem<E>>) -> Self {
-        let rng = SmallRng::from_rng(rand::thread_rng()).unwrap_or_else(|_| SmallRng::seed_from_u64(0));
+        let rng = SmallRng::from_rng(rand::thread_rng()).expect("RNG must be valid");
         RandomBalancer::new_with_rng(items, rng)
     }
 

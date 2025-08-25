@@ -20,19 +20,24 @@
 
 use orion_configuration::config::bootstrap::Bootstrap;
 
-use crate::{clusters::cluster::PartialClusterType, Result, SecretManager};
+use crate::{
+    clusters::cluster::PartialClusterType, listeners::listener::ListenerFactory, ConversionContext, Error, Result,
+    SecretManager,
+};
 
-pub fn get_listeners_and_clusters(bootstrap: Bootstrap) -> Result<(SecretManager, Vec<PartialClusterType>)> {
+pub fn get_listeners_and_clusters(
+    bootstrap: Bootstrap,
+) -> Result<(SecretManager, Vec<ListenerFactory>, Vec<PartialClusterType>)> {
     let static_resources = bootstrap.static_resources;
     let secrets = static_resources.secrets;
     let mut secret_manager = SecretManager::new();
     secrets.into_iter().try_for_each(|secret| secret_manager.add(secret).map(|_| ()))?;
 
-    // listeners are not used in the return value anymore
-    // let listeners = static_resources
-    //     .listeners
-    //     .into_iter()
-    //     .collect::<Result<Vec<_>>>()?;
+    let listeners = static_resources
+        .listeners
+        .into_iter()
+        .map(|l| ListenerFactory::try_from(ConversionContext::new((l, &secret_manager))))
+        .collect::<Result<Vec<_>>>()?;
     let clusters = static_resources
         .clusters
         .into_iter()
@@ -40,7 +45,7 @@ pub fn get_listeners_and_clusters(bootstrap: Bootstrap) -> Result<(SecretManager
         .collect::<Result<Vec<_>>>()?;
     if clusters.is_empty() {
         //shouldn't happen with new config
-        return Err("No clusters configured".into());
+        return Err::<(SecretManager, Vec<_>, Vec<_>), Error>("No clusters configured".into());
     }
-    Ok((secret_manager, clusters))
+    Ok((secret_manager, listeners, clusters))
 }

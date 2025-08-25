@@ -270,8 +270,8 @@ impl LocalityLbEndpointsBuilder {
         if endpoints.len() > (u32::MAX / 100) as usize {
             return Err("Too many endpoints".into());
         }
-        let healthy_endpoints = u32::try_from(endpoints.iter().filter(|e| e.health_status.is_healthy()).count())?;
-        let total_endpoints = u32::try_from(endpoints.len())?;
+        let healthy_endpoints = endpoints.iter().filter(|e| e.health_status.is_healthy()).count() as u32;
+        let total_endpoints = endpoints.len() as u32;
 
         Ok(LocalityLbEndpoints {
             name: cluster_name,

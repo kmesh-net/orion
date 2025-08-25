@@ -328,11 +328,11 @@ pub fn create_listener(
             ..Default::default()
         })),
         http_filters: vec![envoy::extensions::filters::network::http_connection_manager::v3::HttpFilter {
-            name: "envoy.filters.http.router".to_owned(),
+            name: "envoy.filters.http.router".to_string(),
             config_type: Some(
                 envoy::extensions::filters::network::http_connection_manager::v3::http_filter::ConfigType::TypedConfig(
                     Any {
-                        type_url: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router".to_owned(),
+                        type_url: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router".to_string(),
                         value: vec![],
                     },
                 ),
@@ -347,7 +347,7 @@ pub fn create_listener(
         type_url:
             "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
                 .to_owned(),
-        value: http_connection_manager.encode_to_vec(),
+        value: http_connection_manager.encode_to_vec().into(),
     };
 
     let http_connection_manager_filter = Filter {
@@ -416,18 +416,18 @@ mod test {
 
     #[test]
     fn test_cluster_conversion() {
-        const CLUSTER: &str = r"
+        const CLUSTER: &str = r#"
 name: cluster1
 type: STATIC
 load_assignment:
-    endpoints:
-        - lb_endpoints:
-                - endpoint:
-                        address:
-                            socket_address:
-                                address: 192.168.2.10
-                                port_value: 80
-";
+  endpoints:
+    - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 192.168.2.10
+                port_value: 80
+"#;
         let cluster: Cluster = from_yaml(CLUSTER).unwrap();
 
         let mut value: Vec<u8> = vec![];

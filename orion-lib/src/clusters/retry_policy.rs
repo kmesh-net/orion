@@ -72,7 +72,7 @@ impl<'a, B: Body> FailureKind<'a, B> {
                 if resp.status().is_informational() || resp.status().is_success() {
                     return None;
                 }
-                Some(FailureKind::EligibleForRetry(resp))
+                return Some(FailureKind::EligibleForRetry(resp));
             },
             Err(err) => Self::try_infer_from_error(err.as_ref()),
         }

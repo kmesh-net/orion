@@ -27,17 +27,15 @@ use http_body_util::Full;
 
 #[derive(Debug, thiserror::Error)]
 // TODO: Error type for synthetic response validation - implement validation logic or remove if unused
-#[allow(dead_code)]
-#[allow(clippy::enum_variant_names)]
 pub enum InvalidSyntheticResponse {
     #[error(transparent)]
-    HttpResponse(#[from] http::Error),
+    InvalidHttpResponse(#[from] http::Error),
     #[error(transparent)]
-    HeaderValue(#[from] http::header::InvalidHeaderValue),
+    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error(transparent)]
-    Uri(#[from] InvalidUri),
+    InvalidUri(#[from] InvalidUri),
     #[error(transparent)]
-    UriParts(#[from] InvalidUriParts),
+    InvalidUriParts(#[from] InvalidUriParts),
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +57,6 @@ impl SyntheticHttpResponse {
     }
 
     // TODO: Implement forbidden response functionality - used for access control features
-    #[allow(dead_code)]
     pub fn forbidden(msg: &str) -> Self {
         Self {
             http_status: StatusCode::FORBIDDEN,
@@ -70,7 +67,6 @@ impl SyntheticHttpResponse {
     }
 
     // TODO: Implement unavailable response - used for service health checks
-    #[allow(dead_code)]
     pub fn unavailable() -> Self {
         Self { http_status: StatusCode::SERVICE_UNAVAILABLE, body: Bytes::default(), close_connection: true }
     }
@@ -84,7 +80,6 @@ impl SyntheticHttpResponse {
     }
 
     // TODO: Implement custom error responses - used for flexible error handling
-    #[allow(dead_code)]
     pub fn custom_error(http_status: StatusCode) -> Self {
         Self { http_status, body: Bytes::default(), close_connection: false }
     }

@@ -40,8 +40,12 @@ use crate::transport::request_context::RequestWithContext;
 use crate::transport::HttpChannel;
 use crate::{Error, HttpBody};
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid HTTP status range")]
+// TODO: This error type is defined for future HTTP status range validation functionality
+pub struct InvalidHttpStatusRange;
+
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.
-#[allow(clippy::too_many_arguments)]
 pub fn try_spawn_http_health_checker(
     endpoint: EndpointId,
     cluster_config: ClusterHealthCheck,
@@ -65,7 +69,6 @@ pub fn try_spawn_http_health_checker(
 
 /// Actual implementation of `spawn_http_health_checker()`, with `dependencies` containing the
 /// injected HTTP stack builder and interval waiter.
-#[allow(clippy::too_many_arguments)]
 fn try_spawn_http_health_checker_impl<H, W>(
     endpoint: EndpointId,
     cluster_config: ClusterHealthCheck,

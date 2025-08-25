@@ -22,9 +22,8 @@ use abort_on_drop::ChildTask;
 use futures::future::join_all;
 use orion_configuration::config::{bootstrap::Node, cluster::ClusterSpecifier};
 use orion_lib::{
-    ConfigurationSenders, ConversionContext, EndpointHealthUpdate, HealthCheckManager, Listener,
-    ListenerConfigurationChange, PartialClusterLoadAssignment, PartialClusterType, Result, RouteConfigurationChange,
-    SecretManager,
+    ConfigurationSenders, ConversionContext, EndpointHealthUpdate, HealthCheckManager, ListenerConfigurationChange,
+    ListenerFactory, PartialClusterLoadAssignment, PartialClusterType, Result, RouteConfigurationChange, SecretManager,
 };
 use orion_xds::{
     start_aggregate_client_no_retry_loop,
@@ -35,7 +34,6 @@ use orion_xds::{
         model::{RejectedConfig, TypeUrl, XdsResourcePayload, XdsResourceUpdate},
     },
 };
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::{
     select,
@@ -163,7 +161,7 @@ impl XdsConfigurationHandler {
         for update in updates {
             match update {
                 XdsResourceUpdate::Update(id, resource) => {
-                    if let Err(e) = self.process_update_event(&id, *resource).await {
+                    if let Err(e) = self.process_update_event(&id, resource).await {
                         rejected_updates.push(RejectedConfig::from((id, e)));
                     }
                 },
@@ -212,11 +210,11 @@ impl XdsConfigurationHandler {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
                 debug!("Got update for listener {id} {:?}", listener);
-                let factory = Listener::try_from(ConversionContext::new((listener, &self.secret_manager)));
+                let factory = ListenerFactory::try_from(ConversionContext::new((listener, &self.secret_manager)));
 
                 match factory {
                     Ok(factory) => {
-                        let change = ListenerConfigurationChange::Added(Arc::new(factory));
+                        let change = ListenerConfigurationChange::Added(factory);
                         let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
                         Ok(())
                     },
@@ -228,7 +226,7 @@ impl XdsConfigurationHandler {
             },
             XdsResourcePayload::Cluster(id, cluster) => {
                 debug!("Got update for cluster: {id}: {:#?}", cluster);
-                let cluster_builder = PartialClusterType::try_from((*cluster, &self.secret_manager));
+                let cluster_builder = PartialClusterType::try_from((cluster, &self.secret_manager));
                 match cluster_builder {
                     Ok(cluster) => self.add_cluster(cluster).await,
                     Err(err) => {

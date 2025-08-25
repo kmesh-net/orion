@@ -95,7 +95,7 @@ mod tests {
         // same as the envoy HttpConnectionManager server_name
         // (api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto)
         const PAYLOAD: &[u8] = b"R\x04name";
-        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec() };
+        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec().into() };
         let m: HttpConnectionManager = decode_any_type(&v, "---").unwrap();
         assert_eq!(m, expected_conn_manager());
 
@@ -122,7 +122,7 @@ filterChains:
             type_url:
                 "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
                     .to_string(),
-            value: http_man.encode_to_vec(),
+            value: http_man.encode_to_vec().into(),
         };
 
         let filter = Filter {
@@ -153,19 +153,11 @@ filterChains:
             assert_eq!(l_yaml2, l_pb, "Difference is the any type");
         }
 
-        assert!(
-            matches!(l_yaml.filter_chains[0].filters[0].config_type.as_ref(), Some(ConfigType::TypedConfig(_))),
-            "Expecting TypedConfig in yaml"
-        );
-        assert!(
-            matches!(l_pb.filter_chains[0].filters[0].config_type.as_ref(), Some(ConfigType::TypedConfig(_))),
-            "Expecting TypedConfig in pb"
-        );
-        let Some(ConfigType::TypedConfig(any_yaml)) = l_yaml.filter_chains[0].filters[0].config_type.as_ref() else {
-            unreachable!()
+        let ConfigType::TypedConfig(any_yaml) = l_yaml.filter_chains[0].filters[0].config_type.as_ref().unwrap() else {
+            panic!("Expecting TypedConfig in yaml");
         };
-        let Some(ConfigType::TypedConfig(any_pb)) = l_pb.filter_chains[0].filters[0].config_type.as_ref() else {
-            unreachable!()
+        let ConfigType::TypedConfig(any_pb) = l_pb.filter_chains[0].filters[0].config_type.as_ref().unwrap() else {
+            panic!("Expecting TypedConfig in pb");
         };
 
         assert_eq!(any_yaml.type_url, any_pb.type_url, "Any type urls are the same");

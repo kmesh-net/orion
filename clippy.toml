@@ -1,8 +1,8 @@
 # for `disallowed_method`:
 # https://rust-lang.github.io/rust-clippy/master/index.html#disallowed_method
 disallowed-methods = [
-  { path = "orion_data_plane_api::decode::SourceFmt::Protobuf", reason = "Should not be used anymore. Use TryFrom instead.", allow-invalid = true },
-  { path = "orion_data_plane_api::decode::SourceFmt::Yaml", reason = "Should not be used anymore. Use TryFrom instead.", allow-invalid = true },
+  { path = "orion_data_plane_api::decode::SourceFmt::Protobuf", reason = "Should not be used anymore. Use TryFrom instead." },
+  { path = "orion_data_plane_api::decode::SourceFmt::Yaml", reason = "Should not be used anymore. Use TryFrom instead." },
   { path = "tokio::time::timeout", reason = "Use pingora_timeout::fast_timeout::fast_timeout instead" },
 ]
 

@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines)]
-
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //

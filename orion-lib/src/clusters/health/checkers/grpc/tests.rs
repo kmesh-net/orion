@@ -57,10 +57,7 @@ impl MockGrpcChannel {
 }
 
 impl GrpcHealthChannel for MockGrpcChannel {
-    fn check(
-        &mut self,
-        request: HealthCheckRequest,
-    ) -> BoxFuture<'_, Result<Response<HealthCheckResponse>, TonicStatus>> {
+    fn check(&mut self, request: HealthCheckRequest) -> BoxFuture<Result<Response<HealthCheckResponse>, TonicStatus>> {
         let state = Arc::clone(&self.0);
         Box::pin(async move {
             let state = &mut state.lock().unwrap();

@@ -32,7 +32,6 @@ pub struct TcpProxy {
     cluster: ClusterSpecifierConfig,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TcpProxyBuilder {
     listener_name: Option<CompactString>,
@@ -45,7 +44,6 @@ impl From<TcpProxyConfig> for TcpProxyBuilder {
     }
 }
 
-#[allow(dead_code)]
 impl TcpProxyBuilder {
     pub fn with_listener_name(self, name: CompactString) -> Self {
         TcpProxyBuilder { listener_name: Some(name), ..self }

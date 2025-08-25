@@ -41,7 +41,6 @@ use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
 
 const DEFAULT_MAX_PAYLOAD_BUFFER_SIZE: usize = 0x10_0000; // 1 MB
 
-#[allow(clippy::too_many_arguments)]
 pub fn spawn_tcp_health_checker(
     endpoint: EndpointId,
     cluster_config: ClusterHealthCheck,
@@ -77,7 +76,6 @@ impl TcpClient for TcpChannel {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_tcp_health_checker_impl<T, W, const MAX_PAYLOAD_BUFFER_SIZE: usize>(
     endpoint: EndpointId,
     cluster_config: ClusterHealthCheck,
