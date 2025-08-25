@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::Infallible;
 use std::error::Error as StdError;
@@ -22,11 +23,58 @@ use hyper::rt::Timer as _;
 
 use crate::common::{exec, exec::Exec, timer::Timer};
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ConnectionEvent {
+    /// A new connection was created.
+    NewConnection,
+    /// A connection was closed.
+    ConnectionClosed,
+    /// A connection was closed.
+    IdleConnectionClosed,
+    /// Connection error.
+    ConnectionError,
+    /// Connection timeout.
+    ConnectionTimeout,
+}
+
+pub trait Tag: Any + Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any + Send + Sync + 'static> Tag for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[derive(Clone)]
+// This is used to notify the user of events in the pool.
+pub struct EventHandler {
+    pub on_update: Arc<dyn Fn(ConnectionEvent, &dyn Any, &dyn Tag) + Send + Sync>,
+    tag: Arc<dyn Tag>,
+}
+
+impl EventHandler {
+    pub fn new<F, U>(update: F, t: U) -> Self
+    where
+        F: Fn(ConnectionEvent, &dyn Any, &dyn Tag) + Send + Sync + 'static,
+        U: Tag,
+    {
+        EventHandler { on_update: Arc::new(update), tag: Arc::new(t) }
+    }
+
+    pub fn call(&self, key: &dyn Any, event: ConnectionEvent) {
+        (self.on_update)(event, key, self.tag.as_ref());
+    }
+}
+
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
 #[allow(missing_debug_implementations)]
 pub struct Pool<T, K: Key> {
     // If the pool is disabled, this is None.
     inner: Option<Arc<Mutex<PoolInner<T, K>>>>,
+    // Notification handler for events in the pool. If the handler is provided, notification are available even when the pool is not enabled.
+    pub on_event: Option<Arc<EventHandler>>,
 }
 
 // Before using a pooled connection, make sure the sender is not dead.
@@ -43,9 +91,18 @@ pub trait Poolable: Unpin + Send + Sized + 'static {
     fn can_share(&self) -> bool;
 }
 
-pub trait Key: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
+pub trait Key: Eq + Hash + Clone + Debug + Unpin + Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
+}
 
-impl<T> Key for T where T: Eq + Hash + Clone + Debug + Unpin + Send + 'static {}
+impl<T> Key for T
+where
+    T: Eq + Hash + Clone + Debug + Unpin + Send + Sync + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 /// A marker to identify what version a pooled connection is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -76,7 +133,7 @@ pub enum Reservation<T> {
 /// Simple type alias in case the key type needs to be adjusted.
 // pub type Key = (http::uri::Scheme, http::uri::Authority); //Arc<String>;
 
-struct PoolInner<T, K: Eq + Hash> {
+struct PoolInner<T, K: Key> {
     // A flag that a connection is being established, and the connection
     // should be shared. This prevents making multiple HTTP/2 connections
     // to the same host.
@@ -101,6 +158,8 @@ struct PoolInner<T, K: Eq + Hash> {
     exec: Exec,
     timer: Option<Timer>,
     timeout: Option<Duration>,
+    // Notification handler for events in the pool.
+    on_event: Option<Arc<EventHandler>>,
 }
 
 // This is because `Weak::new()` *allocates* space for `T`, even if it
@@ -120,13 +179,14 @@ impl Config {
 }
 
 impl<T, K: Key> Pool<T, K> {
-    pub fn new<E, M>(config: Config, executor: E, timer: Option<M>) -> Pool<T, K>
+    pub fn new<E, M>(config: Config, executor: E, timer: Option<M>, handler: Option<EventHandler>) -> Pool<T, K>
     where
         E: hyper::rt::Executor<exec::BoxSendFuture> + Send + Sync + Clone + 'static,
         M: hyper::rt::Timer + Send + Sync + Clone + 'static,
     {
         let exec = Exec::new(executor);
         let timer = timer.map(|t| Timer::new(t));
+        let handler = handler.map(Arc::new);
         let inner = if config.is_enabled() {
             Some(Arc::new(Mutex::new(PoolInner {
                 connecting: HashSet::new(),
@@ -137,12 +197,13 @@ impl<T, K: Key> Pool<T, K> {
                 exec,
                 timer,
                 timeout: config.idle_timeout,
+                on_event: handler.clone(),
             })))
         } else {
             None
         };
 
-        Pool { inner }
+        Pool { inner, on_event: handler }
     }
 
     pub(crate) fn is_enabled(&self) -> bool {
@@ -421,7 +482,7 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
     }
 }
 
-impl<T, K: Eq + Hash> PoolInner<T, K> {
+impl<T, K: Key> PoolInner<T, K> {
     /// Any `FutureResponse`s that were created will have made a `Checkout`,
     /// and possibly inserted into the pool that it is waiting for an idle
     /// connection. If a user ever dropped that future, we need to clean out
@@ -446,16 +507,19 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
         let now = Instant::now();
         //self.last_idle_check_at = now;
 
+        let mut keys_removed = vec![];
         self.idle.retain(|key, values| {
             values.retain(|entry| {
                 if !entry.value.is_open() {
                     trace!("idle interval evicting closed for {:?}", key);
+                    keys_removed.push(key.clone());
                     return false;
                 }
 
                 // Avoid `Instant::sub` to avoid issues like rust-lang/rust#86470.
                 if now.saturating_duration_since(entry.idle_at) > dur {
                     trace!("idle interval evicting expired for {:?}", key);
+                    keys_removed.push(key.clone());
                     return false;
                 }
 
@@ -466,12 +530,19 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
             // returning false evicts this key/val
             !values.is_empty()
         });
+
+        for key in keys_removed {
+            let any_key = key.as_any();
+            if let Some(ref handler) = self.on_event {
+                handler.call(any_key, ConnectionEvent::IdleConnectionClosed);
+            }
+        }
     }
 }
 
 impl<T, K: Key> Clone for Pool<T, K> {
     fn clone(&self) -> Pool<T, K> {
-        Pool { inner: self.inner.clone() }
+        Pool { inner: self.inner.clone(), on_event: self.on_event.clone() }
     }
 }
 
@@ -518,15 +589,16 @@ impl<T: Poolable, K: Key> DerefMut for Pooled<T, K> {
 impl<T: Poolable, K: Key> Drop for Pooled<T, K> {
     fn drop(&mut self) {
         if let Some(value) = self.value.take() {
-            if !value.is_open() {
-                // If we *already* know the connection is done here,
-                // it shouldn't be re-inserted back into the pool.
-                return;
-            }
-
             if let Some(pool) = self.pool.upgrade() {
                 if let Ok(mut inner) = pool.lock() {
-                    inner.put(self.key.clone(), value, &pool);
+                    if value.is_open() {
+                        inner.put(self.key.clone(), value, &pool);
+                    } else {
+                        if let Some(ref handler) = inner.on_event {
+                            let any_key = self.key.as_any();
+                            handler.call(any_key, ConnectionEvent::ConnectionClosed);
+                        }
+                    }
                 }
             } else if !value.can_share() {
                 trace!("pool dropped, dropping pooled ({:?})", self.key);

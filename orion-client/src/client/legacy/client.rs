@@ -28,12 +28,15 @@ use super::pool::{self, Ver};
 use crate::common::future::poll_fn;
 use crate::common::{lazy as hyper_lazy, timer, Exec, Lazy, SyncWrapper};
 
+use crate::client::legacy::pool::{ConnectionEvent, EventHandler};
+
 type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// A Client to make outgoing HTTP requests.
 ///
 /// `Client` is cheap to clone and cloning is the recommended way to share a `Client`. The
 /// underlying connection pool will be reused.
+///
 #[cfg_attr(docsrs, doc(cfg(any(feature = "http1", feature = "http2"))))]
 pub struct Client<C, B> {
     config: Config,
@@ -62,7 +65,7 @@ pub struct Error {
 }
 
 #[derive(Debug)]
-enum ErrorKind {
+pub enum ErrorKind {
     Canceled,
     ChannelClosed,
     Connect,
@@ -81,8 +84,9 @@ macro_rules! e {
     };
 }
 
-// We might change this... :shrug:
-type PoolKey = (http::uri::Scheme, http::uri::Authority);
+/// PoolKey is a tuple of the Scheme and Authority of the Uri, used to
+/// identify a connection pool for a specific destination.
+pub type PoolKey = (http::uri::Scheme, http::uri::Authority);
 
 enum TrySendError<B> {
     Retryable { error: Error, req: Request<B>, connection_reused: bool },
@@ -477,9 +481,49 @@ where
                     return Either::Right(future::err(canceled));
                 },
             };
+
+            let on_event_error = pool.on_event.clone();
+            let pool_key_clone = pool_key.clone();
+
             Either::Left(
-                connector.connect(super::connect::sealed::Internal, dst).map_err(|src| e!(Connect, src)).and_then(
-                    move |io| {
+                connector
+                    .connect(super::connect::sealed::Internal, dst)
+                    .map_err(move |err| {
+                        let err_box: Box<dyn StdError + Send + Sync> = err.into();
+                        let mut source_err: Option<&dyn StdError> = Some(err_box.as_ref());
+                        let (mut io_error_kind, mut elapsed_error) = (None, false);
+
+                        while let Some(current_err) = source_err {
+                            use std::io;
+                            if let Some(io_err) = current_err.downcast_ref::<io::Error>() {
+                                io_error_kind = Some(io_err.kind());
+                            } else if current_err.is::<tokio::time::error::Elapsed>() {
+                                elapsed_error = true;
+                            }
+
+                            source_err = current_err.source();
+                        }
+
+                        if let Some(ref handler) = on_event_error {
+                            let is_timeout =
+                                elapsed_error || matches!(io_error_kind, Some(std::io::ErrorKind::TimedOut));
+                            if is_timeout {
+                                handler.call(&pool_key_clone, ConnectionEvent::ConnectionTimeout);
+                            } else {
+                                handler.call(&pool_key_clone, ConnectionEvent::ConnectionError);
+                            }
+                        }
+
+                        // If the connection failed, we need to notify the event connection error.
+
+                        e!(Connect, err_box)
+                    })
+                    .and_then(move |io| {
+                        // increment the total connection count for this pool key
+                        if let Some(ref handler) = pool.on_event {
+                            handler.call(&pool_key, ConnectionEvent::NewConnection);
+                        }
+
                         let connected = io.connected();
                         // If ALPN is h2 and we aren't http2_only already,
                         // then we need to convert our pool checkout into
@@ -505,6 +549,14 @@ where
                         let is_h2 = is_ver_h2 || connected.alpn == Alpn::H2;
 
                         Either::Left(Box::pin(async move {
+                            use scopeguard::{guard, ScopeGuard};
+                            let guard = guard((), |_| {
+                                // increment the destroy connection count for this pool key (if still armed)
+                                if let Some(ref handler) = pool.on_event {
+                                    handler.call(&pool_key, ConnectionEvent::ConnectionError);
+                                }
+                            });
+
                             let tx = if is_h2 {
                                 #[cfg(feature = "http2")]
                                 {
@@ -617,10 +669,12 @@ where
                                 }
                             };
 
+                            // “defuse” the guard...
+                            _ = ScopeGuard::into_inner(guard);
+
                             Ok(pool.pooled(connecting, PoolClient { conn_info: connected, tx }))
                         }))
-                    },
-                ),
+                    }),
             )
         })
     }
@@ -961,6 +1015,7 @@ pub struct Builder {
     h2_builder: hyper::client::conn::http2::Builder<Exec>,
     pool_config: pool::Config,
     pool_timer: Option<timer::Timer>,
+    event_handler: Option<EventHandler>,
 }
 
 impl Builder {
@@ -979,6 +1034,7 @@ impl Builder {
             h2_builder: hyper::client::conn::http2::Builder::new(exec),
             pool_config: pool::Config { idle_timeout: Some(Duration::from_secs(90)), max_idle_per_host: usize::MAX },
             pool_timer: None,
+            event_handler: None,
         }
     }
     /// Set an optional timeout for idle sockets being kept-alive.
@@ -1444,6 +1500,13 @@ impl Builder {
         self
     }
 
+    /// Provide a event handler to be used for updating statistics.
+    ///
+    pub fn event_handler(&mut self, on_update: EventHandler) -> &mut Self {
+        self.event_handler = Some(on_update);
+        self
+    }
+
     /// Set the maximum write buffer size for each HTTP/2 stream.
     ///
     /// Default is currently 1MB, but may change.
@@ -1510,6 +1573,7 @@ impl Builder {
     {
         let exec = self.exec.clone();
         let timer = self.pool_timer.clone();
+        let on_update = self.event_handler.clone();
         Client {
             config: self.client_config,
             exec: exec.clone(),
@@ -1518,7 +1582,7 @@ impl Builder {
             #[cfg(feature = "http2")]
             h2_builder: self.h2_builder.clone(),
             connector,
-            pool: pool::Pool::new(self.pool_config, exec, timer),
+            pool: pool::Pool::new(self.pool_config, exec, timer, on_update),
         }
     }
 }
