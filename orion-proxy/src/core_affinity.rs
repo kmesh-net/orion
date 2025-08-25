@@ -208,7 +208,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn test_group_by_numa_single() {
         let cores = core_ids![0, 1, 2, 3];
         let cpuinfo = r###"processor       : 0
@@ -322,7 +321,6 @@ power management:"###;
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn test_group_by_numa_err() {
         let cores = core_ids![4, 5, 6, 7];
         let cpuinfo = r###"processor       : 0
@@ -436,7 +434,6 @@ power management:"###;
     }
 
     #[test]
-    #[allow(clippy::too_many_lines)]
     fn test_group_by_numa_dual_nodes() {
         let cores = core_ids![0, 1, 2, 3];
         let cpuinfo = r###"processor       : 0

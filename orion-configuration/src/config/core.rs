@@ -88,7 +88,7 @@ impl<'a> DataSourceReader<'a> {
     }
 }
 
-impl Read for DataSourceReader<'_> {
+impl<'a> Read for DataSourceReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::OwnedBytes { bytes, read } => {
@@ -105,7 +105,7 @@ impl Read for DataSourceReader<'_> {
     }
 }
 
-impl BufRead for DataSourceReader<'_> {
+impl<'a> BufRead for DataSourceReader<'a> {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
             Self::OwnedBytes { bytes, read } => Ok(&bytes[*read..]),
@@ -134,7 +134,7 @@ pub struct StringMatcher {
 }
 
 pub(crate) struct CaseSensitive<'a>(pub bool, pub &'a str);
-impl CaseSensitive<'_> {
+impl<'a> CaseSensitive<'a> {
     #[inline]
     pub fn equals(&self, b: &str) -> bool {
         if self.0 {

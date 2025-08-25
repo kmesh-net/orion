@@ -21,8 +21,6 @@
 // Based on
 // https://github.com/hickory-dns/hickory-dns/blob/v0.24.1/crates/resolver/examples/global_resolver.rs
 
-#![allow(clippy::panic)]
-
 use std::{io, net::SocketAddr, sync::OnceLock};
 
 use hickory_resolver::{name_server::TokioConnectionProvider, TokioAsyncResolver};

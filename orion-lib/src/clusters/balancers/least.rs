@@ -74,7 +74,7 @@ impl<E: EndpointWithLoad> WeightedLeastRequestBalancer<E> {
         active_request_bias: f32,
         p2c_choice_count: u32,
     ) -> Self {
-        let rng = SmallRng::from_rng(rand::thread_rng()).unwrap_or_else(|_| SmallRng::seed_from_u64(0));
+        let rng = SmallRng::from_rng(rand::thread_rng()).expect("RNG must be valid");
         Self::new_with_settings_and_rng(items, active_request_bias, p2c_choice_count, rng)
     }
 

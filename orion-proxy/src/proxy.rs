@@ -23,17 +23,18 @@ use crate::{
     runtime::{self, RuntimeId},
     xds_configurator::XdsConfigurationHandler,
 };
+use futures::future::join_all;
 use orion_configuration::config::{bootstrap::Node, Bootstrap};
 use orion_error::ResultExtension;
 use orion_lib::{
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
-    ConfigurationSenders, Result, SecretManager,
+    ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
 };
 use std::{
     sync::atomic::AtomicUsize,
     thread::{self, JoinHandle},
 };
-use tokio::runtime::Builder;
+use tokio::{runtime::Builder, sync::mpsc::Sender};
 use tracing::{debug, error, info, warn};
 
 pub fn run_proxy(bootstrap: Bootstrap) -> Result<()> {
@@ -97,14 +98,14 @@ fn launch_runtimes(bootstrap: Bootstrap) -> Result<()> {
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
     let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into() });
 
-    let (secret_manager, clusters) =
+    let (secret_manager, listeners, clusters) =
         get_listeners_and_clusters(bootstrap).context("Failed to get listeners and clusters")?;
 
-    if clusters.is_empty() && ads_cluster_names.is_empty() {
-        return Err("No clusters and no ads clusters configured".into());
+    if listeners.is_empty() && ads_cluster_names.is_empty() {
+        return Err("No listeners and no ads clusters configured".into());
     }
 
-    let _guard = match xds_loop(node, configuration_senders, secret_manager, clusters, ads_cluster_names) {
+    let _guard = match xds_loop(node, configuration_senders, secret_manager, listeners, clusters, ads_cluster_names) {
         Ok(g) => {
             debug!("xDS loop finished");
             g
@@ -152,6 +153,7 @@ fn xds_loop(
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
     secret_manager: SecretManager,
+    listeners: Vec<orion_lib::ListenerFactory>,
     clusters: Vec<orion_lib::PartialClusterType>,
     ads_cluster_names: Vec<String>,
 ) -> Result<XdsConfigurationHandler> {
@@ -166,21 +168,36 @@ fn xds_loop(
             format!("xdstask_{id}")
         })
         .build()
-        .map_err(|e| orion_error::Error::from(format!("failed to build basic runtime: {e}")))?;
+        .expect("failed to build basic runtime");
     runtime.block_on(async move {
-        let secret_manager = configure_initial_resources(secret_manager, configuration_senders.clone());
+        let secret_manager =
+            configure_initial_resources(secret_manager, listeners, configuration_senders.clone()).await?;
         let xds_runtime = XdsConfigurationHandler::new(secret_manager, configuration_senders);
 
         xds_runtime.run(node, clusters, ads_cluster_names).await
     })
 }
 
-fn configure_initial_resources(
+async fn configure_initial_resources(
     secret_manager: SecretManager,
-    _configuration_senders: Vec<ConfigurationSenders>,
-) -> SecretManager {
-    // No listeners to configure anymore
-    secret_manager
+    listeners: Vec<orion_lib::ListenerFactory>,
+    configuration_senders: Vec<ConfigurationSenders>,
+) -> Result<SecretManager> {
+    let listeners_tx: Vec<_> = configuration_senders
+        .into_iter()
+        .map(|ConfigurationSenders { listener_configuration_sender, route_configuration_sender: _ }| {
+            listener_configuration_sender
+        })
+        .collect();
+
+    for listener in listeners {
+        let _ = join_all(listeners_tx.iter().map(|listener_tx: &Sender<ListenerConfigurationChange>| {
+            listener_tx.send(ListenerConfigurationChange::Added(listener.clone()))
+        }))
+        .await;
+    }
+
+    Ok(secret_manager)
 }
 
 async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {

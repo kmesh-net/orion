@@ -17,7 +17,7 @@
 // limitations under the License.
 //
 //
-#![allow(clippy::into_iter_on_ref)]
+
 use super::tls_configurator_builder::{WantsToBuildClient, WantsToBuildServer};
 use crate::{
     secrets::{
@@ -182,11 +182,21 @@ impl TryFrom<TlsCertificateConfig> for ClientCert {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct ServerCert {
     pub name: CompactString,
     pub key: Arc<PrivateKeyDer<'static>>,
     pub certs: Arc<Vec<CertificateDer<'static>>>,
+}
+
+impl std::fmt::Debug for ServerCert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerCert")
+            .field("key", &"Secret")
+            .field("certs", &self.certs)
+            .field("name", &self.name)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -300,7 +310,6 @@ impl TryFrom<(TlsServerConfig, &SecretManager)> for TlsConfigurator<ServerConfig
     fn try_from((config, secret_manager): (TlsServerConfig, &SecretManager)) -> StdResult<Self, Self::Error> {
         let require_client_cert = config.require_client_certificate;
         let common_context = config.common_tls_context;
-        #[allow(clippy::into_iter_on_ref)]
         let supported_versions = common_context
             .parameters
             .supported_version()

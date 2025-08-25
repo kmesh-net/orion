@@ -50,7 +50,6 @@ where
     P: ProtocolChecker + Send + 'static,
     P::Response: Send,
 {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint: EndpointId,
         cluster_config: ClusterHealthCheck,

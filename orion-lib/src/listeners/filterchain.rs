@@ -65,7 +65,6 @@ pub struct Filterchain {
     pub tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum MainFilterBuilder {
     Http(HttpConnectionManagerBuilder),
@@ -85,7 +84,6 @@ impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FilterchainBuilder {
     name: CompactString,
@@ -95,7 +93,6 @@ pub struct FilterchainBuilder {
     tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
 
-#[allow(dead_code)]
 impl FilterchainBuilder {
     pub fn with_listener_name(self, name: CompactString) -> Self {
         FilterchainBuilder { listener_name: Some(name), ..self }
@@ -154,8 +151,10 @@ impl FilterchainType {
     ) -> Option<TcpStream> {
         let rbac_filters = &self.filter_chain().rbac_filters;
         let network_context = NetworkContext::new(local_addr, peer_addr, server_name);
-        if rbac_filters.iter().any(|rbac| !rbac.is_permitted(network_context)) {
-            return None;
+        for rbac in rbac_filters {
+            if !rbac.is_permitted(network_context) {
+                return None;
+            }
         }
         Some(stream)
     }
@@ -214,7 +213,7 @@ impl FilterchainType {
                         stream,
                         hyper::service::service_fn(|req: Request<hyper::body::Incoming>| {
                             let handler_req = HttpHandlerRequest { request: req, source_addr: peer_addr };
-                            req_handler.call(handler_req).map_err(orion_error::Error::inner)
+                            req_handler.call(handler_req).map_err(|e| e.inner())
                         }),
                     )
                     .await
@@ -332,7 +331,7 @@ mod tests {
         .unwrap();
         let m: FilterChainMatch = m.try_into().unwrap();
         let dstport = 443;
-        let sourceip = Ipv4Addr::LOCALHOST.into();
+        let sourceip = Ipv4Addr::new(127, 0, 0, 1).into();
         let srcport = 33000;
         assert_eq!(m.matches_destination_ip(sourceip), MatchResult::NoRule);
         assert_eq!(m.matches_source_ip(sourceip), MatchResult::NoRule);

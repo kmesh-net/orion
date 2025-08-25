@@ -19,11 +19,9 @@
 //
 
 use super::secret::{TlsCertificate, ValidationContext};
-use crate::config::cluster::TlsConfig;
 use crate::config::common::*;
 use base64::Engine as _;
 use compact_str::CompactString;
-use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::UpstreamTlsContext;
 use serde::{
     de::{self, MapAccess, Visitor},
     ser::SerializeStruct,
@@ -33,13 +31,6 @@ use std::{
     ffi::{CStr, CString},
     str::FromStr,
 };
-
-impl TryFrom<Box<UpstreamTlsContext>> for TlsConfig {
-    type Error = crate::config::common::GenericError;
-    fn try_from(value: Box<UpstreamTlsContext>) -> Result<Self, Self::Error> {
-        TlsConfig::try_from(*value)
-    }
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BindDevice {
@@ -183,7 +174,6 @@ fn default_min_tls_version() -> TlsVersion {
     TlsVersion::TLSv1_2
 }
 
-#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_min_tls_version(value: &TlsVersion) -> bool {
     *value == default_min_tls_version()
 }
@@ -458,8 +448,8 @@ mod envoy_conversions {
     }
 
     pub(crate) enum SupportedEnvoyTransportSocket {
-        DownstreamTlsContext(Box<EnvoyDownstreamTlsContext>),
-        UpstreamTlsContext(Box<EnvoyUpstreamTlsContext>),
+        DownstreamTlsContext(EnvoyDownstreamTlsContext),
+        UpstreamTlsContext(EnvoyUpstreamTlsContext),
     }
 
     impl TryFrom<Any> for SupportedEnvoyTransportSocket {
@@ -468,7 +458,7 @@ mod envoy_conversions {
             match typed_config.type_url.as_str() {
                 "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext" => {
                     EnvoyDownstreamTlsContext::decode(typed_config.value.as_slice())
-                        .map(|v| SupportedEnvoyTransportSocket::DownstreamTlsContext(Box::new(v)))
+                        .map(SupportedEnvoyTransportSocket::DownstreamTlsContext)
                         .map_err(|e| {
                             GenericError::from_msg_with_cause(
                                 format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
@@ -478,7 +468,7 @@ mod envoy_conversions {
                 },
                 "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext" => {
                     EnvoyUpstreamTlsContext::decode(typed_config.value.as_slice())
-                        .map(|v| SupportedEnvoyTransportSocket::UpstreamTlsContext(Box::new(v)))
+                        .map(SupportedEnvoyTransportSocket::UpstreamTlsContext)
                         .map_err(|e| {
                             GenericError::from_msg_with_cause(
                                 format!("failed to parse protobuf for \"{}\"", typed_config.type_url),

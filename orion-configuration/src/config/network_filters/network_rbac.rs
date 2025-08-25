@@ -243,12 +243,6 @@ mod envoy_conversions {
             convert_opt!(rules)
         }
     }
-    impl TryFrom<Box<EnvoyNetworkRbac>> for NetworkRbac {
-        type Error = GenericError;
-        fn try_from(value: Box<EnvoyNetworkRbac>) -> Result<Self, Self::Error> {
-            NetworkRbac::try_from(*value)
-        }
-    }
 
     impl TryFrom<i32> for Action {
         type Error = GenericError;

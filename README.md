@@ -37,11 +37,6 @@ git submodule update --force
 cargo build
 ```
 
-> **Note:**
-> Do **not** use `--all-features` with `cargo build` or `cargo clippy`.
-> The `jemalloc` and `dhat-heap` features are mutually exclusive and will cause a build failure if both are enabled.
- > For CI/CD and development, use the default features. See the note in `.github/workflows/ci.yml` for more details.
-
 ### Running
 ```console
 cargo run --bin orion -- --config orion/conf/orion-runtime.yaml

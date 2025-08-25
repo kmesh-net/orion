@@ -251,7 +251,6 @@ mod envoy_conversions {
     };
     use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroU32};
 
-    #[allow(clippy::too_many_lines)]
     impl TryFrom<EnvoyCluster> for Cluster {
         type Error = GenericError;
         fn try_from(envoy: EnvoyCluster) -> Result<Self, Self::Error> {
@@ -497,10 +496,10 @@ mod envoy_conversions {
                 }
                 Ok(Self { endpoints })
             })();
-            if cluster_name.is_empty() {
-                ret
-            } else {
+            if !cluster_name.is_empty() {
                 ret.with_name(cluster_name)
+            } else {
+                ret
             }
         }
     }
@@ -678,7 +677,7 @@ mod envoy_conversions {
                 SupportedEnvoyTransportSocket::DownstreamTlsContext(_) => {
                     Err(GenericError::unsupported_variant("DownstreamTlsContext"))
                 },
-                SupportedEnvoyTransportSocket::UpstreamTlsContext(x) => (*x).try_into(),
+                SupportedEnvoyTransportSocket::UpstreamTlsContext(x) => x.try_into(),
             }
         }
     }

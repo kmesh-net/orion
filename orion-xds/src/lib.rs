@@ -1,4 +1,3 @@
-type XdsClientResult<T> = Result<T, Box<XdsError>>;
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -54,7 +53,7 @@ pub async fn start_aggregate_client(
         DeltaDiscoveryClient,
         DeltaDiscoverySubscriptionManager,
     ),
-    Box<XdsError>,
+    XdsError,
 > {
     info!("Starting xDS client: {:?}", configuration_service_address);
     let endpoint = Endpoint::from(configuration_service_address);
@@ -75,11 +74,10 @@ pub async fn start_aggregate_client(
 pub fn start_aggregate_client_no_retry_loop<C>(
     node: Node,
     channel: C,
-) -> XdsClientResult<(
-    DeltaClientBackgroundWorker<AggregatedDiscoveryType<C>>,
-    DeltaDiscoveryClient,
-    DeltaDiscoverySubscriptionManager,
-)>
+) -> Result<
+    (DeltaClientBackgroundWorker<AggregatedDiscoveryType<C>>, DeltaDiscoveryClient, DeltaDiscoverySubscriptionManager),
+    XdsError,
+>
 where
     C: Service<Request<BoxBody>, Response = Response<BoxBody>, Error = TonicError> + Send,
     C::Future: Send,

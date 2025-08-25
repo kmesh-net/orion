@@ -52,7 +52,7 @@ impl<'de> Deserialize<'de> for HeaderNames {
         D: serde::Deserializer<'de>,
     {
         struct StrVisitor;
-        impl Visitor<'_> for StrVisitor {
+        impl<'de> Visitor<'de> for StrVisitor {
             type Value = HeaderNames;
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("`str`")

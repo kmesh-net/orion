@@ -1,4 +1,3 @@
-#![allow(clippy::elidable_lifetime_names)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //

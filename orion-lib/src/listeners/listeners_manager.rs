@@ -26,11 +26,11 @@ use tracing::{debug, info, warn};
 
 use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
 
-use super::listener::Listener;
+use super::listener::{Listener, ListenerFactory};
 use crate::{secrets::TransportSecret, Result};
 #[derive(Debug, Clone)]
 pub enum ListenerConfigurationChange {
-    Added(std::sync::Arc<super::listener::Listener>),
+    Added(ListenerFactory),
     Removed(String),
     TlsContextChanged((String, TransportSecret)),
 }
@@ -76,12 +76,15 @@ impl ListenersManager {
             tokio::select! {
                 Some(listener_configuration_change) = self.configuration_channel.recv() => {
                     match listener_configuration_change {
-                        ListenerConfigurationChange::Added(listener) => {
-                            // TODO: handle adding a new listener
-                            debug!("Added listener: {:?}", listener.get_name());
-                        },
-                        ListenerConfigurationChange::Removed(_) => {
-                            // No-op or implement removal logic if needed
+                        ListenerConfigurationChange::Added(factory) => {
+                            let listener = factory
+                                .make_listener(tx_route_updates.subscribe(), tx_secret_updates.subscribe())?;
+                            if let Err(e) = self.start_listener(listener) {
+                                warn!("Failed to start listener: {e}");
+                            }
+                        }
+                        ListenerConfigurationChange::Removed(listener_name) => {
+                            let _ = self.stop_listener(&listener_name);
                         },
                         ListenerConfigurationChange::TlsContextChanged((secret_id, secret)) => {
                             info!("Got tls secret update {secret_id}");
@@ -89,6 +92,7 @@ impl ListenersManager {
                             if let Err(e) = res{
                                 warn!("Internal problem when updating a secret: {e}");
                             }
+
                         },
                     }
                 },

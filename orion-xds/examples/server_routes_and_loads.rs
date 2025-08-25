@@ -5,12 +5,15 @@ use orion_xds::xds::{
     server::{start_aggregate_server, ServerAction},
 };
 use tracing::info;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,orion_xds=debug".into()),
+        )
         .init();
 
     let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);
@@ -39,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta_resource_tx.send(ServerAction::Add(load_assigment_resource.clone())).await.is_err() {
             return;
-        }
+        };
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         info!("Adding Route configuration  {route_id}");
@@ -50,20 +53,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if delta_resource_tx.send(ServerAction::Add(route_configuration_resource.clone())).await.is_err() {
             return;
-        }
+        };
 
         tokio::time::sleep(Duration::from_secs(15)).await;
 
         info!("Removing cluster load assignment {cluster_id}");
         if delta_resource_tx.send(ServerAction::Remove(load_assigment_resource)).await.is_err() {
             return;
-        }
+        };
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         info!("Removing route configuration {route_id}");
         if delta_resource_tx.send(ServerAction::Remove(route_configuration_resource)).await.is_err() {
             return;
-        }
+        };
         tokio::time::sleep(Duration::from_secs(5)).await;
     });
 

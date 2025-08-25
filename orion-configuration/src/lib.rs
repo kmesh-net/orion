@@ -74,7 +74,7 @@ mod tests {
                 name: "http-router".to_owned(),
                 config_type: Some(ConfigType::TypedConfig(Any {
                     type_url: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router".to_owned(),
-                    value: vec![],
+                    value: vec![].into(),
                 })),
                 ..Default::default()
             }],

@@ -158,16 +158,14 @@ mod test {
     use rustls::ClientConfig;
 
     use super::DefaultBalancer;
-    use crate::clusters::load_assignment::LocalityLbEndpoints;
     use crate::{
         clusters::{
             balancers::{wrr::WeightedRoundRobinBalancer, Balancer},
             health::HealthStatus,
-            load_assignment::LbEndpoint,
+            load_assignment::{LbEndpoint, LocalityLbEndpoints},
         },
         secrets::{TlsConfigurator, WantsToBuildClient},
     };
-    use orion_configuration::config::cluster::HttpProtocolOptions;
     type TestpointData = (u32, u32, Vec<(http::uri::Authority, u32, HealthStatus)>);
 
     fn get_locality_endpoints(data: Vec<TestpointData>) -> Vec<LocalityLbEndpoints> {
@@ -190,7 +188,7 @@ mod test {
                 healthy_endpoints: healthy,
                 total_endpoints: u32::try_from(len).expect("Too many endpoints"),
                 tls_configurator: Option::<TlsConfigurator<ClientConfig, WantsToBuildClient>>::None,
-                http_protocol_options: HttpProtocolOptions::default(),
+                http_protocol_options: Default::default(),
                 connection_timeout: None,
             });
         }

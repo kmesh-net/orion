@@ -41,7 +41,7 @@ pub type ResourceVersion = String;
 
 #[derive(Clone, Debug)]
 pub enum XdsResourceUpdate {
-    Update(ResourceId, Box<XdsResourcePayload>),
+    Update(ResourceId, XdsResourcePayload),
     Remove(ResourceId, TypeUrl),
 }
 
@@ -56,11 +56,11 @@ impl XdsResourceUpdate {
 
 #[derive(Clone, Debug)]
 pub enum XdsResourcePayload {
-    Listener(ResourceId, Box<Listener>),
-    Cluster(ResourceId, Box<Cluster>),
-    Endpoints(ResourceId, Box<ClusterLoadAssignment>),
-    RouteConfiguration(ResourceId, Box<RouteConfiguration>),
-    Secret(ResourceId, Box<Secret>),
+    Listener(ResourceId, Listener),
+    Cluster(ResourceId, Cluster),
+    Endpoints(ResourceId, ClusterLoadAssignment),
+    RouteConfiguration(ResourceId, RouteConfiguration),
+    Secret(ResourceId, Secret),
 }
 
 impl TryFrom<(Resource, TypeUrl)> for XdsResourcePayload {
@@ -71,23 +71,23 @@ impl TryFrom<(Resource, TypeUrl)> for XdsResourcePayload {
         resource.resource.ok_or(XdsError::MissingResource()).and_then(|res| match type_url {
             TypeUrl::Listener => {
                 let decoded = Listener::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Listener(resource_id, Box::new(value)))
+                decoded.map(|value| XdsResourcePayload::Listener(resource_id, value))
             },
             TypeUrl::Cluster => {
                 let decoded = Cluster::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Cluster(resource_id, Box::new(value)))
+                decoded.map(|value| XdsResourcePayload::Cluster(resource_id, value))
             },
             TypeUrl::RouteConfiguration => {
                 let decoded = RouteConfiguration::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::RouteConfiguration(resource_id, Box::new(value)))
+                decoded.map(|value| XdsResourcePayload::RouteConfiguration(resource_id, value))
             },
             TypeUrl::ClusterLoadAssignment => {
                 let decoded = ClusterLoadAssignment::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Endpoints(resource_id, Box::new(value)))
+                decoded.map(|value| XdsResourcePayload::Endpoints(resource_id, value))
             },
             TypeUrl::Secret => {
                 let decoded = Secret::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Secret(resource_id, Box::new(value)))
+                decoded.map(|value| XdsResourcePayload::Secret(resource_id, value))
             },
         })
     }
