@@ -9,7 +9,7 @@ use orion_xds::xds::{
     server::{start_aggregate_server, ServerAction},
 };
 use tracing::info;
-use tracing_subscriber::{EnvFilter};
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

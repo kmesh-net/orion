@@ -1838,6 +1838,7 @@ dependencies = [
  "bytes",
  "clap",
  "compact_str",
+ "envoy-data-plane-api",
  "exponential-backoff",
  "http",
  "http-serde-ext",

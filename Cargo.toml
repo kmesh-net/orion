@@ -15,7 +15,7 @@ resolver = "2"
 
 
 [workspace.package]
-description  = "Orion Proxy is a highly experimental cloud native proxy. Orion Proxy is configurable via Envoy xDS protocol"
+description  = "Orion Proxy is a cloud native proxy. Orion Proxy is configurable via Envoy xDS protocol"
 edition      = "2021"
 license-file = "./LICENSE"
 rust-version = "1.84"

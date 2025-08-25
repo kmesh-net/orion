@@ -30,9 +30,7 @@ use orion_lib::{
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
     ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
 };
-use std::{
-    thread::{self, JoinHandle},
-};
+use std::thread::{self, JoinHandle};
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
