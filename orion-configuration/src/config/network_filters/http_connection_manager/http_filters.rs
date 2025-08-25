@@ -131,8 +131,8 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: SupportedEnvoyFilter) -> Result<Self, Self::Error> {
             match value {
-                SupportedEnvoyFilter::LocalRateLimit(lr) => lr.try_into().map(Self::RateLimit),
-                SupportedEnvoyFilter::Rbac(rbac) => rbac.try_into().map(Self::Rbac),
+                SupportedEnvoyFilter::LocalRateLimit(lr) => (*lr).try_into().map(Self::RateLimit),
+                SupportedEnvoyFilter::Rbac(rbac) => (*rbac).try_into().map(Self::Rbac),
                 SupportedEnvoyFilter::Router(_) => {
                     Err(GenericError::from_msg("router filter has to be the last filter in the chain"))
                 },
@@ -143,9 +143,9 @@ mod envoy_conversions {
     #[allow(clippy::large_enum_variant)]
     #[derive(Debug, Clone)]
     pub(crate) enum SupportedEnvoyFilter {
-        LocalRateLimit(EnvoyLocalRateLimit),
-        Rbac(EnvoyRbac),
-        Router(EnvoyRouter),
+        LocalRateLimit(Box<EnvoyLocalRateLimit>),
+        Rbac(Box<EnvoyRbac>),
+        Router(Box<EnvoyRouter>),
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -153,13 +153,14 @@ mod envoy_conversions {
         fn try_from(typed_config: Any) -> Result<Self, Self::Error> {
             match typed_config.type_url.as_str() {
                 "type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit" => {
-                    EnvoyLocalRateLimit::decode(typed_config.value.as_slice()).map(Self::LocalRateLimit)
+                    EnvoyLocalRateLimit::decode(typed_config.value.as_slice())
+                        .map(|v| Self::LocalRateLimit(Box::new(v)))
                 },
                 "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC" => {
-                    EnvoyRbac::decode(typed_config.value.as_slice()).map(Self::Rbac)
+                    EnvoyRbac::decode(typed_config.value.as_slice()).map(|v| Self::Rbac(Box::new(v)))
                 },
                 "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
-                    EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
+                    EnvoyRouter::decode(typed_config.value.as_slice()).map(|v| Self::Router(Box::new(v)))
                 },
                 _ => return Err(GenericError::unsupported_variant(typed_config.type_url)),
             }
@@ -203,7 +204,7 @@ mod envoy_conversions {
     #[derive(Debug, Clone)]
     pub enum MaybeWrappedEnvoyFilter {
         Wrapped(EnvoyFilterConfig),
-        Direct(SupportedEnvoyFilterOverride),
+        Direct(Box<SupportedEnvoyFilterOverride>),
     }
 
     impl TryFrom<Any> for MaybeWrappedEnvoyFilter {
@@ -218,7 +219,7 @@ mod envoy_conversions {
                         )
                     })
                 },
-                _ => SupportedEnvoyFilterOverride::try_from(typed_config).map(Self::Direct),
+                _ => SupportedEnvoyFilterOverride::try_from(typed_config).map(|v| Self::Direct(Box::new(v))),
             }
         }
     }
@@ -256,7 +257,7 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: MaybeWrappedEnvoyFilter) -> Result<Self, Self::Error> {
             match envoy {
-                MaybeWrappedEnvoyFilter::Direct(envoy) => FilterConfigOverride::try_from(envoy).map(Self::from),
+                MaybeWrappedEnvoyFilter::Direct(envoy) => FilterConfigOverride::try_from(*envoy).map(Self::from),
                 MaybeWrappedEnvoyFilter::Wrapped(envoy) => envoy.try_into(),
             }
         }

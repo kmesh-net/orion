@@ -18,6 +18,7 @@
 // limitations under the License.
 //
 //
+#![allow(clippy::expect_used)]
 
 pub mod configuration;
 
@@ -41,7 +42,7 @@ pub use crate::configuration::get_listeners_and_clusters;
 pub use clusters::health::{EndpointHealthUpdate, HealthCheckManager};
 pub use clusters::load_assignment::{LbEndpoint, PartialClusterLoadAssignment};
 pub use clusters::{cluster::PartialClusterType, ClusterLoadAssignmentBuilder};
-pub use listeners::listener::ListenerFactory;
+pub use listeners::listener::Listener;
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};
 pub use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
 pub use secrets::SecretManager;
@@ -60,6 +61,7 @@ pub fn runtime_config() -> &'static Runtime {
     RUNTIME_CONFIG.get().expect("Called runtime_config without setting RUNTIME_CONFIG first")
 }
 
+#[allow(dead_code)]
 pub struct ConversionContext<'a, T> {
     envoy_object: T,
     secret_manager: &'a SecretManager,

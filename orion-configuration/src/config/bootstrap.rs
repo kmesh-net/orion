@@ -127,6 +127,7 @@ mod envoy_conversions {
                 grpc_async_client_manager_config,
                 stats_flush,
                 memory_allocator_manager: _,
+                ..
             } = envoy;
             unsupported_field!(
                 // node,

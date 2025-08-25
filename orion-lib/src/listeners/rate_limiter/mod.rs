@@ -35,6 +35,7 @@ use crate::{runtime_config, HttpBody};
 
 #[derive(Debug, Clone)]
 // TODO: Implement rate limiting functionality - this struct defines the interface for local rate limits
+#[allow(dead_code)]
 pub struct LocalRateLimit {
     pub status: StatusCode,
     pub token_bucket: Arc<TokenBucket>,
@@ -42,6 +43,7 @@ pub struct LocalRateLimit {
 
 impl LocalRateLimit {
     // TODO: Implement rate limit enforcement - used to check and consume tokens for incoming requests
+    #[allow(dead_code)]
     pub fn run<B>(&self, req: &Request<B>) -> Option<Response<HttpBody>> {
         if !self.token_bucket.consume(1) {
             let status = self.status;
@@ -51,6 +53,7 @@ impl LocalRateLimit {
     }
 }
 
+#[allow(clippy::expect_used)]
 impl From<LocalRateLimitConfig> for LocalRateLimit {
     fn from(rate_limit: LocalRateLimitConfig) -> Self {
         let status = rate_limit.status;

@@ -68,9 +68,9 @@ where
         self
     }
 
-    pub fn build(self) -> Result<(DeltaClientBackgroundWorker<C>, DeltaDiscoveryClient), XdsError> {
+    pub fn build(self) -> Result<(DeltaClientBackgroundWorker<C>, DeltaDiscoveryClient), Box<XdsError>> {
         if let Some(err) = self.error {
-            Err(XdsError::BuilderFailed(err))
+            Err(Box::new(XdsError::BuilderFailed(err)))
         } else {
             let (subscription_updates_tx, subscription_updates_rx) = mpsc::channel::<SubscriptionEvent>(100);
             let (resource_updates_tx, resource_updates_rx) = mpsc::channel::<XdsUpdateEvent>(100);
@@ -335,7 +335,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     pending_update_versions.insert(resource_id.clone(), resource_version);
                     debug!("decoded config update for resource {resource_id}");
                 }
-                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id.clone(), value))
+                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id.clone(), Box::new(value)))
             })
             .chain(for_removal.into_iter().map(|resource_id| XdsResourceUpdate::Remove(resource_id, type_url)))
             .collect();

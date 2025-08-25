@@ -24,7 +24,6 @@ use orion_configuration::{
 };
 use orion_lib::{Result, RUNTIME_CONFIG};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 #[macro_use]
 mod core_affinity;
@@ -45,9 +44,6 @@ pub fn run() -> Result<()> {
 }
 
 #[cfg(feature = "console")]
-use console_subscriber;
-
-#[cfg(feature = "console")]
 fn init_tracing(_conf: LogConf) -> WorkerGuard {
     let (_non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
     console_subscriber::init();
@@ -56,6 +52,9 @@ fn init_tracing(_conf: LogConf) -> WorkerGuard {
 
 #[cfg(not(feature = "console"))]
 fn init_tracing(log_conf: LogConf) -> WorkerGuard {
+    use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{fmt, EnvFilter, Registry};
     let env_filter = EnvFilter::try_from_default_env().ok().or(log_conf.log_level).unwrap_or_else(|| {
         EnvFilter::builder()
             .with_default_directive(tracing_subscriber::filter::LevelFilter::ERROR.into())

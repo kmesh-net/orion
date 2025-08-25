@@ -243,18 +243,17 @@ impl BootstrapResolver for BootstrapLoader {
 
     fn get_static_route_configs(&self) -> Result<Vec<RouteConfiguration>, BootstrapResolveErr> {
         let mut res = Vec::new();
-        for listener in self
+        let listeners = self
             .bootstrap
             .as_ref()
-            .unwrap()
-            .static_resources
-            .as_ref()
-            .map(|static_resource| static_resource.listeners.as_slice())
-            .unwrap_or(&[])
-        {
+            .and_then(|b| b.static_resources.as_ref())
+            .map_or_else(Vec::new, |sr| sr.listeners.clone());
+        for listener in &listeners {
             for filter_chain in &listener.filter_chains {
                 for filter in &filter_chain.filters {
-                    let config_type = filter.config_type.as_ref().unwrap();
+                    let Some(config_type) = filter.config_type.as_ref() else {
+                        continue;
+                    };
                     if let ConfigType::TypedConfig(filter_any) = config_type {
                         if filter_any.type_url != EXT_HTTP_CONN_MANAGER {
                             continue;

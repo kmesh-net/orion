@@ -81,4 +81,10 @@ mod envoy_conversions {
             Ok(Self { cluster_specifier })
         }
     }
+    impl TryFrom<Box<EnvoyTcpProxy>> for TcpProxy {
+        type Error = GenericError;
+        fn try_from(value: Box<EnvoyTcpProxy>) -> Result<Self, Self::Error> {
+            TcpProxy::try_from(*value)
+        }
+    }
 }

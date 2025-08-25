@@ -43,7 +43,7 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, RouteMatchResult)> for &Red
         let UriParts { scheme: orig_scheme, authority: orig_authority, path_and_query: orig_path_and_query, .. } =
             parts.uri.into_parts();
         let orig_host = orig_authority.as_ref().map(Authority::host);
-        let orig_port = orig_authority.as_ref().map(Authority::port_u16).flatten();
+        let orig_port = orig_authority.as_ref().and_then(Authority::port_u16);
         let authority = match (self.authority_redirect.as_ref(), (orig_host, orig_port)) {
             //no redirect
             (None, _) => orig_authority,
