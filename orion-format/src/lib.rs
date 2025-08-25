@@ -59,6 +59,7 @@ struct IndexedTemplate {
     indices: [Vec<u8>; Category::COUNT],
 }
 
+#[allow(clippy::unsafe_derive_deserialize)]
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct LogFormatter {
     catalog: Arc<IndexedTemplate>,

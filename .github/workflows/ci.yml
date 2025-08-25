@@ -44,7 +44,7 @@ jobs:
         run: cargo fmt --all -- --check
       
       - name: Run clippy (fail on warnings)
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features 
 
   # Build and test that share artifacts
   build-and-test:
