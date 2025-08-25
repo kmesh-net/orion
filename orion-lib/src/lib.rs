@@ -56,6 +56,7 @@ pub type HttpBody = PolyBody;
 
 pub static RUNTIME_CONFIG: OnceLock<Runtime> = OnceLock::new();
 
+#[allow(clippy::expect_used, clippy::missing_panics_doc)]
 pub fn runtime_config() -> &'static Runtime {
     RUNTIME_CONFIG.get().expect("Called runtime_config without setting RUNTIME_CONFIG first")
 }

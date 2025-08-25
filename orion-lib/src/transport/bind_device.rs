@@ -34,6 +34,7 @@ pub(crate) fn bind_device(_: &tokio::net::TcpSocket, _: &BindDevice) -> std::io:
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::manual_c_str_literals)]
     use std::ffi::CStr;
 
     use super::*;
@@ -160,7 +161,7 @@ mod tests {
     fn direct_decode_bytes() {
         let yaml = "interface_bytes: YRs=";
         let iface = CStr::from_bytes_with_nul(b"a\x1b\0").unwrap();
-        let bd: BindDevice = serde_yaml::from_str(&yaml).unwrap();
+        let bd: BindDevice = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(iface, bd.interface())
     }
 
@@ -168,7 +169,7 @@ mod tests {
     fn direct_decode_iface() {
         let yaml = "interface: eth0";
         let iface = CStr::from_bytes_with_nul(b"eth0\0").unwrap();
-        let bd: BindDevice = serde_yaml::from_str(&yaml).unwrap();
+        let bd: BindDevice = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(iface, bd.interface())
     }
 }

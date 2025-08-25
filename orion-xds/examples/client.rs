@@ -6,17 +6,13 @@ use orion_xds::{
 };
 use std::future::IntoFuture;
 use tracing::{debug, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,orion_xds=debug".into()),
-        )
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
         .init();
 
     let (mut worker, mut client, _subscription_manager) =
@@ -33,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for update in notification.updates {
                 match update {
-                    XdsResourceUpdate::Update(_id, resource) => match resource {
+                    XdsResourceUpdate::Update(_id, resource, _) => match resource {
                         XdsResourcePayload::Listener(_id, resource) => {
                             info!("Got update for listener {resource:#?}");
                         },

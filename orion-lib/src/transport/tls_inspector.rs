@@ -19,7 +19,7 @@
 //
 
 use rustls::server::Acceptor;
-use std::{pin::Pin, task::Poll};
+use std::{cmp::Ordering, pin::Pin, task::Poll};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -44,7 +44,7 @@ impl<'a> TlsInspector<'a> {
     }
 }
 
-impl<'a> AsyncRead for TlsInspector<'a> {
+impl AsyncRead for TlsInspector<'_> {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -61,24 +61,29 @@ impl<'a> AsyncRead for TlsInspector<'a> {
                 poll.map(|p| p.map(|_| ()))
             }
         } else {
-            //if we have little space left in the buffer, grow it.
-            // maximum size should be capped by rustls failing the handshake.
-            if buffer.len().checked_sub(*bytes_read).unwrap_or_default() <= 512 {
-                buffer.resize(buffer.len() + 4 * (1 << 10), 0);
+            let write_capacity = buf.remaining();
+            let internal_buffer_bound = *bytes_read + write_capacity;
+            if buffer.len() < internal_buffer_bound {
+                buffer.resize(internal_buffer_bound, 0);
             }
-            let mut peek_read_buf = tokio::io::ReadBuf::new(&mut buffer[..buf.remaining()]);
+            let mut peek_read_buf = tokio::io::ReadBuf::new(buffer);
             let poll = Pin::new(stream).poll_peek(cx, &mut peek_read_buf);
             if let Poll::Ready(Ok(n_bytes)) = poll {
-                //this should never fail, as that would imply we peeked less bytes than we did previously
-                if n_bytes >= *bytes_read {
-                    return Poll::Ready(Err(std::io::Error::other(
+                match n_bytes.cmp(bytes_read) {
+                    Ordering::Greater => {
+                        let newly_read = &peek_read_buf.filled()[*bytes_read..n_bytes];
+                        buf.put_slice(newly_read);
+                        *bytes_read = n_bytes;
+                        Poll::Ready(Ok(()))
+                    },
+                    Ordering::Equal => {
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    },
+                    Ordering::Less => Poll::Ready(Err(std::io::Error::other(
                         "TLS inspector peeked less bytes than it did in a previous iteration",
-                    )));
+                    ))),
                 }
-                let newly_read = &peek_read_buf.filled()[*bytes_read..];
-                buf.put_slice(newly_read);
-                *bytes_read = n_bytes;
-                Poll::Ready(Ok(()))
             } else {
                 poll.map(|p| p.map(|_| ()))
             }
@@ -92,7 +97,7 @@ impl<'a> AsyncRead for TlsInspector<'a> {
 //
 // for now, we simply error out on any writes. The TLS protocol should not require that we write anything before receiving the initial handshake
 // see https://tls13.xargs.org/
-impl<'a> AsyncWrite for TlsInspector<'a> {
+impl AsyncWrite for TlsInspector<'_> {
     fn poll_flush(
         self: Pin<&mut Self>,
         _: &mut std::task::Context<'_>,

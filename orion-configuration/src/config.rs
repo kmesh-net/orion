@@ -96,7 +96,7 @@ mod envoy_conversions {
     };
     use orion_data_plane_api::decode::from_serde_deserializer;
     pub use orion_data_plane_api::envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
-    use orion_error::ResultExtension;
+    use orion_error::Context;
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -122,7 +122,7 @@ mod envoy_conversions {
                 serde_yaml::Deserializer::from_reader(&envoy_file),
                 &mut track,
             ))
-            .with_context(|| format!("failed to deserialize {}", track.path().to_string()))?;
+            .with_context(|| format!("failed to deserialize {}", track.path()))?;
             Bootstrap::try_from(envoy).context("failed to convert into orion bootstrap")
         })()
         .with_context(|| format!("failed to read config from \"{}\"", envoy_path.as_ref().display()))
@@ -137,7 +137,7 @@ mod envoy_conversions {
                     Self { runtime: Runtime::default(), logging: Log::default(), bootstrap }
                 },
                 (Some(config), maybe_override) => {
-                    let ShimConfig { runtime, logging, bootstrap, envoy_bootstrap } = deserialize_yaml(&config)
+                    let ShimConfig { runtime, logging, bootstrap, envoy_bootstrap } = deserialize_yaml(config)
                         .with_context(|| format!("failed to deserialize \"{}\"", config.display()))?;
                     let mut bootstrap = match (bootstrap, envoy_bootstrap) {
                         (None, None) => Bootstrap::default(),
@@ -149,7 +149,7 @@ mod envoy_conversions {
                         },
                     };
                     if let Some(bootstrap_override) = maybe_override {
-                        bootstrap = bootstrap_from_path_to_envoy_bootstrap(&bootstrap_override)?;
+                        bootstrap = bootstrap_from_path_to_envoy_bootstrap(bootstrap_override)?;
                     }
                     Self { runtime, logging, bootstrap }
                 },
@@ -199,10 +199,7 @@ mod envoy_conversions {
                     //     std::fs::write(new_path, serialized.as_bytes())?;
                     // }
                     let deserialized: Config = serde_yaml::from_str(&serialized)?;
-                    if new_conf != deserialized {
-                        tracing::info!("\n{}\n", serde_yaml::to_string(&deserialized)?);
-                        panic!("failed to roundtrip config transcoding")
-                    }
+                    assert_eq!(new_conf, deserialized, "failed to roundtrip config transcoding");
                 } else {
                     tracing::info!("skipping {}", path.display())
                 }

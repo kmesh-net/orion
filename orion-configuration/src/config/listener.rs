@@ -178,7 +178,7 @@ impl FilterChainMatch {
                     let bits_matched = match ip {
                         IpAddr::V4(_) => 32,
                         IpAddr::V6(_) => 128,
-                    } - (range.prefix_len() as u32);
+                    } - u32::from(range.prefix_len());
                     MatchResult::Matched(bits_matched)
                 } else {
                     MatchResult::FailedMatch
@@ -593,6 +593,7 @@ mod envoy_conversions {
         }
     }
 
+    #[allow(clippy::large_enum_variant)]
     #[derive(Debug, Clone)]
     enum SupportedEnvoyFilter {
         HttpConnectionManager(EnvoyHttpConnectionManager),

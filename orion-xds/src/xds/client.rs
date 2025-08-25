@@ -21,14 +21,12 @@
 use super::{
     bindings,
     model::{RejectedConfig, ResourceId, ResourceVersion, TypeUrl, XdsError, XdsResourcePayload, XdsResourceUpdate},
+    request::{DeltaDiscoveryRequestBuilder, StatusBuilder},
 };
+use core::result::Result::{Err, Ok};
 use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
-    envoy::{
-        config::core::v3::Node as EnvoyNode,
-        service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
-    },
-    google::rpc::Status,
+    envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
     tonic,
 };
 use std::{
@@ -160,7 +158,6 @@ pub struct DeltaClientBackgroundWorker<C: bindings::TypedXdsBinding> {
 impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
     pub async fn run(&mut self) -> Result<(), XdsError> {
         let mut connection_id = 0;
-
         let mut state = DiscoveryClientState {
             backoff: INITIAL_BACKOFF,
             tracked: HashMap::new(),
@@ -190,7 +187,7 @@ impl DiscoveryClientState {
 
 impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
     async fn persistently_connect(&mut self, state: &mut DiscoveryClientState) {
-        match self.stream_resources(state).await {
+        match self.continuously_discover_resources(state).await {
             Err(ref e @ XdsError::GrpcStatus(ref status)) => {
                 let backoff = std::cmp::min(MAX_BACKOFF, state.backoff * 2);
                 let err_detail = e.to_string();
@@ -221,54 +218,27 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         }
     }
 
-    async fn stream_resources(&mut self, state: &mut DiscoveryClientState) -> Result<(), XdsError> {
+    async fn continuously_discover_resources(&mut self, state: &mut DiscoveryClientState) -> Result<(), XdsError> {
         let (discovery_requests_tx, mut discovery_requests_rx) = mpsc::channel::<DeltaDiscoveryRequest>(100);
 
-        let resource_types = match C::type_url() {
-            Some(type_url) => vec![type_url],
-            _ => vec![
-                TypeUrl::Secret,
-                TypeUrl::ClusterLoadAssignment,
-                TypeUrl::Cluster,
-                TypeUrl::RouteConfiguration,
-                TypeUrl::Listener,
-            ],
-        };
-        let initial_requests: Vec<DeltaDiscoveryRequest> = resource_types
-            .iter()
-            .map(|resource_type| {
-                let subscriptions = state.subscriptions.get(resource_type).cloned().unwrap_or_default();
-                let already_tracked: HashMap<ResourceId, ResourceVersion> =
-                    state.tracked.get(resource_type).cloned().unwrap_or_default();
-                DeltaDiscoveryRequest {
-                    node: Some(EnvoyNode { id: self.node.id.clone().into_string(), ..Default::default() }),
-                    type_url: resource_type.to_string(),
-                    initial_resource_versions: already_tracked,
-                    resource_names_subscribe: subscriptions.into_iter().collect(),
-                    ..Default::default()
-                }
-            })
-            .collect();
-
-        let outbound_requests = async_stream::stream! {
+        let initial_requests = self.build_initial_discovery_requests(state);
+        let outbound_request_stream = async_stream::stream! {
             for request in initial_requests {
-                info!(
-                    "sending initial discovery request {request:?}",
-                );
-
+                info!("sending initial discovery request {request:?}");
                 yield request;
             }
             while let Some(message) = discovery_requests_rx.recv().await {
-                info!(
-                    "sending subsequent discovery request {message:?}",
-                );
+                info!("sending upstream xDS message {message:?}");
                 yield message
             }
             warn!("outbound discovery request stream has ended!");
         };
-
-        let mut response_stream =
-            self.client_binding.delta_request(outbound_requests).await.map_err(XdsError::GrpcStatus)?.into_inner();
+        let mut inbound_response_stream = self
+            .client_binding
+            .delta_request(outbound_request_stream)
+            .await
+            .map_err(XdsError::GrpcStatus)?
+            .into_inner();
         info!("xDS stream established");
         state.reset_backoff();
 
@@ -277,13 +247,13 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 Some(event) = self.subscriptions_rx.recv() => {
                     self.process_subscription_event(event, state, &discovery_requests_tx).await;
                 }
-                discovered = response_stream.message() => {
+                discovered = inbound_response_stream.message() => {
                     let payload = discovered?;
                     let discovery_response = payload.ok_or(XdsError::UnknownResourceType("empty payload received".to_owned()))?;
-                    self.process_and_acknowledge(discovery_response, &discovery_requests_tx, state).await?;
+                    self.process_discovery_response(discovery_response, &discovery_requests_tx, state).await?;
                 },
                 else => {
-                    warn!("All channels are closed...exiting");
+                    warn!("xDS channels are closed...exiting");
                     return Ok(())
                 }
             }
@@ -302,12 +272,12 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let is_new = state.subscriptions.entry(type_url).or_default().insert(resource_id.clone());
                 if is_new {
                     if let Err(err) = discovery_requests_tx
-                        .send(DeltaDiscoveryRequest {
-                            node: Some(EnvoyNode { id: self.node.id.clone().into_string(), ..Default::default() }),
-                            type_url: type_url.to_string(),
-                            resource_names_subscribe: vec![resource_id],
-                            ..Default::default()
-                        })
+                        .send(
+                            DeltaDiscoveryRequestBuilder::for_resource(type_url)
+                                .with_node_id(self.node.id.clone().to_string())
+                                .with_resource_names_subscribe(vec![resource_id])
+                                .build(),
+                        )
                         .await
                     {
                         warn!("problems updating subscription: {:?}", err);
@@ -319,12 +289,12 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let was_subscribed = state.subscriptions.entry(type_url).or_default().remove(resource_id.as_str());
                 if was_subscribed {
                     if let Err(err) = discovery_requests_tx
-                        .send(DeltaDiscoveryRequest {
-                            node: Some(EnvoyNode { id: self.node.id.clone().into_string(), ..Default::default() }),
-                            type_url: type_url.to_string(),
-                            resource_names_unsubscribe: vec![resource_id],
-                            ..Default::default()
-                        })
+                        .send(
+                            DeltaDiscoveryRequestBuilder::for_resource(type_url)
+                                .with_node_id(self.node.id.clone().to_string())
+                                .with_resource_names_unsubscribe(vec![resource_id])
+                                .build(),
+                        )
                         .await
                     {
                         warn!("problems updating subscription: {:?}", err);
@@ -333,7 +303,8 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             },
         }
     }
-    async fn process_and_acknowledge(
+
+    async fn process_discovery_response(
         &mut self,
         response: DeltaDiscoveryResponse,
         acknowledgments_tx: &mpsc::Sender<DeltaDiscoveryRequest>,
@@ -342,92 +313,124 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         let type_url = TypeUrl::try_from(response.type_url.as_str())?;
         let nonce = response.nonce.clone();
         info!(type_url = type_url.to_string(), size = response.resources.len(), "received config resources from xDS");
+        let for_removal = Self::process_resource_ids_for_removal(state, &response, type_url);
 
-        let (updates, mut pending_update_versions) = Self::map_updates(state, response, type_url);
-        let (internal_ack_tx, internal_ack_rx) = oneshot::channel::<Vec<RejectedConfig>>();
-        let notification = XdsUpdateEvent { updates, ack_channel: internal_ack_tx };
-        self.resources_tx
-            .send(notification)
-            .await
-            .map_err(|e: mpsc::error::SendError<XdsUpdateEvent>| XdsError::InternalProcessingError(e.to_string()))?;
+        match Self::decode_pending_updates(&response, type_url) {
+            Ok(mut decoded_updates) => {
+                let (internal_ack_tx, internal_ack_rx) = oneshot::channel::<Vec<RejectedConfig>>();
 
-        tokio::select! {
-            ack = internal_ack_rx => {
-                match ack {
-                    Ok(rejected_configs) => {
-                        let error = if rejected_configs.is_empty() {
-                            debug!(
-                                type_url = type_url.to_string(),
-                                nonce,
-                                "sending ack response after processing",
-                            );
-                            let tracked_resources = state.tracked.entry(type_url).or_default();
-                            for (resource_id, resource_version) in pending_update_versions.drain() {
-                                tracked_resources.insert(resource_id, resource_version);
-                            }
-                            None
-                        } else {
-                            let error = rejected_configs
-                                    .into_iter()
-                                    .map(|reject| reject.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join("; ");
-                            debug!(
-                                type_url = type_url.to_string(),
-                                error,
-                                nonce,
-                                "rejecting configs with nack response",
-                            );
-                            Some(Status {
-                                message: error,
-                                code: tonic::Code::InvalidArgument.into(),
-                                ..Default::default()
-                            })
-                        };
-                        if let Err(err) = acknowledgments_tx.send(DeltaDiscoveryRequest {
-                            type_url: type_url.to_string(),
-                            response_nonce: nonce,
-                            error_detail: error,
-                            ..Default::default()
-                        })
-                        .await
-                        {
-                            warn!("error in send xDS ack/nack upstream {:?}", err);
+                let mut pending_update_versions = Self::extract_update_versions(&decoded_updates);
+                let mut removal_notifications = for_removal
+                    .iter()
+                    .map(|resource_id| XdsResourceUpdate::Remove(resource_id.to_string(), type_url))
+                    .collect::<Vec<XdsResourceUpdate>>();
+
+                let mut batched_updates = Vec::<XdsResourceUpdate>::new();
+                batched_updates.append(&mut decoded_updates);
+                batched_updates.append(&mut removal_notifications);
+                let batch_notification = XdsUpdateEvent { updates: batched_updates, ack_channel: internal_ack_tx };
+                self.resources_tx.send(batch_notification).await.map_err(
+                    |e: mpsc::error::SendError<XdsUpdateEvent>| XdsError::InternalProcessingError(e.to_string()),
+                )?;
+
+                tokio::select! {
+                    ack = internal_ack_rx => {
+                        match ack {
+                            Ok(rejected_configs) => {
+                                let maybe_error = if rejected_configs.is_empty() {
+                                    debug!(type_url = type_url.to_string(), nonce, "sending ack response after processing");
+                                    let tracked_resources = state.tracked.entry(type_url).or_default();
+                                    for (resource_id, resource_version) in pending_update_versions.drain() {
+                                        tracked_resources.insert(resource_id, resource_version);
+                                    }
+                                    None
+                                } else {
+                                    let error_msg = rejected_configs.into_iter()
+                                            .map(|reject| reject.to_string())
+                                            .collect::<Vec<String>>()
+                                            .join("; ");
+                                    warn!(type_url = type_url.to_string(), error_msg, nonce, "rejecting configs with nack response");
+                                    Some(StatusBuilder::invalid_argument().with_message(error_msg).build())
+                                };
+                                let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
+                                    .with_nounce(nonce.clone())
+                                    .with_error_detail(maybe_error)
+                                    .build();
+                                if let Err(err) = acknowledgments_tx.send(upstream_response).await {
+                                    warn!("error in send xDS ack/nack upstream {:?}", err);
+                                };
+                            },
+                            Err(err) => {
+                                warn!("error in reading internal ack/nack {:?}", err);
+                            },
                         }
-                    },
-                    Err(err) => {
-                        warn!("error in reading internal ack/nack {:?}", err);
-                    },
+                    }
+                    () = time::sleep(ACK_TIMEOUT) => {
+                        warn!("timed out while waiting to acknowledge config updates");
+                        let version_info = pending_update_versions.into_keys()
+                                .collect::<Vec<String>>()
+                                .join("; ");
+                        let error_msg = format!("timed out trying to apply resource updates for [{version_info}]");
+                        let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
+                            .with_nounce(nonce.clone())
+                            .with_error_detail(Some(StatusBuilder::unspecified_error().with_message(error_msg).build()))
+                            .build();
+                        let _ = acknowledgments_tx.send(upstream_response).await;
+                    }
                 }
-            }
-            () = time::sleep(ACK_TIMEOUT) => {
-                warn!("timed out while waiting to acknowledge config updates");
-                let error = pending_update_versions.into_keys()
-                        .collect::<Vec<String>>()
-                        .join("; ");
-                let error = Status {
-                    message: error,
-                    ..Default::default()
-                };
-                let _ = acknowledgments_tx.send(DeltaDiscoveryRequest {
-                    type_url: type_url.to_string(),
-                        response_nonce: nonce,
-                        error_detail: Some(error),
-                        ..Default::default()
-                    })
-                    .await;
-            }
-        }
+            },
 
+            Err(decoding_errors) => {
+                let error_msg =
+                    decoding_errors.into_iter().map(|reject| reject.to_string()).collect::<Vec<String>>().join("; ");
+                warn!(
+                    type_url = type_url.to_string(),
+                    error_msg, nonce, "decoding error, rejecting configs with nack response"
+                );
+                let upstream_nack_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
+                    .with_nounce(nonce)
+                    .with_error_detail(Some(StatusBuilder::invalid_argument().with_message(error_msg).build()))
+                    .build();
+                if let Err(err) = acknowledgments_tx.send(upstream_nack_response).await {
+                    warn!("error in send xDS ack/nack upstream {:?}", err);
+                }
+            },
+        }
         Ok(())
     }
 
-    fn map_updates(
+    fn build_initial_discovery_requests(&self, tracking_state: &DiscoveryClientState) -> Vec<DeltaDiscoveryRequest> {
+        let resource_types = match C::type_url() {
+            Some(type_url) => vec![type_url],
+            _ => vec![
+                TypeUrl::Secret,
+                TypeUrl::ClusterLoadAssignment,
+                TypeUrl::Cluster,
+                TypeUrl::RouteConfiguration,
+                TypeUrl::Listener,
+            ],
+        };
+        resource_types
+            .iter()
+            .map(|resource_type| {
+                let subscriptions = tracking_state.subscriptions.get(resource_type).cloned().unwrap_or_default();
+                let already_tracked: HashMap<ResourceId, ResourceVersion> =
+                    tracking_state.tracked.get(resource_type).cloned().unwrap_or_default();
+                DeltaDiscoveryRequestBuilder::for_resource(resource_type.to_owned())
+                    .with_node_id(self.node.id.clone().to_string())
+                    .with_initial_resource_versions(already_tracked)
+                    .with_resource_names_subscribe(subscriptions.into_iter().collect())
+                    .build()
+            })
+            .collect()
+    }
+
+    fn process_resource_ids_for_removal(
         state: &mut DiscoveryClientState,
-        response: DeltaDiscoveryResponse,
+        response: &DeltaDiscoveryResponse,
         type_url: TypeUrl,
-    ) -> (Vec<XdsResourceUpdate>, HashMap<String, String>) {
-        let for_removal: Vec<String> = response
+    ) -> Vec<String> {
+        response
             .removed_resources
             .iter()
             .map(|resource_id| {
@@ -437,28 +440,49 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 }
                 resource_id.clone()
             })
-            .collect();
+            .collect()
+    }
 
-        let mut pending_update_versions = HashMap::<ResourceId, ResourceVersion>::new();
-
-        let updates = response
+    fn decode_pending_updates(
+        response: &DeltaDiscoveryResponse,
+        type_url: TypeUrl,
+    ) -> Result<Vec<XdsResourceUpdate>, Vec<RejectedConfig>> {
+        let mut decoding_errors = Vec::<RejectedConfig>::new();
+        let decoded_updates = response
             .resources
+            .clone()
             .into_iter()
             .filter_map(|resource| {
                 let resource_id = resource.name.clone();
                 let resource_version = resource.version.clone();
                 let decoded = XdsResourcePayload::try_from((resource, type_url));
                 if decoded.is_err() {
-                    warn!("problem decoding config update for {} : error {:?}", resource_id, decoded.as_ref().err());
-                } else {
-                    pending_update_versions.insert(resource_id.clone(), resource_version);
-                    debug!("decoded config update for resource {resource_id}");
+                    let error_msg = format!(
+                        "problem decoding config update for {} : error {:?}",
+                        resource_id,
+                        decoded.as_ref().err()
+                    );
+                    let decoding_error: orion_error::Error = error_msg.clone().into();
+                    decoding_errors.push(RejectedConfig::from((resource_id.clone(), decoding_error)));
+                    warn!(error_msg);
                 }
-                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id.clone(), value))
+                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id, value, resource_version))
             })
-            .chain(for_removal.into_iter().map(|resource_id| XdsResourceUpdate::Remove(resource_id, type_url)))
             .collect();
+        if decoding_errors.is_empty() {
+            Ok(decoded_updates)
+        } else {
+            Err(decoding_errors)
+        }
+    }
 
-        (updates, pending_update_versions)
+    fn extract_update_versions(updates: &[XdsResourceUpdate]) -> HashMap<ResourceId, ResourceVersion> {
+        let mut update_versions = HashMap::<ResourceId, ResourceVersion>::new();
+        for update in updates {
+            if let XdsResourceUpdate::Update(resource_id, _, resource_version) = update {
+                update_versions.insert(resource_id.to_string(), resource_version.to_string());
+            }
+        }
+        update_versions
     }
 }

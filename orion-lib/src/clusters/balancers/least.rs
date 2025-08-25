@@ -69,6 +69,7 @@ impl<E: EndpointWithLoad> WeightedLeastRequestBalancer<E> {
         Self::new_with_settings(items, DEFAULT_ACTIVE_REQUEST_BIAS, u32::from(DEFAULT_P2C_CHOICE_COUNT))
     }
 
+    #[allow(clippy::expect_used)]
     fn new_with_settings(
         items: impl IntoIterator<Item = LbItem<E>>,
         active_request_bias: f32,

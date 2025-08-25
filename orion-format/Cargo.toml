@@ -1,0 +1,35 @@
+[package]
+name = "orion-format"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+http.workspace = true
+thiserror.workspace = true
+
+criterion = "0.5.1"
+lazy_static = "1.5.0"
+ptrie = "0.7.2"
+smol_str = { version = "0.3.2", features = ["serde"] }
+chrono = "0.4.40"
+dhat = "0.3.3"
+bitflags = "2.9.0"
+itoa = "1.0.15"
+serde = { workspace = true, features = ["rc"] }
+http-serde-ext = "1.0.2"
+strum = { version = "0.27.1", features = ["derive"] }
+strum_macros = "0.27.1"
+
+[features]
+dhat-heap = []
+
+[[bench]]
+name = "benchmark"
+harness = false
+
+[[bin]]
+name = "format-test"
+path = "src/bin/format-test.rs"

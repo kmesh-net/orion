@@ -5,7 +5,6 @@ publish = ["rust-inhuawei-com"]
 version = "0.1.0"
 
 [dependencies]
-bytes.workspace                = true
 futures.workspace              = true
 http.workspace                 = true
 orion-configuration.workspace  = true
@@ -25,23 +24,7 @@ uuid                   = { version = "1.7.0", features = ["v4"] }
 
 [dev-dependencies]
 serde_yaml.workspace = true
-tokio.workspace      = true
-tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber.workspace = true
 
-[lints.clippy]
-clone_on_ref_ptr = "warn"
-doc_markdown = "allow"
-get_unwrap = "allow"
-if_then_some_else_none = "warn"
-missing_docs_in_private_items = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-pedantic = "warn"
-print_stderr = "warn"
-print_stdout = "warn"
-str_to_string = "warn"
-string_to_string = "warn"
-todo = "deny"
-unwrap_used = "deny"
+[lints]
+workspace = true

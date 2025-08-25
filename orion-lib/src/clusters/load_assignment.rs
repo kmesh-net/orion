@@ -266,12 +266,20 @@ impl LocalityLbEndpointsBuilder {
                     .build()
             })
             .collect::<Result<_>>()?;
+
+        let total_endpoints_usize = endpoints.len();
+        let healthy_endpoints_usize = endpoints.iter().filter(|e| e.health_status.is_healthy()).count();
+
+        let (Ok(total_endpoints), Ok(healthy_endpoints)) =
+            (u32::try_from(total_endpoints_usize), u32::try_from(healthy_endpoints_usize))
+        else {
+            return Err("Too many endpoints".into());
+        };
+
         // we divide by 100 because we multiply by 100 later to calculate a percentage
-        if endpoints.len() > (u32::MAX / 100) as usize {
+        if healthy_endpoints > u32::MAX / 100 {
             return Err("Too many endpoints".into());
         }
-        let healthy_endpoints = endpoints.iter().filter(|e| e.health_status.is_healthy()).count() as u32;
-        let total_endpoints = endpoints.len() as u32;
 
         Ok(LocalityLbEndpoints {
             name: cluster_name,
@@ -342,8 +350,8 @@ pub struct PartialClusterLoadAssignment {
 }
 
 impl ClusterLoadAssignment {
-    pub fn get_http_channel(&mut self, hash: HashState) -> Result<HttpChannel> {
-        let endpoint = self.balancer.next_item(Some(hash)).ok_or("No active endpoint")?;
+    pub fn get_http_channel(&mut self, hash: Option<HashState>) -> Result<HttpChannel> {
+        let endpoint = self.balancer.next_item(hash).ok_or("No active endpoint")?;
         Ok(endpoint.http_channel.clone())
     }
 

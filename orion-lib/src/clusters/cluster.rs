@@ -164,7 +164,7 @@ pub trait ClusterOps {
     fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>>;
     fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()>;
     fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus);
-    fn get_http_connection(&mut self, lb_hash: HashState) -> Result<HttpChannel>;
+    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel>;
     fn get_tcp_connection(&mut self) -> Result<BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>>;
     fn get_grpc_connection(&mut self) -> Result<GrpcService>;
 }
@@ -240,7 +240,7 @@ impl ClusterOps for DynamicCluster {
                 load_assignment.tls_configurator = Some(tls_configurator.clone());
                 let load_assignment = load_assignment.rebuild()?;
                 self.load_assignment = Some(load_assignment);
-            };
+            }
             self.tls_configurator = Some(tls_configurator);
         }
         Ok(())
@@ -252,7 +252,7 @@ impl ClusterOps for DynamicCluster {
         }
     }
 
-    fn get_http_connection(&mut self, lb_hash: HashState) -> Result<HttpChannel> {
+    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel> {
         if let Some(cla) = self.load_assignment.as_mut() {
             cla.get_http_channel(lb_hash)
         } else {
@@ -315,7 +315,7 @@ impl ClusterOps for StaticCluster {
         self.load_assignment.update_endpoint_health(endpoint, health);
     }
 
-    fn get_http_connection(&mut self, lb_hash: HashState) -> Result<HttpChannel> {
+    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel> {
         debug!("{} : Getting connection", self.name);
         self.load_assignment.get_http_channel(lb_hash)
     }

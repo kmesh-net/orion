@@ -213,10 +213,6 @@ impl Listener {
         destination_addr: SocketAddr,
         server_name: Option<&str>,
     ) -> Result<Option<&'a T>> {
-        //todo: smallvec? other optimization?
-        let mut possible_filters = vec![true; filter_chains.len()];
-        let mut scratchpad = vec![MatchResult::NoRule; filter_chains.len()];
-
         fn match_subitem<'a, F: Fn(&FilterChainMatch, T) -> MatchResult, T: Copy>(
             function: F,
             comparand: T,
@@ -241,6 +237,10 @@ impl Listener {
                 }
             }
         }
+
+        //todo: smallvec? other optimization?
+        let mut possible_filters = vec![true; filter_chains.len()];
+        let mut scratchpad = vec![MatchResult::NoRule; filter_chains.len()];
 
         match_subitem(
             FilterChainMatch::matches_destination_port,
@@ -324,9 +324,8 @@ impl Listener {
             );
             if let Some(stream) = filterchain.apply_rbac(stream, local_address, peer_addr, server_name.as_deref()) {
                 return filterchain.start_filterchain(stream).await;
-            } else {
-                debug!("{listener_name} : dropped connection from {peer_addr} due to rbac");
             }
+            debug!("{listener_name} : dropped connection from {peer_addr} due to rbac");
         } else {
             warn!("{listener_name} : No match for {peer_addr} {local_address}");
         }
@@ -379,7 +378,7 @@ impl Listener {
                         if let Some(route_id) = route_id {
                             if route_id == id {
                                 debug!("{listener_name} Route updated {id} {route:?}");
-                                http_manager.update_route(Arc::new(route.clone()));
+                                http_manager.update_route(route.clone());
                             }
                         } else {
                             debug!("{listener_name} Got route update but id doesn't match {route_id:?} {id}");
@@ -553,14 +552,14 @@ filter_chains:
         ",
         )
         .unwrap();
-        let m: HashMap<FilterChainMatch, _> = std::iter::once((m.try_into().unwrap(), ())).collect();
+        let m = std::iter::once((m.try_into().unwrap(), ())).collect();
         let good_source = (Ipv4Addr::LOCALHOST, 3300).into();
         let good_destination = (Ipv4Addr::LOCALHOST, 443).into();
         let good_host = Some("host.test");
-        assert!(matches!(Listener::select_filterchain(&m, good_source, good_destination, good_host), Ok(Some(_))));
+        assert!(matches!(Listener::select_filterchain(&m, good_source, good_destination, good_host), Ok(Some(()))));
         assert!(matches!(
             Listener::select_filterchain(&m, good_source, good_destination, Some("a.wildcard")),
-            Ok(Some(_))
+            Ok(Some(()))
         ));
         assert!(matches!(Listener::select_filterchain(&m, good_source, good_destination, None), Ok(None)));
         assert!(matches!(

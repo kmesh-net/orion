@@ -34,6 +34,8 @@ pub struct Runtime {
     pub num_cpus: NonZeroUsize,
     #[serde(default = "one")]
     pub num_runtimes: NonZeroU32,
+    #[serde(default = "one")]
+    pub num_service_threads: NonZeroU32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub global_queue_interval: Option<NonZeroU32>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -58,6 +60,12 @@ impl Runtime {
                 .and_then(|v| v.parse::<NonZeroUsize>().ok())
                 .or(opt.num_cpus)
                 .unwrap_or(self.num_cpus),
+
+            num_service_threads: var("ORION_SERVICE_THREADS")
+                .ok()
+                .and_then(|v| v.parse::<NonZeroU32>().ok())
+                .or(opt.num_service_threads)
+                .unwrap_or(self.num_service_threads),
 
             num_runtimes: var("ORION_GATEWAY_RUNTIMES")
                 .ok()
@@ -96,6 +104,7 @@ impl Runtime {
     }
 }
 
+#[allow(clippy::expect_used)]
 pub(crate) fn non_zero_num_cpus() -> NonZeroUsize {
     NonZeroUsize::try_from(num_cpus::get()).expect("found zero cpus")
 }
@@ -105,6 +114,7 @@ impl Default for Runtime {
         Self {
             num_cpus: non_zero_num_cpus(),
             num_runtimes: one(),
+            num_service_threads: one(),
             global_queue_interval: None,
             event_interval: None,
             max_io_events_per_tick: None,

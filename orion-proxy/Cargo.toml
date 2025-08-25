@@ -21,7 +21,6 @@ dhat = { version = "0.3.3", optional = true }
 
 abort-on-drop.workspace       = true
 futures.workspace             = true
-num_cpus.workspace            = true
 orion-configuration.workspace = true
 orion-error.workspace         = true
 orion-lib.workspace           = true
@@ -31,8 +30,6 @@ tracing.workspace             = true
 
 affinity = "0.1.2"
 console-subscriber = { version = "0.4.0", optional = true }
-regex = "1.10.2"
-serde = { version = "1.0", features = ["rc"] }
 tracing-appender = "0.2"
 tracing-subscriber = { workspace = true, features = [
   "alloc",

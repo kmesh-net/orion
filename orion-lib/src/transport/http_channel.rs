@@ -122,7 +122,7 @@ impl HttpChannelBuilder {
             tls: None,
             authority: None,
             bind_device,
-            http_protocol_options: Default::default(),
+            http_protocol_options: HttpProtocolOptions::default(),
             server_name: None,
             connection_timeout: None,
         }
@@ -173,7 +173,7 @@ impl HttpChannelBuilder {
                 client_builder.http2_keep_alive_interval(settings.keep_alive_interval);
                 if let Some(timeout) = settings.keep_alive_timeout {
                     client_builder.http2_keep_alive_timeout(timeout);
-                };
+                }
                 client_builder.http2_keep_alive_while_idle(true);
             }
             client_builder.http2_initial_connection_window_size(http2_options.initial_connection_window_size());
@@ -241,12 +241,12 @@ impl<'a> RequestHandler<RequestWithContext<'a, HttpBody>> for &HttpChannel {
                 let req = maybe_normalize_uri(request.req, false)?;
 
                 let result = if let Some(t) = route_timeout {
-                    match fast_timeout(t, HttpChannel::send_request(retry_policy.as_deref(), sender, req)).await {
+                    match fast_timeout(t, HttpChannel::send_request(retry_policy, sender, req)).await {
                         Ok(result) => result,
                         Err(_) => (Err(EventError::RouteTimeout.into()), t),
                     }
                 } else {
-                    HttpChannel::send_request(retry_policy.as_deref(), sender, req).await
+                    HttpChannel::send_request(retry_policy, sender, req).await
                 };
                 HttpChannel::handle_response(result, route_timeout, version)
             },
@@ -261,12 +261,12 @@ impl<'a> RequestHandler<RequestWithContext<'a, HttpBody>> for &HttpChannel {
                 let req = maybe_normalize_uri(request.req, true)?;
                 let req = maybe_change_http_protocol_version(req, configured_version)?;
                 let result = if let Some(t) = route_timeout {
-                    match fast_timeout(t, HttpChannel::send_request(retry_policy.as_deref(), sender, req)).await {
+                    match fast_timeout(t, HttpChannel::send_request(retry_policy, sender, req)).await {
                         Ok(result) => result,
                         Err(_) => (Err(EventError::RouteTimeout.into()), t),
                     }
                 } else {
-                    HttpChannel::send_request(retry_policy.as_deref(), sender, req).await
+                    HttpChannel::send_request(retry_policy, sender, req).await
                 };
 
                 HttpChannel::handle_response(result, route_timeout, version)
@@ -287,7 +287,7 @@ impl HttpChannel {
     where
         C: Connect + Clone + Send + Sync + 'static,
     {
-        if let Some(ref policy) = retry_policy {
+        if let Some(policy) = retry_policy {
             if policy.is_retriable(&req) {
                 Self::send_with_retry(policy, sender, req).await
             } else {

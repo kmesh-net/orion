@@ -193,6 +193,7 @@ fn run_strategy(
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::too_many_lines)]
     use super::*;
 
     #[test]
@@ -210,7 +211,7 @@ mod tests {
     #[test]
     fn test_group_by_numa_single() {
         let cores = core_ids![0, 1, 2, 3];
-        let cpuinfo = r###"processor       : 0
+        let cpuinfo = r"processor       : 0
 vendor_id       : GenuineIntel
 cpu family      : 6
 model           : 140
@@ -316,14 +317,14 @@ bogomips        : 5606.42
 clflush size    : 64
 cache_alignment : 64
 address sizes   : 39 bits physical, 48 bits virtual
-power management:"###;
+power management:";
         assert_eq!(group_by_numa(cores, cpuinfo).unwrap(), vec![core_ids![0, 1, 2, 3]]);
     }
 
     #[test]
     fn test_group_by_numa_err() {
         let cores = core_ids![4, 5, 6, 7];
-        let cpuinfo = r###"processor       : 0
+        let cpuinfo = r"processor       : 0
 vendor_id       : GenuineIntel
 cpu family      : 6
 model           : 140
@@ -429,14 +430,14 @@ bogomips        : 5606.42
 clflush size    : 64
 cache_alignment : 64
 address sizes   : 39 bits physical, 48 bits virtual
-power management:"###;
+power management:";
         assert!(group_by_numa(cores, cpuinfo).is_err());
     }
 
     #[test]
     fn test_group_by_numa_dual_nodes() {
         let cores = core_ids![0, 1, 2, 3];
-        let cpuinfo = r###"processor       : 0
+        let cpuinfo = r"processor       : 0
 vendor_id       : GenuineIntel
 cpu family      : 6
 model           : 140
@@ -542,7 +543,7 @@ bogomips        : 5606.42
 clflush size    : 64
 cache_alignment : 64
 address sizes   : 39 bits physical, 48 bits virtual
-power management:"###;
+power management:";
         assert_eq!(group_by_numa(cores, cpuinfo).unwrap(), vec![core_ids![0, 2], core_ids![1, 3]]);
     }
 

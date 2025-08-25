@@ -22,12 +22,12 @@ use crate::config::{cluster::Cluster, common::is_default, listener::Listener, se
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Bootstrap {
     #[serde(with = "serde_yaml::with::singleton_map_recursive", skip_serializing_if = "is_default", default)]
     pub static_resources: StaticResources,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    dynamic_resources: Option<DynamicResources>,
+    pub dynamic_resources: Option<DynamicResources>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub node: Option<Node>,
 }
@@ -43,12 +43,12 @@ pub struct Node {
     pub id: CompactString,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DynamicResources {
     pub grpc_cluster_specifiers: Vec<CompactString>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct StaticResources {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub listeners: Vec<Listener>,
@@ -126,7 +126,7 @@ mod envoy_conversions {
                 application_log_config,
                 grpc_async_client_manager_config,
                 stats_flush,
-                memory_allocator_manager: _,
+                memory_allocator_manager,
             } = envoy;
             unsupported_field!(
                 // node,
@@ -166,7 +166,8 @@ mod envoy_conversions {
                 listener_manager,
                 application_log_config,
                 grpc_async_client_manager_config,
-                stats_flush
+                stats_flush,
+                memory_allocator_manager
             )?;
             let static_resources = convert_opt!(static_resources)?;
             let dynamic_resources =

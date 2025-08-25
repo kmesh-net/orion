@@ -1,6 +1,6 @@
 #![allow(clippy::print_stdout)]
 use orion_configuration::config::Bootstrap;
-use orion_error::{Result, ResultExtension};
+use orion_error::{Context, Result};
 use std::fs::File;
 
 fn main() -> Result<()> {

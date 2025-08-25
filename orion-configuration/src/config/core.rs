@@ -88,7 +88,7 @@ impl<'a> DataSourceReader<'a> {
     }
 }
 
-impl<'a> Read for DataSourceReader<'a> {
+impl Read for DataSourceReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
             Self::OwnedBytes { bytes, read } => {
@@ -105,7 +105,7 @@ impl<'a> Read for DataSourceReader<'a> {
     }
 }
 
-impl<'a> BufRead for DataSourceReader<'a> {
+impl BufRead for DataSourceReader<'_> {
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
         match self {
             Self::OwnedBytes { bytes, read } => Ok(&bytes[*read..]),
@@ -134,7 +134,7 @@ pub struct StringMatcher {
 }
 
 pub(crate) struct CaseSensitive<'a>(pub bool, pub &'a str);
-impl<'a> CaseSensitive<'a> {
+impl CaseSensitive<'_> {
     #[inline]
     pub fn equals(&self, b: &str) -> bool {
         if self.0 {
@@ -365,9 +365,7 @@ mod envoy_conversions {
                 EnvoyStringMatcherPattern::Prefix(s) => Ok(Self::Prefix(s.into())),
                 EnvoyStringMatcherPattern::Suffix(s) => Ok(Self::Suffix(s.into())),
                 EnvoyStringMatcherPattern::SafeRegex(r) => Ok(Self::Regex(regex_from_envoy(r)?)),
-                EnvoyStringMatcherPattern::Custom(_) => {
-                    Err(GenericError::UnsupportedField("EnvoyStringMatcherPattern::Custom"))
-                },
+                EnvoyStringMatcherPattern::Custom(_) => Err(GenericError::from_msg("Custom is not supported")),
             }
         }
     }

@@ -271,7 +271,7 @@ impl TlsContextBuilder<WantsToBuildServer> {
             // If only a single certificate exists, do not install SNI resolver, just accept all
             // connections using the provided certificate
             return Ok(builder.with_single_cert(certs.to_vec(), key.clone_key())?);
-        };
+        }
 
         let mut resolver = RelaxedResolvesServerCertUsingSni::new();
         let errors = self

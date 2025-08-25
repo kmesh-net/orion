@@ -54,7 +54,7 @@ impl Display for Error {
 impl Error {
     #[must_use]
     pub fn context<T: Into<Cow<'static, str>>>(self, msg: T) -> Self {
-        Self(ErrorImpl::Msg(msg.into(), self.0.into()))
+        Self(ErrorImpl::Msg(msg.into(), self.0.into_boxed_err()))
     }
 
     pub fn inner(self) -> impl ErrorTrait + Send + Sync + 'static {
@@ -93,6 +93,16 @@ enum ErrorImpl {
     Error(BoxedErr),
     // an error message with a parent context
     Msg(Cow<'static, str>, BoxedErr),
+}
+
+impl ErrorImpl {
+    fn into_boxed_err(self) -> BoxedErr {
+        if let Self::Error(boxed) = self {
+            boxed
+        } else {
+            self.into()
+        }
+    }
 }
 
 impl ErrorTrait for ErrorImpl {
@@ -140,26 +150,25 @@ impl Display for ErrorImpl {
     }
 }
 
-// alows for doing error.context("some description") on any error
-pub trait ErrorExtension {
-    #[must_use]
-    fn context<T: Into<Cow<'static, str>>>(self, context: T) -> Error;
-}
-
-impl<E: ErrorTrait + Send + Sync + 'static> ErrorExtension for E {
-    fn context<T: Into<Cow<'static, str>>>(self, msg: T) -> Error {
-        Error(ErrorImpl::Msg(msg.into(), self.into()))
-    }
-}
-
-// alows for doing error.context("some description") on results
-pub trait ResultExtension {
+// alows for doing error.context("some description")
+pub trait Context {
     type T;
     fn context<Msg: Into<Cow<'static, str>>>(self, context: Msg) -> Result<Self::T>;
     fn with_context<F: FnOnce() -> Msg, Msg: Into<Cow<'static, str>>>(self, context_fn: F) -> Result<Self::T>;
 }
 
-impl<T, E: ErrorTrait + Send + Sync + 'static> ResultExtension for StdResult<T, E> {
+impl<T, E: ErrorTrait + Send + Sync + 'static> Context for StdResult<T, E> {
+    type T = T;
+    fn context<Msg: Into<Cow<'static, str>>>(self, context: Msg) -> Result<Self::T> {
+        self.map_err(|e| Error::from(e).context(context))
+    }
+    fn with_context<F: FnOnce() -> Msg, Msg: Into<Cow<'static, str>>>(self, context_fn: F) -> Result<Self::T> {
+        self.map_err(|e| Error::from(e).context(context_fn()))
+    }
+}
+
+// Error does not implement the ErrorTrait, so the previous impl does not apply to it
+impl<T> Context for Result<T> {
     type T = T;
     fn context<Msg: Into<Cow<'static, str>>>(self, context: Msg) -> Result<Self::T> {
         self.map_err(|e| e.context(context))
@@ -169,13 +178,12 @@ impl<T, E: ErrorTrait + Send + Sync + 'static> ResultExtension for StdResult<T, 
     }
 }
 
-// Error does not implement the ErrorTrait, so the previous impl does not apply to it
-impl<T> ResultExtension for Result<T> {
+impl<T> Context for Option<T> {
     type T = T;
-    fn context<Msg: Into<Cow<'static, str>>>(self, context: Msg) -> Result<Self::T> {
-        self.map_err(|e| e.context(context))
+    fn context<C: Into<Cow<'static, str>>>(self, msg: C) -> Result<Self::T> {
+        self.ok_or_else(|| Error::from(msg.into()))
     }
-    fn with_context<F: FnOnce() -> Msg, Msg: Into<Cow<'static, str>>>(self, context_fn: F) -> Result<Self::T> {
-        self.map_err(|e| e.context(context_fn()))
+    fn with_context<F: FnOnce() -> C, C: Into<Cow<'static, str>>>(self, context_fn: F) -> Result<Self::T> {
+        self.ok_or_else(|| Error::from(context_fn().into()))
     }
 }

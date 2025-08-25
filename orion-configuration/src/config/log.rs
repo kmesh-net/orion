@@ -18,6 +18,7 @@
 //
 //
 
+use orion_error::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tracing_subscriber::EnvFilter;
 
@@ -48,12 +49,13 @@ where
     Option::<String>::deserialize(deserializer).and_then(|maybe_string| {
         maybe_string.map(|s| EnvFilter::builder().parse(s)).transpose().map_err(
             |e: tracing_subscriber::filter::ParseError| {
-                serde::de::Error::custom(format!("failed to deserialize log level because of \"{e}\""))
+                serde::de::Error::custom(Error::from(e).context("failed to parse log level config"))
             },
         )
     })
 }
 
+#[allow(clippy::ref_option)]
 fn serialize_log_level<S: Serializer>(
     value: &Option<EnvFilter>,
     serializer: S,

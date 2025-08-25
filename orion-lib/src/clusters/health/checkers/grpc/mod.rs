@@ -31,6 +31,7 @@ use orion_xds::grpc_deps::tonic_health::pb::{
     health_check_response::ServingStatus, HealthCheckRequest, HealthCheckResponse,
 };
 use orion_xds::grpc_deps::{Response as TonicResponse, Status as TonicStatus};
+use std::future::Future;
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 
@@ -118,10 +119,7 @@ where
 {
     type Response = HealthCheckResponse;
 
-    fn check(
-        &mut self,
-    ) -> impl futures::Future<Output = std::result::Result<<Self as ProtocolChecker>::Response, orion_error::Error>>
-           + std::marker::Send {
+    fn check(&mut self) -> impl Future<Output = Result<Self::Response, Error>> + Send {
         async move {
             let request = HealthCheckRequest { service: self.config.service_name.clone().into() };
             Ok(self.channel.check(request).await.map(TonicResponse::into_inner)?)

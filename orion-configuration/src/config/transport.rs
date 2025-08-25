@@ -447,6 +447,7 @@ mod envoy_conversions {
         }
     }
 
+    #[allow(clippy::large_enum_variant)]
     pub(crate) enum SupportedEnvoyTransportSocket {
         DownstreamTlsContext(EnvoyDownstreamTlsContext),
         UpstreamTlsContext(EnvoyUpstreamTlsContext),

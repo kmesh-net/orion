@@ -38,7 +38,7 @@ pub async fn resolve(host: &str, port: u16) -> io::Result<SocketAddr> {
             {
                 match TokioAsyncResolver::from_system_conf(TokioConnectionProvider::default()) {
                     Ok(resolver) => resolver,
-                    Err(err) => panic!("Could not initialize the DNS resolver: {err}"),
+                    Err(err) => unimplemented!("Could not initialize the DNS resolver: {err}"),
                 }
             }
             #[cfg(not(any(unix, windows)))]

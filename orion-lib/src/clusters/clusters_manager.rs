@@ -138,7 +138,7 @@ pub fn remove_cluster(cluster_name: &str) -> Result<()> {
     CLUSTERS_MAP.update(|current| current.remove(cluster_name).map(|_| ()).ok_or("No such cluster".into()))
 }
 
-pub fn get_http_connection(selector: &ClusterSpecifierConfig, lb_hash: HashState) -> Result<HttpChannel> {
+pub fn get_http_connection(selector: &ClusterSpecifierConfig, lb_hash: Option<HashState>) -> Result<HttpChannel> {
     debug!("Http connection for {selector:?}");
     with_cluster_selector(selector, |cluster| cluster.get_http_connection(lb_hash))
 }

@@ -301,8 +301,8 @@ mod envoy_conversions {
                 connection_pool_per_downstream_connection,
                 cluster_discovery_type,
                 lb_config,
-                dns_jitter: _,
-                lrs_report_endpoint_metrics: _,
+                dns_jitter,
+                lrs_report_endpoint_metrics,
             } = envoy;
             let name = required!(name)?;
             (|| -> Result<Self, GenericError> {
@@ -350,9 +350,11 @@ mod envoy_conversions {
                     upstream_config,
                     track_cluster_stats,
                     preconnect_policy,
-                    connection_pool_per_downstream_connection
-                    // cluster_discovery_type,                                                              
-                    // lb_config
+                    connection_pool_per_downstream_connection,
+                    dns_jitter, // cluster_discovery_type,
+                    lrs_report_endpoint_metrics
+                                                              // lb_config
+
                 )?;
 
                 if let Some(lb_config_type) = &lb_config {
@@ -497,10 +499,9 @@ mod envoy_conversions {
                 Ok(Self { endpoints })
             })();
             if !cluster_name.is_empty() {
-                ret.with_name(cluster_name)
-            } else {
-                ret
+                return ret.with_name(cluster_name);
             }
+            ret
         }
     }
 
