@@ -98,6 +98,7 @@ pub enum HttpChannelClient {
     Tls(ClientContext),
 }
 
+#[derive(Default)]
 pub struct HttpChannelBuilder {
     tls: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
     authority: Option<Authority>,
@@ -119,18 +120,6 @@ impl LocalBuilder<HttpsConnector<LocalConnectorWithDNSResolver>, Arc<HttpsClient
     }
 }
 
-impl Default for HttpChannelBuilder {
-    fn default() -> Self {
-        Self {
-            tls: None,
-            authority: None,
-            bind_device: None,
-            server_name: None,
-            http_protocol_options: HttpProtocolOptions::default(),
-            connection_timeout: None,
-        }
-    }
-}
 
 impl HttpChannelBuilder {
     pub fn new(bind_device: Option<BindDevice>) -> Self {
