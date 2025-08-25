@@ -42,10 +42,7 @@ impl<C> SocksV4<C> {
     /// `call` will not be used to create the underlying connection, but will
     /// be used in a SOCKS handshake with the proxy destination.
     pub fn new(proxy_dst: Uri, connector: C) -> Self {
-        Self {
-            inner: connector,
-            config: SocksConfig::new(proxy_dst),
-        }
+        Self { inner: connector, config: SocksConfig::new(proxy_dst) }
     }
 
     /// Resolve domain names locally on the client, rather than on the proxy server.
@@ -60,10 +57,7 @@ impl<C> SocksV4<C> {
 
 impl SocksConfig {
     pub fn new(proxy: Uri) -> Self {
-        Self {
-            proxy,
-            local_dns: false,
-        }
+        Self { proxy, local_dns: false }
     }
 
     async fn execute<T, E>(self, mut conn: T, host: String, port: u16) -> Result<T, SocksError<E>>
@@ -77,18 +71,12 @@ impl SocksConfig {
                 if self.local_dns {
                     (host, port)
                         .to_socket_addrs()?
-                        .find_map(|s| {
-                            if let SocketAddr::V4(v4) = s {
-                                Some(Address::Socket(v4))
-                            } else {
-                                None
-                            }
-                        })
+                        .find_map(|s| if let SocketAddr::V4(v4) = s { Some(Address::Socket(v4)) } else { None })
                         .ok_or(SocksError::DnsFailure)?
                 } else {
                     Address::Domain(host, port)
                 }
-            }
+            },
         };
 
         let mut send_buf = BytesMut::with_capacity(1024);
@@ -136,9 +124,6 @@ where
             config.execute(conn, host, port).await
         };
 
-        Handshaking {
-            fut: Box::pin(fut),
-            _marker: Default::default(),
-        }
+        Handshaking { fut: Box::pin(fut), _marker: Default::default() }
     }
 }

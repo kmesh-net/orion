@@ -93,10 +93,7 @@ impl CaptureConnection {
     /// Internal API to create the tx and rx half of [`CaptureConnection`]
     pub(crate) fn new() -> (CaptureConnectionExtension, Self) {
         let (tx, rx) = watch::channel(None);
-        (
-            CaptureConnectionExtension { tx: Arc::new(tx) },
-            CaptureConnection { rx },
-        )
+        (CaptureConnectionExtension { tx: Arc::new(tx) }, CaptureConnection { rx })
     }
 
     /// Retrieve the connection metadata, if available
@@ -108,9 +105,7 @@ impl CaptureConnection {
     ///
     /// If a connection was established, this will always return `Some(...)`. If the request never
     /// successfully connected (e.g. DNS resolution failure), this method will never return.
-    pub async fn wait_for_connection_metadata(
-        &mut self,
-    ) -> impl Deref<Target = Option<Connected>> + '_ {
+    pub async fn wait_for_connection_metadata(&mut self) -> impl Deref<Target = Option<Connected>> + '_ {
         if self.rx.borrow().is_some() {
             return self.rx.borrow();
         }
@@ -126,44 +121,22 @@ mod test {
     #[test]
     fn test_sync_capture_connection() {
         let (tx, rx) = CaptureConnection::new();
-        assert!(
-            rx.connection_metadata().is_none(),
-            "connection has not been set"
-        );
+        assert!(rx.connection_metadata().is_none(), "connection has not been set");
         tx.set(&Connected::new().proxy(true));
-        assert!(rx
-            .connection_metadata()
-            .as_ref()
-            .expect("connected should be set")
-            .is_proxied());
+        assert!(rx.connection_metadata().as_ref().expect("connected should be set").is_proxied());
 
         // ensure it can be called multiple times
-        assert!(rx
-            .connection_metadata()
-            .as_ref()
-            .expect("connected should be set")
-            .is_proxied());
+        assert!(rx.connection_metadata().as_ref().expect("connected should be set").is_proxied());
     }
 
     #[tokio::test]
     async fn async_capture_connection() {
         let (tx, mut rx) = CaptureConnection::new();
-        assert!(
-            rx.connection_metadata().is_none(),
-            "connection has not been set"
-        );
+        assert!(rx.connection_metadata().is_none(), "connection has not been set");
         let test_task = tokio::spawn(async move {
-            assert!(rx
-                .wait_for_connection_metadata()
-                .await
-                .as_ref()
-                .expect("connection should be set")
-                .is_proxied());
+            assert!(rx.wait_for_connection_metadata().await.as_ref().expect("connection should be set").is_proxied());
             // can be awaited multiple times
-            assert!(
-                rx.wait_for_connection_metadata().await.is_some(),
-                "should be awaitable multiple times"
-            );
+            assert!(rx.wait_for_connection_metadata().await.is_some(), "should be awaitable multiple times");
 
             assert!(rx.connection_metadata().is_some());
         });
@@ -177,10 +150,7 @@ mod test {
     #[tokio::test]
     async fn capture_connection_sender_side_dropped() {
         let (tx, mut rx) = CaptureConnection::new();
-        assert!(
-            rx.connection_metadata().is_none(),
-            "connection has not been set"
-        );
+        assert!(rx.connection_metadata().is_none(), "connection has not been set");
         drop(tx);
         assert!(rx.wait_for_connection_metadata().await.is_none());
     }

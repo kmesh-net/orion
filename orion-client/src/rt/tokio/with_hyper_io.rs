@@ -76,11 +76,7 @@ impl<I> hyper::rt::Write for WithHyperIo<I>
 where
     I: tokio::io::AsyncWrite,
 {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
         tokio::io::AsyncWrite::poll_write(self.project().inner, cx, buf)
     }
 
@@ -88,10 +84,7 @@ where
         tokio::io::AsyncWrite::poll_flush(self.project().inner, cx)
     }
 
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         tokio::io::AsyncWrite::poll_shutdown(self.project().inner, cx)
     }
 
@@ -133,11 +126,7 @@ where
     I: tokio::io::AsyncWrite,
 {
     #[inline]
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
         self.project().inner.poll_write(cx, buf)
     }
 
@@ -147,10 +136,7 @@ where
     }
 
     #[inline]
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         self.project().inner.poll_shutdown(cx)
     }
 

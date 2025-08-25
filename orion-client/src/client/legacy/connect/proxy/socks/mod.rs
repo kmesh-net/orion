@@ -58,14 +58,10 @@ where
                     if buf.spare_capacity_mut().is_empty() {
                         return Err(SocksError::Parsing(ParsingError::WouldOverflow));
                     } else {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::UnexpectedEof,
-                            "unexpected eof",
-                        )
-                        .into());
+                        return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof").into());
                     }
                 }
-            }
+            },
             Err(err) => return Err(err.into()),
             Ok(res) => return Ok(res),
         }

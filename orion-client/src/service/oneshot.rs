@@ -29,10 +29,7 @@ where
     S: Service<Req>,
 {
     pub(crate) const fn new(svc: S, req: Req) -> Self {
-        Oneshot::NotReady {
-            svc,
-            req: Some(req),
-        }
+        Oneshot::NotReady { svc, req: Some(req) }
     }
 }
 
@@ -50,12 +47,12 @@ where
                     ready!(svc.poll_ready(cx))?;
                     let fut = svc.call(req.take().expect("already called"));
                     self.set(Oneshot::Called { fut });
-                }
+                },
                 OneshotProj::Called { fut } => {
                     let res = ready!(fut.poll(cx))?;
                     self.set(Oneshot::Done);
                     return Poll::Ready(Ok(res));
-                }
+                },
                 OneshotProj::Done => panic!("polled after complete"),
             }
         }

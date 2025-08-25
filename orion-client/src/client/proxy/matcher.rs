@@ -303,11 +303,7 @@ impl Builder {
     /// Construct a [`Matcher`] using the configured values.
     pub fn build(self) -> Matcher {
         if self.is_cgi {
-            return Matcher {
-                http: None,
-                https: None,
-                no: NoProxy::empty(),
-            };
+            return Matcher { http: None, https: None, no: NoProxy::empty() };
         }
 
         let all = parse_env_uri(&self.all);
@@ -347,12 +343,12 @@ fn parse_env_uri(val: &str) -> Option<Intercept> {
                 // can't use this proxy scheme
                 return None;
             }
-        }
+        },
         // if no scheme provided, assume they meant 'http'
         None => {
             is_httpish = true;
             http::uri::Scheme::HTTP
-        }
+        },
     });
 
     let authority = uri.authority()?;
@@ -409,10 +405,7 @@ impl NoProxy {
     */
 
     fn empty() -> NoProxy {
-        NoProxy {
-            ips: IpMatcher(Vec::new()),
-            domains: DomainMatcher(Vec::new()),
-        }
+        NoProxy { ips: IpMatcher(Vec::new()), domains: DomainMatcher(Vec::new()) }
     }
 
     /// Returns a new no-proxy configuration based on a `no_proxy` string (or `None` if no variables
@@ -448,14 +441,11 @@ impl NoProxy {
                         if !part.trim().is_empty() {
                             domains.push(part.to_owned())
                         }
-                    }
+                    },
                 },
             }
         }
-        NoProxy {
-            ips: IpMatcher(ips),
-            domains: DomainMatcher(domains),
-        }
+        NoProxy { ips: IpMatcher(ips), domains: DomainMatcher(domains) }
     }
 
     /// Return true if this matches the host (domain or IP).
@@ -488,12 +478,12 @@ impl IpMatcher {
                     if &addr == address {
                         return true;
                     }
-                }
+                },
                 Ip::Network(net) => {
                     if net.contains(&addr) {
                         return true;
                     }
-                }
+                },
             }
         }
         false
@@ -620,14 +610,10 @@ mod mac {
             == 1;
 
         if proxy_enabled {
-            let proxy_host = proxies_map
-                .find(host_key)
-                .and_then(|host| host.downcast::<CFString>())
-                .map(|host| host.to_string());
-            let proxy_port = proxies_map
-                .find(port_key)
-                .and_then(|port| port.downcast::<CFNumber>())
-                .and_then(|port| port.to_i32());
+            let proxy_host =
+                proxies_map.find(host_key).and_then(|host| host.downcast::<CFString>()).map(|host| host.to_string());
+            let proxy_port =
+                proxies_map.find(port_key).and_then(|port| port.downcast::<CFNumber>()).and_then(|port| port.to_i32());
 
             return match (proxy_host, proxy_port) {
                 (Some(proxy_host), Some(proxy_port)) => Some(format!("{proxy_host}:{proxy_port}")),
@@ -645,8 +631,8 @@ mod mac {
 #[cfg(windows)]
 mod win {
     pub(super) fn with_system(builder: &mut super::Builder) {
-        let settings = if let Ok(settings) = windows_registry::CURRENT_USER
-            .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+        let settings = if let Ok(settings) =
+            windows_registry::CURRENT_USER.open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
         {
             settings
         } else {
@@ -668,12 +654,7 @@ mod win {
 
         if builder.no.is_empty() {
             if let Ok(val) = settings.get_string("ProxyOverride") {
-                builder.no = val
-                    .split(';')
-                    .map(|s| s.trim())
-                    .collect::<Vec<&str>>()
-                    .join(",")
-                    .replace("*.", "");
+                builder.no = val.split(';').map(|s| s.trim()).collect::<Vec<&str>>().join(",").replace("*.", "");
             }
         }
     }
@@ -711,8 +692,7 @@ mod tests {
 
     #[test]
     fn test_no_proxy_ip_ranges() {
-        let no_proxy =
-            NoProxy::from_string(".foo.bar, bar.baz,10.42.1.1/24,::1,10.124.7.8,2001::/17");
+        let no_proxy = NoProxy::from_string(".foo.bar, bar.baz,10.42.1.1/24,::1,10.124.7.8,2001::/17");
 
         let should_not_match = [
             // random url, not in no_proxy
@@ -802,10 +782,7 @@ mod tests {
         };
 
         assert_eq!(intercept(&p, "https://example.local").uri(), "http://y.ep");
-        assert_eq!(
-            intercept(&p, "http://example.local").uri(),
-            "http://127.0.0.1:8887"
-        );
+        assert_eq!(intercept(&p, "http://example.local").uri(), "http://127.0.0.1:8887");
     }
 
     #[test]
@@ -816,10 +793,7 @@ mod tests {
 
         let proxy = intercept(&p, "https://example.local");
         assert_eq!(proxy.uri(), "http://y.ep");
-        assert_eq!(
-            proxy.basic_auth().expect("basic_auth"),
-            "Basic QWxhZGRpbjpvcGVuc2VzYW1l"
-        );
+        assert_eq!(proxy.basic_auth().expect("basic_auth"), "Basic QWxhZGRpbjpvcGVuc2VzYW1l");
     }
 
     #[test]
@@ -830,10 +804,7 @@ mod tests {
 
         let proxy = intercept(&p, "https://example.local");
         assert_eq!(proxy.uri(), "http://y.ep");
-        assert_eq!(
-            proxy.basic_auth().expect("basic_auth"),
-            "Basic QWxhZGRpbjpvcGVuc2VzYW1l"
-        );
+        assert_eq!(proxy.basic_auth().expect("basic_auth"), "Basic QWxhZGRpbjpvcGVuc2VzYW1l");
     }
 
     #[test]

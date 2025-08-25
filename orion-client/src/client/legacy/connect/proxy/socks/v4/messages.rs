@@ -55,7 +55,7 @@ impl Request<'_> {
                 buf.put_u8(0x00); // NULL
 
                 Ok(10)
-            }
+            },
 
             Address::Domain(domain, port) => {
                 if buf.remaining_mut() < 10 + domain.len() + 1 {
@@ -75,7 +75,7 @@ impl Request<'_> {
                 buf.put_u8(0x00); // NULL
 
                 Ok(10 + domain.len() + 1)
-            }
+            },
         }
     }
 }

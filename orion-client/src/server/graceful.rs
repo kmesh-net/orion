@@ -119,11 +119,7 @@ pin_project! {
 
 impl<C, F: Future> GracefulConnectionFuture<C, F> {
     fn new(conn: C, cancel: F) -> Self {
-        Self {
-            conn,
-            cancel,
-            cancelled_guard: None,
-        }
+        Self { conn, cancel, cancelled_guard: None }
     }
 }
 
@@ -214,8 +210,7 @@ where
 }
 
 #[cfg(feature = "server-auto")]
-impl<I, B, S, E> GracefulConnection
-    for crate::server::conn::auto::UpgradeableConnection<'_, I, S, E>
+impl<I, B, S, E> GracefulConnection for crate::server::conn::auto::UpgradeableConnection<'_, I, S, E>
 where
     S: hyper::service::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
     S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
@@ -272,10 +267,7 @@ mod private {
     #[cfg(feature = "server-auto")]
     impl<I, B, S, E> Sealed for crate::server::conn::auto::Connection<'_, I, S, E>
     where
-        S: hyper::service::Service<
-            http::Request<hyper::body::Incoming>,
-            Response = http::Response<B>,
-        >,
+        S: hyper::service::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
         S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         S::Future: 'static,
         I: hyper::rt::Read + hyper::rt::Write + Unpin + 'static,
@@ -288,10 +280,7 @@ mod private {
     #[cfg(feature = "server-auto")]
     impl<I, B, S, E> Sealed for crate::server::conn::auto::UpgradeableConnection<'_, I, S, E>
     where
-        S: hyper::service::Service<
-            http::Request<hyper::body::Incoming>,
-            Response = http::Response<B>,
-        >,
+        S: hyper::service::Service<http::Request<hyper::body::Incoming>, Response = http::Response<B>>,
         S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
         S::Future: 'static,
         I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
@@ -354,10 +343,7 @@ mod test {
                 tokio::time::sleep(std::time::Duration::from_millis(i * 10)).await;
                 let _ = dummy_rx.recv().await;
             };
-            let dummy_conn = DummyConnection {
-                future,
-                shutdown_counter,
-            };
+            let dummy_conn = DummyConnection { future, shutdown_counter };
             let conn = graceful.watch(dummy_conn);
             tokio::spawn(async move {
                 conn.await.unwrap();
@@ -390,10 +376,7 @@ mod test {
             let future = async move {
                 tokio::time::sleep(std::time::Duration::from_millis(i * 50)).await;
             };
-            let dummy_conn = DummyConnection {
-                future,
-                shutdown_counter,
-            };
+            let dummy_conn = DummyConnection { future, shutdown_counter };
             let conn = graceful.watch(dummy_conn);
             tokio::spawn(async move {
                 conn.await.unwrap();
@@ -424,10 +407,7 @@ mod test {
             let mut futures = Vec::new();
             for u in 1..=i {
                 let future = tokio::time::sleep(std::time::Duration::from_millis(u * 50));
-                let dummy_conn = DummyConnection {
-                    future,
-                    shutdown_counter: shutdown_counter.clone(),
-                };
+                let dummy_conn = DummyConnection { future, shutdown_counter: shutdown_counter.clone() };
                 let conn = graceful.watch(dummy_conn);
                 futures.push(conn);
             }
@@ -464,10 +444,7 @@ mod test {
                     std::future::ready(()).await
                 }
             };
-            let dummy_conn = DummyConnection {
-                future,
-                shutdown_counter,
-            };
+            let dummy_conn = DummyConnection { future, shutdown_counter };
             let conn = graceful.watch(dummy_conn);
             tokio::spawn(async move {
                 conn.await.unwrap();

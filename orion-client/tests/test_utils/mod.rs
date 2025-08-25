@@ -33,13 +33,7 @@ impl DebugConnector {
     }
 
     pub fn with_http_and_closes(http: HttpConnector, closes: mpsc::Sender<()>) -> DebugConnector {
-        DebugConnector {
-            http,
-            closes,
-            connects: Arc::new(AtomicUsize::new(0)),
-            is_proxy: false,
-            alpn_h2: false,
-        }
+        DebugConnector { http, closes, connects: Arc::new(AtomicUsize::new(0)), is_proxy: false, alpn_h2: false }
     }
 
     pub fn proxy(mut self) -> Self {
@@ -63,12 +57,7 @@ impl tower_service::Service<Uri> for DebugConnector {
         let closes = self.closes.clone();
         let is_proxy = self.is_proxy;
         let is_alpn_h2 = self.alpn_h2;
-        Box::pin(self.http.call(dst).map_ok(move |tcp| DebugStream {
-            tcp,
-            on_drop: closes,
-            is_alpn_h2,
-            is_proxy,
-        }))
+        Box::pin(self.http.call(dst).map_ok(move |tcp| DebugStream { tcp, on_drop: closes, is_alpn_h2, is_proxy }))
     }
 }
 
@@ -108,25 +97,15 @@ impl hyper::rt::Read for DebugStream {
 }
 
 impl hyper::rt::Write for DebugStream {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
         hyper::rt::Write::poll_write(Pin::new(&mut self.tcp), cx, buf)
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         hyper::rt::Write::poll_flush(Pin::new(&mut self.tcp), cx)
     }
 
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         hyper::rt::Write::poll_shutdown(Pin::new(&mut self.tcp), cx)
     }
 
@@ -144,10 +123,7 @@ impl hyper::rt::Write for DebugStream {
 }
 
 impl AsyncWrite for DebugStream {
-    fn poll_shutdown(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), io::Error>> {
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
         Pin::new(self.tcp.inner_mut()).poll_shutdown(cx)
     }
 
@@ -155,21 +131,13 @@ impl AsyncWrite for DebugStream {
         Pin::new(self.tcp.inner_mut()).poll_flush(cx)
     }
 
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, io::Error>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
         Pin::new(self.tcp.inner_mut()).poll_write(cx, buf)
     }
 }
 
 impl AsyncRead for DebugStream {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
         Pin::new(self.tcp.inner_mut()).poll_read(cx, buf)
     }
 }

@@ -13,9 +13,7 @@ where
     F: FnOnce() -> R,
     R: Future + Unpin,
 {
-    Lazy {
-        inner: Inner::Init { func },
-    }
+    Lazy { inner: Inner::Init { func } }
 }
 
 // FIXME: allow() required due to `impl Trait` leaking types to this lint
@@ -71,7 +69,7 @@ where
                     return fut.poll(cx);
                 }
                 unreachable!()
-            }
+            },
             _ => unreachable!("lazy state wrong"),
         }
     }

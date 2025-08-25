@@ -23,11 +23,7 @@ pub fn downcast<T>(upgraded: Upgraded) -> Result<Parts<T>, Upgraded>
 where
     T: Read + Write + Unpin + 'static,
 {
-    let hyper::upgrade::Parts {
-        io: rewind,
-        mut read_buf,
-        ..
-    } = upgraded.downcast::<Rewind<T>>()?;
+    let hyper::upgrade::Parts { io: rewind, mut read_buf, .. } = upgraded.downcast::<Rewind<T>>()?;
 
     if let Some(pre) = rewind.pre {
         read_buf = if read_buf.is_empty() {
@@ -41,10 +37,7 @@ where
         };
     }
 
-    Ok(Parts {
-        io: rewind.inner,
-        read_buf,
-    })
+    Ok(Parts { io: rewind.inner, read_buf })
 }
 
 /// The deconstructed parts of an [`Upgraded`] type.

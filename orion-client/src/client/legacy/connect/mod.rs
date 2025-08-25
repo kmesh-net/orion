@@ -113,20 +113,13 @@ pub(crate) struct PoisonPill {
 impl fmt::Debug for PoisonPill {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // print the address of the pill—this makes debugging issues much easier
-        write!(
-            f,
-            "PoisonPill@{:p} {{ poisoned: {} }}",
-            self.poisoned,
-            self.poisoned.load(Ordering::Relaxed)
-        )
+        write!(f, "PoisonPill@{:p} {{ poisoned: {} }}", self.poisoned, self.poisoned.load(Ordering::Relaxed))
     }
 }
 
 impl PoisonPill {
     pub(crate) fn healthy() -> Self {
-        Self {
-            poisoned: Arc::new(AtomicBool::new(false)),
-        }
+        Self { poisoned: Arc::new(AtomicBool::new(false)) }
     }
     pub(crate) fn poison(&self) {
         self.poisoned.store(true, Ordering::Relaxed)
@@ -148,12 +141,7 @@ pub(super) enum Alpn {
 impl Connected {
     /// Create new `Connected` type with empty metadata.
     pub fn new() -> Connected {
-        Connected {
-            alpn: Alpn::None,
-            is_proxied: false,
-            extra: None,
-            poisoned: PoisonPill::healthy(),
-        }
+        Connected { alpn: Alpn::None, is_proxied: false, extra: None, poisoned: PoisonPill::healthy() }
     }
 
     /// Set whether the connected transport is to an HTTP proxy.
@@ -411,10 +399,7 @@ mod tests {
         // If a user composes connectors and at each stage, there's "extra"
         // info to attach, it shouldn't override the previous extras.
 
-        let c1 = Connected::new()
-            .extra(Ex1(45))
-            .extra(Ex2("zoom"))
-            .extra(Ex3("pew pew"));
+        let c1 = Connected::new().extra(Ex1(45)).extra(Ex2("zoom")).extra(Ex3("pew pew"));
 
         let mut ex1 = ::http::Extensions::new();
 
@@ -429,10 +414,7 @@ mod tests {
         assert_eq!(ex1.get::<Ex3>(), Some(&Ex3("pew pew")));
 
         // Just like extensions, inserting the same type overrides previous type.
-        let c2 = Connected::new()
-            .extra(Ex1(33))
-            .extra(Ex2("hiccup"))
-            .extra(Ex1(99));
+        let c2 = Connected::new().extra(Ex1(33)).extra(Ex2("hiccup")).extra(Ex1(99));
 
         let mut ex2 = ::http::Extensions::new();
 

@@ -32,7 +32,7 @@ impl Exec {
         match *self {
             Exec::Executor(ref e) => {
                 e.execute(Box::pin(fut));
-            }
+            },
         }
     }
 }

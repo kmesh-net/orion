@@ -116,11 +116,8 @@ impl Service<Name> for GaiResolver {
     }
 
     fn call(&mut self, name: Name) -> Self::Future {
-        let blocking = tokio::task::spawn_blocking(move || {
-            (&*name.host, 0)
-                .to_socket_addrs()
-                .map(|i| SocketAddrs { iter: i })
-        });
+        let blocking =
+            tokio::task::spawn_blocking(move || (&*name.host, 0).to_socket_addrs().map(|i| SocketAddrs { iter: i }));
 
         GaiFuture { inner: blocking }
     }
@@ -145,7 +142,7 @@ impl Future for GaiFuture {
                 } else {
                     panic!("gai background task failed: {join_err:?}")
                 }
-            }
+            },
         })
     }
 }
@@ -182,23 +179,17 @@ pub(super) struct SocketAddrs {
 
 impl SocketAddrs {
     pub(super) fn new(addrs: Vec<SocketAddr>) -> Self {
-        SocketAddrs {
-            iter: addrs.into_iter(),
-        }
+        SocketAddrs { iter: addrs.into_iter() }
     }
 
     pub(super) fn try_parse(host: &str, port: u16) -> Option<SocketAddrs> {
         if let Ok(addr) = host.parse::<Ipv4Addr>() {
             let addr = SocketAddrV4::new(addr, port);
-            return Some(SocketAddrs {
-                iter: vec![SocketAddr::V4(addr)].into_iter(),
-            });
+            return Some(SocketAddrs { iter: vec![SocketAddr::V4(addr)].into_iter() });
         }
         if let Ok(addr) = host.parse::<Ipv6Addr>() {
             let addr = SocketAddrV6::new(addr, port, 0, 0);
-            return Some(SocketAddrs {
-                iter: vec![SocketAddr::V6(addr)].into_iter(),
-            });
+            return Some(SocketAddrs { iter: vec![SocketAddr::V6(addr)].into_iter() });
         }
         None
     }
@@ -217,19 +208,12 @@ impl SocketAddrs {
             (Some(_), None) => (self.filter(SocketAddr::is_ipv4), SocketAddrs::new(vec![])),
             (None, Some(_)) => (self.filter(SocketAddr::is_ipv6), SocketAddrs::new(vec![])),
             _ => {
-                let preferring_v6 = self
-                    .iter
-                    .as_slice()
-                    .first()
-                    .map(SocketAddr::is_ipv6)
-                    .unwrap_or(false);
+                let preferring_v6 = self.iter.as_slice().first().map(SocketAddr::is_ipv6).unwrap_or(false);
 
-                let (preferred, fallback) = self
-                    .iter
-                    .partition::<Vec<_>, _>(|addr| addr.is_ipv6() == preferring_v6);
+                let (preferred, fallback) = self.iter.partition::<Vec<_>, _>(|addr| addr.is_ipv6() == preferring_v6);
 
                 (SocketAddrs::new(preferred), SocketAddrs::new(fallback))
-            }
+            },
         }
     }
 
@@ -307,45 +291,33 @@ mod tests {
         let v4_addr = (ip_v4, 80).into();
         let v6_addr = (ip_v6, 80).into();
 
-        let (mut preferred, mut fallback) = SocketAddrs {
-            iter: vec![v4_addr, v6_addr].into_iter(),
-        }
-        .split_by_preference(None, None);
+        let (mut preferred, mut fallback) =
+            SocketAddrs { iter: vec![v4_addr, v6_addr].into_iter() }.split_by_preference(None, None);
         assert!(preferred.next().unwrap().is_ipv4());
         assert!(fallback.next().unwrap().is_ipv6());
 
-        let (mut preferred, mut fallback) = SocketAddrs {
-            iter: vec![v6_addr, v4_addr].into_iter(),
-        }
-        .split_by_preference(None, None);
+        let (mut preferred, mut fallback) =
+            SocketAddrs { iter: vec![v6_addr, v4_addr].into_iter() }.split_by_preference(None, None);
         assert!(preferred.next().unwrap().is_ipv6());
         assert!(fallback.next().unwrap().is_ipv4());
 
-        let (mut preferred, mut fallback) = SocketAddrs {
-            iter: vec![v4_addr, v6_addr].into_iter(),
-        }
-        .split_by_preference(Some(ip_v4), Some(ip_v6));
+        let (mut preferred, mut fallback) =
+            SocketAddrs { iter: vec![v4_addr, v6_addr].into_iter() }.split_by_preference(Some(ip_v4), Some(ip_v6));
         assert!(preferred.next().unwrap().is_ipv4());
         assert!(fallback.next().unwrap().is_ipv6());
 
-        let (mut preferred, mut fallback) = SocketAddrs {
-            iter: vec![v6_addr, v4_addr].into_iter(),
-        }
-        .split_by_preference(Some(ip_v4), Some(ip_v6));
+        let (mut preferred, mut fallback) =
+            SocketAddrs { iter: vec![v6_addr, v4_addr].into_iter() }.split_by_preference(Some(ip_v4), Some(ip_v6));
         assert!(preferred.next().unwrap().is_ipv6());
         assert!(fallback.next().unwrap().is_ipv4());
 
-        let (mut preferred, fallback) = SocketAddrs {
-            iter: vec![v4_addr, v6_addr].into_iter(),
-        }
-        .split_by_preference(Some(ip_v4), None);
+        let (mut preferred, fallback) =
+            SocketAddrs { iter: vec![v4_addr, v6_addr].into_iter() }.split_by_preference(Some(ip_v4), None);
         assert!(preferred.next().unwrap().is_ipv4());
         assert!(fallback.is_empty());
 
-        let (mut preferred, fallback) = SocketAddrs {
-            iter: vec![v4_addr, v6_addr].into_iter(),
-        }
-        .split_by_preference(None, Some(ip_v6));
+        let (mut preferred, fallback) =
+            SocketAddrs { iter: vec![v4_addr, v6_addr].into_iter() }.split_by_preference(None, Some(ip_v6));
         assert!(preferred.next().unwrap().is_ipv6());
         assert!(fallback.is_empty());
     }

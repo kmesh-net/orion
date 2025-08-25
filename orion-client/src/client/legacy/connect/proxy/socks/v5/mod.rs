@@ -55,10 +55,7 @@ impl<C> SocksV5<C> {
     /// `call` will not be used to create the underlying connection, but will
     /// be used in a SOCKS handshake with the proxy destination.
     pub fn new(proxy_dst: Uri, connector: C) -> Self {
-        Self {
-            inner: connector,
-            config: SocksConfig::new(proxy_dst),
-        }
+        Self { inner: connector, config: SocksConfig::new(proxy_dst) }
     }
 
     /// Use User/Pass authentication method during handshake.
@@ -97,13 +94,7 @@ impl<C> SocksV5<C> {
 
 impl SocksConfig {
     fn new(proxy: Uri) -> Self {
-        Self {
-            proxy,
-            proxy_auth: None,
-
-            local_dns: false,
-            optimistic: false,
-        }
+        Self { proxy, proxy_auth: None, local_dns: false, optimistic: false }
     }
 
     async fn execute<T, E>(self, mut conn: T, host: String, port: u16) -> Result<T, SocksError<E>>
@@ -114,24 +105,17 @@ impl SocksConfig {
             Ok(ip) => Address::Socket(SocketAddr::new(ip, port)),
             Err(_) if host.len() <= 255 => {
                 if self.local_dns {
-                    let socket = (host, port)
-                        .to_socket_addrs()?
-                        .next()
-                        .ok_or(SocksError::DnsFailure)?;
+                    let socket = (host, port).to_socket_addrs()?.next().ok_or(SocksError::DnsFailure)?;
 
                     Address::Socket(socket)
                 } else {
                     Address::Domain(host, port)
                 }
-            }
+            },
             Err(_) => return Err(SocksV5Error::HostTooLong.into()),
         };
 
-        let method = if self.proxy_auth.is_some() {
-            AuthMethod::UserPass
-        } else {
-            AuthMethod::NoAuth
-        };
+        let method = if self.proxy_auth.is_some() { AuthMethod::UserPass } else { AuthMethod::NoAuth };
 
         let mut recv_buf = BytesMut::with_capacity(513); // Max length of valid recievable message is 513 from Auth Request
         let mut send_buf = BytesMut::with_capacity(262); // Max length of valid sendable message is 262 from Auth Response
@@ -155,7 +139,7 @@ impl SocksConfig {
                     } else {
                         state = State::ReadingNegRes;
                     }
-                }
+                },
 
                 State::ReadingNegRes => {
                     let res: NegotiationRes = super::read_message(&mut conn, &mut recv_buf).await?;
@@ -179,7 +163,7 @@ impl SocksConfig {
                     } else {
                         state = State::SendingProxyReq;
                     }
-                }
+                },
 
                 State::SendingAuthReq => {
                     let (user, pass) = self.proxy_auth.as_ref().unwrap();
@@ -194,11 +178,10 @@ impl SocksConfig {
                     } else {
                         state = State::ReadingAuthRes;
                     }
-                }
+                },
 
                 State::ReadingAuthRes => {
-                    let res: AuthenticationRes =
-                        super::read_message(&mut conn, &mut recv_buf).await?;
+                    let res: AuthenticationRes = super::read_message(&mut conn, &mut recv_buf).await?;
 
                     if !res.0 {
                         return Err(SocksV5Error::Auth(AuthError::Failed).into());
@@ -209,7 +192,7 @@ impl SocksConfig {
                     } else {
                         state = State::SendingProxyReq;
                     }
-                }
+                },
 
                 State::SendingProxyReq => {
                     let req = ProxyReq(&address);
@@ -223,7 +206,7 @@ impl SocksConfig {
                     } else {
                         state = State::ReadingProxyRes;
                     }
-                }
+                },
 
                 State::ReadingProxyRes => {
                     let res: ProxyRes = super::read_message(&mut conn, &mut recv_buf).await?;
@@ -233,7 +216,7 @@ impl SocksConfig {
                     } else {
                         return Err(SocksV5Error::Command(res.0).into());
                     }
-                }
+                },
             }
         }
     }
@@ -266,9 +249,6 @@ where
             config.execute(conn, host, port).await
         };
 
-        Handshaking {
-            fut: Box::pin(fut),
-            _marker: Default::default(),
-        }
+        Handshaking { fut: Box::pin(fut), _marker: Default::default() }
     }
 }

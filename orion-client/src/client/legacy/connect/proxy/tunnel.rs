@@ -67,11 +67,7 @@ impl<C> Tunnel<C> {
     /// `call` will not be used to create the underlying connection, but will
     /// be used in an HTTP CONNECT request sent to the proxy destination.
     pub fn new(proxy_dst: Uri, connector: C) -> Self {
-        Self {
-            headers: Headers::Empty,
-            inner: connector,
-            proxy_dst,
-        }
+        Self { headers: Headers::Empty, inner: connector, proxy_dst }
     }
 
     /// Add `proxy-authorization` header value to the CONNECT request.
@@ -81,13 +77,13 @@ impl<C> Tunnel<C> {
         match self.headers {
             Headers::Empty => {
                 self.headers = Headers::Auth(auth);
-            }
+            },
             Headers::Auth(ref mut existing) => {
                 *existing = auth;
-            }
+            },
             Headers::Extra(ref mut extra) => {
                 extra.insert(http::header::PROXY_AUTHORIZATION, auth);
-            }
+            },
         }
 
         self
@@ -100,16 +96,14 @@ impl<C> Tunnel<C> {
         match self.headers {
             Headers::Empty => {
                 self.headers = Headers::Extra(headers);
-            }
+            },
             Headers::Auth(auth) => {
-                headers
-                    .entry(http::header::PROXY_AUTHORIZATION)
-                    .or_insert(auth);
+                headers.entry(http::header::PROXY_AUTHORIZATION).or_insert(auth);
                 self.headers = Headers::Extra(headers);
-            }
+            },
             Headers::Extra(ref mut extra) => {
                 extra.extend(headers);
-            }
+            },
         }
 
         self
@@ -138,9 +132,7 @@ where
 
         Tunneling {
             fut: Box::pin(async move {
-                let conn = connecting
-                    .await
-                    .map_err(|e| TunnelError::ConnectFailed(e.into()))?;
+                let conn = connecting.await.map_err(|e| TunnelError::ConnectFailed(e.into()))?;
                 tunnel(
                     conn,
                     dst.host().ok_or(TunnelError::MissingHost)?,
@@ -182,7 +174,7 @@ where
             buf.extend_from_slice(b"Proxy-Authorization: ");
             buf.extend_from_slice(auth.as_bytes());
             buf.extend_from_slice(b"\r\n");
-        }
+        },
         Headers::Extra(extra) => {
             for (name, value) in extra {
                 buf.extend_from_slice(name.as_str().as_bytes());
@@ -190,24 +182,20 @@ where
                 buf.extend_from_slice(value.as_bytes());
                 buf.extend_from_slice(b"\r\n");
             }
-        }
+        },
         Headers::Empty => (),
     }
 
     // headers end
     buf.extend_from_slice(b"\r\n");
 
-    crate::rt::write_all(&mut conn, &buf)
-        .await
-        .map_err(TunnelError::Io)?;
+    crate::rt::write_all(&mut conn, &buf).await.map_err(TunnelError::Io)?;
 
     let mut buf = [0; 8192];
     let mut pos = 0;
 
     loop {
-        let n = crate::rt::read(&mut conn, &mut buf[pos..])
-            .await
-            .map_err(TunnelError::Io)?;
+        let n = crate::rt::read(&mut conn, &mut buf[pos..]).await.map_err(TunnelError::Io)?;
 
         if n == 0 {
             return Err(TunnelError::TunnelUnexpectedEof);

@@ -209,7 +209,7 @@ impl Address {
                 buf.put_u16(v4.port()); // Network Order/BigEndian for port
 
                 Ok(7)
-            }
+            },
 
             Self::Socket(SocketAddr::V6(v6)) => {
                 if buf.capacity() - buf.len() < 1 + 16 + 2 {
@@ -221,7 +221,7 @@ impl Address {
                 buf.put_u16(v6.port()); // Network Order/BigEndian for port
 
                 Ok(19)
-            }
+            },
 
             Self::Domain(domain, port) => {
                 if buf.capacity() - buf.len() < 1 + 1 + domain.len() + 2 {
@@ -234,7 +234,7 @@ impl Address {
                 buf.put_u16(*port);
 
                 Ok(4 + domain.len())
-            }
+            },
         }
     }
 }
@@ -260,7 +260,7 @@ impl TryFrom<&mut BytesMut> for Address {
                 let port = buf.get_u16();
 
                 Self::Socket(SocketAddr::new(ip.into(), port))
-            }
+            },
             // Domain
             0x03 => {
                 let len = buf.get_u8();
@@ -271,14 +271,12 @@ impl TryFrom<&mut BytesMut> for Address {
                     return Err(ParsingError::Incomplete);
                 }
 
-                let domain = std::str::from_utf8(&buf[..len as usize])
-                    .map_err(|_| ParsingError::Other)?
-                    .to_string();
+                let domain = std::str::from_utf8(&buf[..len as usize]).map_err(|_| ParsingError::Other)?.to_string();
 
                 let port = buf.get_u16();
 
                 Self::Domain(domain, port)
-            }
+            },
             // IPv6
             0x04 => {
                 let mut ip = [0; 16];
@@ -290,7 +288,7 @@ impl TryFrom<&mut BytesMut> for Address {
                 let port = buf.get_u16();
 
                 Self::Socket(SocketAddr::new(ip.into(), port))
-            }
+            },
 
             _ => return Err(ParsingError::Other),
         })

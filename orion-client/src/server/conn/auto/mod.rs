@@ -227,13 +227,13 @@ impl<E> Builder<E> {
                 let io = Rewind::new_buffered(io, Bytes::new());
                 let conn = self.http1.serve_connection(io, service);
                 ConnState::H1 { conn }
-            }
+            },
             #[cfg(feature = "http2")]
             Some(Version::H2) => {
                 let io = Rewind::new_buffered(io, Bytes::new());
                 let conn = self.http2.serve_connection(io, service);
                 ConnState::H2 { conn }
-            }
+            },
             #[cfg(any(feature = "http1", feature = "http2"))]
             _ => ConnState::ReadVersion {
                 read_version: read_version(io),
@@ -254,11 +254,7 @@ impl<E> Builder<E> {
     /// instead. See the documentation of the latter to understand why.
     ///
     /// [`hyper_util::server::conn::auto::upgrade::downcast`]: crate::server::conn::auto::upgrade::downcast
-    pub fn serve_connection_with_upgrades<I, S, B>(
-        &self,
-        io: I,
-        service: S,
-    ) -> UpgradeableConnection<'_, I, S, E>
+    pub fn serve_connection_with_upgrades<I, S, B>(&self, io: I, service: S) -> UpgradeableConnection<'_, I, S, E>
     where
         S: Service<Request<Incoming>, Response = Response<B>>,
         S::Future: 'static,
@@ -355,9 +351,7 @@ where
             *this.filled = buf.filled().len();
 
             // We starts as H2 and switch to H1 when we don't get the preface.
-            if buf.filled().len() == len
-                || buf.filled()[len..] != H2_PREFACE[len..buf.filled().len()]
-            {
+            if buf.filled().len() == len || buf.filled()[len..] != H2_PREFACE[len..buf.filled().len()] {
                 *this.version = Version::H1;
                 break;
             }
@@ -365,10 +359,7 @@ where
 
         let io = this.io.take().unwrap();
         let buf = buf.filled().to_vec();
-        Poll::Ready(Ok((
-            *this.version,
-            Rewind::new_buffered(io, Bytes::from(buf)),
-        )))
+        Poll::Ready(Ok((*this.version, Rewind::new_buffered(io, Bytes::from(buf)))))
     }
 }
 
@@ -475,14 +466,8 @@ where
     {
         Connection {
             state: match self.state {
-                ConnState::ReadVersion {
-                    read_version,
-                    builder,
-                    service,
-                } => ConnState::ReadVersion {
-                    read_version,
-                    service,
-                    builder: Cow::Owned(builder.clone()),
+                ConnState::ReadVersion { read_version, builder, service } => {
+                    ConnState::ReadVersion { read_version, service, builder: Cow::Owned(builder.clone()) }
                 },
                 #[cfg(feature = "http1")]
                 ConnState::H1 { conn } => ConnState::H1 { conn },
@@ -512,11 +497,7 @@ where
             let mut this = self.as_mut().project();
 
             match this.state.as_mut().project() {
-                ConnStateProj::ReadVersion {
-                    read_version,
-                    builder,
-                    service,
-                } => {
+                ConnStateProj::ReadVersion { read_version, builder, service } => {
                     let (version, io) = ready!(read_version.poll(cx))?;
                     let service = service.take().unwrap();
                     match version {
@@ -524,24 +505,24 @@ where
                         Version::H1 => {
                             let conn = builder.http1.serve_connection(io, service);
                             this.state.set(ConnState::H1 { conn });
-                        }
+                        },
                         #[cfg(feature = "http2")]
                         Version::H2 => {
                             let conn = builder.http2.serve_connection(io, service);
                             this.state.set(ConnState::H2 { conn });
-                        }
+                        },
                         #[cfg(any(not(feature = "http1"), not(feature = "http2")))]
                         _ => return Poll::Ready(Err(version.unsupported())),
                     }
-                }
+                },
                 #[cfg(feature = "http1")]
                 ConnStateProj::H1 { conn } => {
                     return conn.poll(cx).map_err(Into::into);
-                }
+                },
                 #[cfg(feature = "http2")]
                 ConnStateProj::H2 { conn } => {
                     return conn.poll(cx).map_err(Into::into);
-                }
+                },
                 #[cfg(any(not(feature = "http1"), not(feature = "http2")))]
                 _ => unreachable!(),
             }
@@ -630,14 +611,8 @@ where
     {
         UpgradeableConnection {
             state: match self.state {
-                UpgradeableConnState::ReadVersion {
-                    read_version,
-                    builder,
-                    service,
-                } => UpgradeableConnState::ReadVersion {
-                    read_version,
-                    service,
-                    builder: Cow::Owned(builder.clone()),
+                UpgradeableConnState::ReadVersion { read_version, builder, service } => {
+                    UpgradeableConnState::ReadVersion { read_version, service, builder: Cow::Owned(builder.clone()) }
                 },
                 #[cfg(feature = "http1")]
                 UpgradeableConnState::H1 { conn } => UpgradeableConnState::H1 { conn },
@@ -667,11 +642,7 @@ where
             let mut this = self.as_mut().project();
 
             match this.state.as_mut().project() {
-                UpgradeableConnStateProj::ReadVersion {
-                    read_version,
-                    builder,
-                    service,
-                } => {
+                UpgradeableConnStateProj::ReadVersion { read_version, builder, service } => {
                     let (version, io) = ready!(read_version.poll(cx))?;
                     let service = service.take().unwrap();
                     match version {
@@ -679,24 +650,24 @@ where
                         Version::H1 => {
                             let conn = builder.http1.serve_connection(io, service).with_upgrades();
                             this.state.set(UpgradeableConnState::H1 { conn });
-                        }
+                        },
                         #[cfg(feature = "http2")]
                         Version::H2 => {
                             let conn = builder.http2.serve_connection(io, service);
                             this.state.set(UpgradeableConnState::H2 { conn });
-                        }
+                        },
                         #[cfg(any(not(feature = "http1"), not(feature = "http2")))]
                         _ => return Poll::Ready(Err(version.unsupported())),
                     }
-                }
+                },
                 #[cfg(feature = "http1")]
                 UpgradeableConnStateProj::H1 { conn } => {
                     return conn.poll(cx).map_err(Into::into);
-                }
+                },
                 #[cfg(feature = "http2")]
                 UpgradeableConnStateProj::H2 { conn } => {
                     return conn.poll(cx).map_err(Into::into);
-                }
+                },
                 #[cfg(any(not(feature = "http1"), not(feature = "http2")))]
                 _ => unreachable!(),
             }
@@ -905,11 +876,7 @@ impl<E> Http1Builder<'_, E> {
     /// handle HTTP upgrades. This requires that the IO object implements
     /// `Send`.
     #[cfg(feature = "http2")]
-    pub fn serve_connection_with_upgrades<I, S, B>(
-        &self,
-        io: I,
-        service: S,
-    ) -> UpgradeableConnection<'_, I, S, E>
+    pub fn serve_connection_with_upgrades<I, S, B>(&self, io: I, service: S) -> UpgradeableConnection<'_, I, S, E>
     where
         S: Service<Request<Incoming>, Response = Response<B>>,
         S::Future: 'static,
@@ -1107,11 +1074,7 @@ impl<E> Http2Builder<'_, E> {
     /// Bind a connection together with a [`Service`], with the ability to
     /// handle HTTP upgrades. This requires that the IO object implements
     /// `Send`.
-    pub fn serve_connection_with_upgrades<I, S, B>(
-        &self,
-        io: I,
-        service: S,
-    ) -> UpgradeableConnection<'_, I, S, E>
+    pub fn serve_connection_with_upgrades<I, S, B>(&self, io: I, service: S) -> UpgradeableConnection<'_, I, S, E>
     where
         S: Service<Request<Incoming>, Response = Response<B>>,
         S::Future: 'static,
@@ -1146,11 +1109,7 @@ mod tests {
     #[test]
     fn configuration() {
         // One liner.
-        auto::Builder::new(TokioExecutor::new())
-            .http1()
-            .keep_alive(true)
-            .http2()
-            .keep_alive_interval(None);
+        auto::Builder::new(TokioExecutor::new()).http1().keep_alive(true).http2().keep_alive_interval(None);
         //  .serve_connection(io, service);
 
         // Using variable.
@@ -1168,9 +1127,7 @@ mod tests {
         auto::Builder::new(TokioExecutor::new()).title_case_headers(true);
 
         // Can be combined with other configuration
-        auto::Builder::new(TokioExecutor::new())
-            .title_case_headers(true)
-            .http1_only();
+        auto::Builder::new(TokioExecutor::new()).title_case_headers(true).http1_only();
     }
 
     #[test]
@@ -1180,9 +1137,7 @@ mod tests {
         auto::Builder::new(TokioExecutor::new()).preserve_header_case(true);
 
         // Can be combined with other configuration
-        auto::Builder::new(TokioExecutor::new())
-            .preserve_header_case(true)
-            .http1_only();
+        auto::Builder::new(TokioExecutor::new()).preserve_header_case(true).http1_only();
     }
 
     #[cfg(not(miri))]
@@ -1191,10 +1146,7 @@ mod tests {
         let addr = start_server(false, false).await;
         let mut sender = connect_h1(addr).await;
 
-        let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .unwrap();
+        let response = sender.send_request(Request::new(Empty::<Bytes>::new())).await.unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1207,10 +1159,7 @@ mod tests {
         let addr = start_server(false, false).await;
         let mut sender = connect_h2(addr).await;
 
-        let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .unwrap();
+        let response = sender.send_request(Request::new(Empty::<Bytes>::new())).await.unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1223,10 +1172,7 @@ mod tests {
         let addr = start_server(false, true).await;
         let mut sender = connect_h2(addr).await;
 
-        let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .unwrap();
+        let response = sender.send_request(Request::new(Empty::<Bytes>::new())).await.unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1239,10 +1185,7 @@ mod tests {
         let addr = start_server(false, true).await;
         let mut sender = connect_h1(addr).await;
 
-        let _ = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .expect_err("should fail");
+        let _ = sender.send_request(Request::new(Empty::<Bytes>::new())).await.expect_err("should fail");
     }
 
     #[cfg(not(miri))]
@@ -1251,10 +1194,7 @@ mod tests {
         let addr = start_server(true, false).await;
         let mut sender = connect_h1(addr).await;
 
-        let response = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .unwrap();
+        let response = sender.send_request(Request::new(Empty::<Bytes>::new())).await.unwrap();
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
 
@@ -1267,18 +1207,13 @@ mod tests {
         let addr = start_server(true, false).await;
         let mut sender = connect_h2(addr).await;
 
-        let _ = sender
-            .send_request(Request::new(Empty::<Bytes>::new()))
-            .await
-            .expect_err("should fail");
+        let _ = sender.send_request(Request::new(Empty::<Bytes>::new())).await.expect_err("should fail");
     }
 
     #[cfg(not(miri))]
     #[tokio::test]
     async fn graceful_shutdown() {
-        let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-            .await
-            .unwrap();
+        let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await.unwrap();
 
         let listener_addr = listener.local_addr().unwrap();
 
@@ -1301,9 +1236,8 @@ mod tests {
             .expect("Connection should have finished in a timely manner after graceful shutdown.")
             .expect_err("Connection should have been interrupted.");
 
-        let connection_error = connection_error
-            .downcast_ref::<std::io::Error>()
-            .expect("The error should have been `std::io::Error`.");
+        let connection_error =
+            connection_error.downcast_ref::<std::io::Error>().expect("The error should have been `std::io::Error`.");
         assert_eq!(connection_error.kind(), std::io::ErrorKind::Interrupted);
     }
 
@@ -1328,10 +1262,8 @@ mod tests {
         B::Error: Into<Box<dyn StdError + Send + Sync>>,
     {
         let stream = TokioIo::new(TcpStream::connect(addr).await.unwrap());
-        let (sender, connection) = client::conn::http2::Builder::new(TokioExecutor::new())
-            .handshake(stream)
-            .await
-            .unwrap();
+        let (sender, connection) =
+            client::conn::http2::Builder::new(TokioExecutor::new()).handshake(stream).await.unwrap();
 
         tokio::spawn(connection);
 

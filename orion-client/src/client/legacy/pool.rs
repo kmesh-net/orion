@@ -165,11 +165,7 @@ impl<T: Poolable, K: Key> Pool<T, K> {
     /// Returns a `Checkout` which is a future that resolves if an idle
     /// connection becomes available.
     pub fn checkout(&self, key: K) -> Checkout<T, K> {
-        Checkout {
-            key,
-            pool: self.clone(),
-            waiter: None,
-        }
+        Checkout { key, pool: self.clone(), waiter: None }
     }
 
     /// Ensure that there is only ever 1 connecting task for HTTP/2
@@ -179,10 +175,7 @@ impl<T: Poolable, K: Key> Pool<T, K> {
             if let Some(ref enabled) = self.inner {
                 let mut inner = enabled.lock().unwrap();
                 return if inner.connecting.insert(key.clone()) {
-                    let connecting = Connecting {
-                        key: key.clone(),
-                        pool: WeakOpt::downgrade(enabled),
-                    };
+                    let connecting = Connecting { key: key.clone(), pool: WeakOpt::downgrade(enabled) };
                     Some(connecting)
                 } else {
                     trace!("HTTP/2 connecting already in progress for {:?}", key);
@@ -242,13 +235,13 @@ impl<T: Poolable, K: Key> Pool<T, K> {
                     // Shared reservations don't need a reference to the pool,
                     // since the pool always keeps a copy.
                     (to_return, WeakOpt::none())
-                }
+                },
                 Reservation::Unique(value) => {
                     // Unique reservations must take a reference to the pool
                     // since they hope to reinsert once the reservation is
                     // completed
                     (value, WeakOpt::downgrade(enabled))
-                }
+                },
             }
         } else {
             // If pool is not enabled, skip all the things...
@@ -258,12 +251,7 @@ impl<T: Poolable, K: Key> Pool<T, K> {
 
             (value, WeakOpt::none())
         };
-        Pooled {
-            key: connecting.key.clone(),
-            is_reused: false,
-            pool: pool_ref,
-            value: Some(value),
-        }
+        Pooled { key: connecting.key.clone(), is_reused: false, pool: pool_ref, value: Some(value) }
     }
 
     fn reuse(&self, key: &K, value: T) -> Pooled<T, K> {
@@ -283,12 +271,7 @@ impl<T: Poolable, K: Key> Pool<T, K> {
             }
         }
 
-        Pooled {
-            is_reused: true,
-            key: key.clone(),
-            pool: pool_ref,
-            value: Some(value),
-        }
+        Pooled { is_reused: true, key: key.clone(), pool: pool_ref, value: Some(value) }
     }
 }
 
@@ -321,19 +304,13 @@ impl<'a, T: Poolable + 'a, K: Debug> IdlePopper<'a, T, K> {
             let value = match entry.value.reserve() {
                 #[cfg(feature = "http2")]
                 Reservation::Shared(to_reinsert, to_checkout) => {
-                    self.list.push(Idle {
-                        idle_at: Instant::now(),
-                        value: to_reinsert,
-                    });
+                    self.list.push(Idle { idle_at: Instant::now(), value: to_reinsert });
                     to_checkout
-                }
+                },
                 Reservation::Unique(unique) => unique,
             };
 
-            return Some(Idle {
-                idle_at: entry.idle_at,
-                value,
-            });
+            return Some(Idle { idle_at: entry.idle_at, value });
         }
 
         None
@@ -358,7 +335,7 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
                         Reservation::Shared(to_keep, to_send) => {
                             value = Some(to_keep);
                             to_send
-                        }
+                        },
                         Reservation::Unique(uniq) => uniq,
                     };
                     match tx.send(reserved) {
@@ -368,10 +345,10 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
                             } else {
                                 continue;
                             }
-                        }
+                        },
                         Err(e) => {
                             value = Some(e);
-                        }
+                        },
                     }
                 }
 
@@ -394,14 +371,11 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
                     }
 
                     debug!("pooling idle connection for {:?}", key);
-                    idle_list.push(Idle {
-                        value,
-                        idle_at: Instant::now(),
-                    });
+                    idle_list.push(Idle { value, idle_at: Instant::now() });
                 }
 
                 self.spawn_idle_interval(__pool_ref);
-            }
+            },
             None => trace!("put; found waiter for {:?}", key),
         }
     }
@@ -497,9 +471,7 @@ impl<T: Poolable, K: Key> PoolInner<T, K> {
 
 impl<T, K: Key> Clone for Pool<T, K> {
     fn clone(&self) -> Pool<T, K> {
-        Pool {
-            inner: self.inner.clone(),
-        }
+        Pool { inner: self.inner.clone() }
     }
 }
 
@@ -611,10 +583,7 @@ impl fmt::Display for Error {
 impl StdError for Error {}
 
 impl<T: Poolable, K: Key> Checkout<T, K> {
-    fn poll_waiter(
-        &mut self,
-        cx: &mut task::Context<'_>,
-    ) -> Poll<Option<Result<Pooled<T, K>, Error>>> {
+    fn poll_waiter(&mut self, cx: &mut task::Context<'_>) -> Poll<Option<Result<Pooled<T, K>, Error>>> {
         if let Some(mut rx) = self.waiter.take() {
             match Pin::new(&mut rx).poll(cx) {
                 Poll::Ready(Ok(value)) => {
@@ -623,14 +592,12 @@ impl<T: Poolable, K: Key> Checkout<T, K> {
                     } else {
                         Poll::Ready(Some(Err(Error::CheckedOutClosedValue)))
                     }
-                }
+                },
                 Poll::Pending => {
                     self.waiter = Some(rx);
                     Poll::Pending
-                }
-                Poll::Ready(Err(_canceled)) => {
-                    Poll::Ready(Some(Err(Error::CheckoutNoLongerWanted)))
-                }
+                },
+                Poll::Ready(Err(_canceled)) => Poll::Ready(Some(Err(Error::CheckoutNoLongerWanted))),
             }
         } else {
             Poll::Ready(None)
@@ -646,10 +613,7 @@ impl<T: Poolable, K: Key> Checkout<T, K> {
                 // A block to end the mutable borrow on list,
                 // so the map below can check is_empty()
                 {
-                    let popper = IdlePopper {
-                        key: &self.key,
-                        list,
-                    };
+                    let popper = IdlePopper { key: &self.key, list };
                     popper.pop(&expiration)
                 }
                 .map(|e| (e, list.is_empty()))
@@ -669,11 +633,7 @@ impl<T: Poolable, K: Key> Checkout<T, K> {
             if entry.is_none() && self.waiter.is_none() {
                 let (tx, mut rx) = oneshot::channel();
                 trace!("checkout waiting for idle connection: {:?}", self.key);
-                inner
-                    .waiters
-                    .entry(self.key.clone())
-                    .or_insert_with(VecDeque::new)
-                    .push_back(tx);
+                inner.waiters.entry(self.key.clone()).or_insert_with(VecDeque::new).push_back(tx);
 
                 // register the waker with this oneshot
                 assert!(Pin::new(&mut rx).poll(cx).is_pending());
@@ -727,10 +687,7 @@ pub struct Connecting<T: Poolable, K: Key> {
 
 impl<T: Poolable, K: Key> Connecting<T, K> {
     pub fn alpn_h2(self, pool: &Pool<T, K>) -> Option<Self> {
-        debug_assert!(
-            self.pool.0.is_none(),
-            "Connecting::alpn_h2 but already Http2"
-        );
+        debug_assert!(self.pool.0.is_none(), "Connecting::alpn_h2 but already Http2");
 
         pool.connecting(&self.key, Ver::Http2)
     }
@@ -790,7 +747,7 @@ impl<T: Poolable + 'static, K: Key> Future for IdleTask<T, K> {
                 Poll::Ready(Err(_canceled)) => {
                     trace!("pool closed, canceling idle interval");
                     return Poll::Ready(());
-                }
+                },
             }
 
             ready!(Pin::new(&mut this.fut).poll(cx));
@@ -867,10 +824,7 @@ mod tests {
     }
 
     fn c<T: Poolable, K: Key>(key: K) -> Connecting<T, K> {
-        Connecting {
-            key,
-            pool: WeakOpt::none(),
-        }
+        Connecting { key, pool: WeakOpt::none() }
     }
 
     fn host_key(s: &str) -> KeyImpl {
@@ -883,10 +837,7 @@ mod tests {
 
     fn pool_max_idle_no_timer<T, K: Key>(max_idle: usize) -> Pool<T, K> {
         let pool = Pool::new(
-            super::Config {
-                idle_timeout: Some(Duration::from_millis(100)),
-                max_idle_per_host: max_idle,
-            },
+            super::Config { idle_timeout: Some(Duration::from_millis(100)), max_idle_per_host: max_idle },
             TokioExecutor::new(),
             Option::<timer::Timer>::None,
         );
@@ -949,10 +900,7 @@ mod tests {
         pool.pooled(c(key.clone()), Uniq(5));
         pool.pooled(c(key.clone()), Uniq(99));
 
-        assert_eq!(
-            pool.locked().idle.get(&key).map(|entries| entries.len()),
-            Some(3)
-        );
+        assert_eq!(pool.locked().idle.get(&key).map(|entries| entries.len()), Some(3));
         tokio::time::sleep(pool.locked().timeout.unwrap()).await;
 
         let mut checkout = pool.checkout(key.clone());
@@ -972,19 +920,13 @@ mod tests {
         pool.pooled(c(key.clone()), Uniq(99));
 
         // pooled and dropped 3, max_idle should only allow 2
-        assert_eq!(
-            pool.locked().idle.get(&key).map(|entries| entries.len()),
-            Some(2)
-        );
+        assert_eq!(pool.locked().idle.get(&key).map(|entries| entries.len()), Some(2));
     }
 
     #[tokio::test]
     async fn test_pool_timer_removes_expired() {
         let pool = Pool::new(
-            super::Config {
-                idle_timeout: Some(Duration::from_millis(10)),
-                max_idle_per_host: usize::MAX,
-            },
+            super::Config { idle_timeout: Some(Duration::from_millis(10)), max_idle_per_host: usize::MAX },
             TokioExecutor::new(),
             Some(TokioTimer::new()),
         );
@@ -995,10 +937,7 @@ mod tests {
         pool.pooled(c(key.clone()), Uniq(5));
         pool.pooled(c(key.clone()), Uniq(99));
 
-        assert_eq!(
-            pool.locked().idle.get(&key).map(|entries| entries.len()),
-            Some(3)
-        );
+        assert_eq!(pool.locked().idle.get(&key).map(|entries| entries.len()), Some(3));
 
         // Let the timer tick passed the expiration...
         tokio::time::sleep(Duration::from_millis(30)).await;
@@ -1080,13 +1019,7 @@ mod tests {
     fn pooled_drop_if_closed_doesnt_reinsert() {
         let pool = pool_no_timer();
         let key = host_key("foo");
-        pool.pooled(
-            c(key.clone()),
-            CanClose {
-                val: 57,
-                closed: true,
-            },
-        );
+        pool.pooled(c(key.clone()), CanClose { val: 57, closed: true });
 
         assert!(!pool.locked().idle.contains_key(&key));
     }

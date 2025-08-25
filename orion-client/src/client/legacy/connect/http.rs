@@ -420,8 +420,7 @@ impl<R> HttpConnector<R> {
         }
         #[cfg(not(any(target_os = "android", target_os = "fuchsia", target_os = "linux")))]
         {
-            let interface = std::ffi::CString::new(interface)
-                .expect("interface name should not have nulls in it");
+            let interface = std::ffi::CString::new(interface).expect("interface name should not have nulls in it");
             self.config_mut().interface = Some(interface);
         }
         self
@@ -471,46 +470,24 @@ where
 
     fn call(&mut self, dst: Uri) -> Self::Future {
         let mut self_ = self.clone();
-        HttpConnecting {
-            fut: Box::pin(async move { self_.call_async(dst).await }),
-            _marker: PhantomData,
-        }
+        HttpConnecting { fut: Box::pin(async move { self_.call_async(dst).await }), _marker: PhantomData }
     }
 }
 
 fn get_host_port<'u>(config: &Config, dst: &'u Uri) -> Result<(&'u str, u16), ConnectError> {
-    trace!(
-        "Http::connect; scheme={:?}, host={:?}, port={:?}",
-        dst.scheme(),
-        dst.host(),
-        dst.port(),
-    );
+    trace!("Http::connect; scheme={:?}, host={:?}, port={:?}", dst.scheme(), dst.host(), dst.port(),);
 
     if config.enforce_http {
         if dst.scheme() != Some(&Scheme::HTTP) {
-            return Err(ConnectError {
-                msg: INVALID_NOT_HTTP,
-                addr: None,
-                cause: None,
-            });
+            return Err(ConnectError { msg: INVALID_NOT_HTTP, addr: None, cause: None });
         }
     } else if dst.scheme().is_none() {
-        return Err(ConnectError {
-            msg: INVALID_MISSING_SCHEME,
-            addr: None,
-            cause: None,
-        });
+        return Err(ConnectError { msg: INVALID_MISSING_SCHEME, addr: None, cause: None });
     }
 
     let host = match dst.host() {
         Some(s) => s,
-        None => {
-            return Err(ConnectError {
-                msg: INVALID_MISSING_HOST,
-                addr: None,
-                cause: None,
-            })
-        }
+        None => return Err(ConnectError { msg: INVALID_MISSING_HOST, addr: None, cause: None }),
     };
     let port = match dst.port() {
         Some(port) => port.as_u16(),
@@ -520,7 +497,7 @@ fn get_host_port<'u>(config: &Config, dst: &'u Uri) -> Result<(&'u str, u16), Co
             } else {
                 80
             }
-        }
+        },
     };
 
     Ok((host, port))
@@ -541,9 +518,7 @@ where
         let addrs = if let Some(addrs) = dns::SocketAddrs::try_parse(host, port) {
             addrs
         } else {
-            let addrs = resolve(&mut self.resolver, dns::Name::new(host.into()))
-                .await
-                .map_err(ConnectError::dns)?;
+            let addrs = resolve(&mut self.resolver, dns::Name::new(host.into())).await.map_err(ConnectError::dns)?;
             let addrs = addrs
                 .map(|mut addr| {
                     set_port(&mut addr, port, dst.port().is_some());
@@ -570,10 +545,7 @@ impl Connection for TcpStream {
     fn connected(&self) -> Connected {
         let connected = Connected::new();
         if let (Ok(remote_addr), Ok(local_addr)) = (self.peer_addr(), self.local_addr()) {
-            connected.extra(HttpInfo {
-                remote_addr,
-                local_addr,
-            })
+            connected.extra(HttpInfo { remote_addr, local_addr })
         } else {
             connected
         }
@@ -655,11 +627,7 @@ impl ConnectError {
     where
         E: Into<Box<dyn StdError + Send + Sync>>,
     {
-        ConnectError {
-            msg,
-            addr: None,
-            cause: Some(cause.into()),
-        }
+        ConnectError { msg, addr: None, cause: Some(cause.into()) }
     }
 
     fn dns<E>(cause: E) -> ConnectError
@@ -712,8 +680,8 @@ struct ConnectingTcp<'a> {
 impl<'a> ConnectingTcp<'a> {
     fn new(remote_addrs: dns::SocketAddrs, config: &'a Config) -> Self {
         if let Some(fallback_timeout) = config.happy_eyeballs_timeout {
-            let (preferred_addrs, fallback_addrs) = remote_addrs
-                .split_by_preference(config.local_address_ipv4, config.local_address_ipv6);
+            let (preferred_addrs, fallback_addrs) =
+                remote_addrs.split_by_preference(config.local_address_ipv4, config.local_address_ipv6);
             if fallback_addrs.is_empty() {
                 return ConnectingTcp {
                     preferred: ConnectingTcpRemote::new(preferred_addrs, config.connect_timeout),
@@ -754,10 +722,7 @@ impl ConnectingTcpRemote {
     fn new(addrs: dns::SocketAddrs, connect_timeout: Option<Duration>) -> Self {
         let connect_timeout = connect_timeout.and_then(|t| t.checked_div(addrs.len() as u32));
 
-        Self {
-            addrs,
-            connect_timeout,
-        }
+        Self { addrs, connect_timeout }
     }
 }
 
@@ -770,7 +735,7 @@ impl ConnectingTcpRemote {
                 Ok(tcp) => {
                     debug!("connected to {}", addr);
                     return Ok(tcp);
-                }
+                },
                 Err(mut e) => {
                     trace!("connect error for {}: {:?}", addr, e);
                     e.addr = Some(addr);
@@ -778,7 +743,7 @@ impl ConnectingTcpRemote {
                     if err.is_none() {
                         err = Some(e);
                     }
-                }
+                },
             }
         }
 
@@ -801,10 +766,10 @@ fn bind_local_address(
     match (*dst_addr, local_addr_ipv4, local_addr_ipv6) {
         (SocketAddr::V4(_), Some(addr), _) => {
             socket.bind(&SocketAddr::new((*addr).into(), 0).into())?;
-        }
+        },
         (SocketAddr::V6(_), _, Some(addr)) => {
             socket.bind(&SocketAddr::new((*addr).into(), 0).into())?;
-        }
+        },
         _ => {
             if cfg!(windows) {
                 // Windows requires a socket be bound before calling connect
@@ -814,7 +779,7 @@ fn bind_local_address(
                 };
                 socket.bind(&any.into())?;
             }
-        }
+        },
     }
 
     Ok(())
@@ -831,14 +796,11 @@ fn connect(
     use socket2::{Domain, Protocol, Socket, Type};
 
     let domain = Domain::for_address(*addr);
-    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))
-        .map_err(ConnectError::m("tcp open error"))?;
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP)).map_err(ConnectError::m("tcp open error"))?;
 
     // When constructing a Tokio `TcpSocket` from a raw fd/socket, the user is
     // responsible for ensuring O_NONBLOCK is set.
-    socket
-        .set_nonblocking(true)
-        .map_err(ConnectError::m("tcp set_nonblocking error"))?;
+    socket.set_nonblocking(true).map_err(ConnectError::m("tcp set_nonblocking error"))?;
 
     if let Some(tcp_keepalive) = &config.tcp_keepalive_config.into_tcpkeepalive() {
         if let Err(e) = socket.set_tcp_keepalive(tcp_keepalive) {
@@ -863,9 +825,7 @@ fn connect(
         // On Linux-like systems, set the interface to bind using
         // `SO_BINDTODEVICE`.
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-        socket
-            .bind_device(Some(interface.as_bytes()))
-            .map_err(ConnectError::m("tcp bind interface error"))?;
+        socket.bind_device(Some(interface.as_bytes())).map_err(ConnectError::m("tcp bind interface error"))?;
 
         // On macOS-like and Solaris-like systems, we instead use `IP_BOUND_IF`.
         // This socket option desires an integer index for the interface, so we
@@ -884,10 +844,7 @@ fn connect(
             let idx = unsafe { libc::if_nametoindex(interface.as_ptr()) };
             let idx = std::num::NonZeroU32::new(idx).ok_or_else(|| {
                 // If the index is 0, check errno and return an I/O error.
-                ConnectError::new(
-                    "error converting interface name to index",
-                    io::Error::last_os_error(),
-                )
+                ConnectError::new("error converting interface name to index", io::Error::last_os_error())
             })?;
             // Different setsockopt calls are necessary depending on whether the
             // address is IPv4 or IPv6.
@@ -906,13 +863,8 @@ fn connect(
         }
     }
 
-    bind_local_address(
-        &socket,
-        addr,
-        &config.local_address_ipv4,
-        &config.local_address_ipv6,
-    )
-    .map_err(ConnectError::m("tcp bind local error"))?;
+    bind_local_address(&socket, addr, &config.local_address_ipv4, &config.local_address_ipv6)
+        .map_err(ConnectError::m("tcp bind local error"))?;
 
     #[cfg(unix)]
     let socket = unsafe {
@@ -979,18 +931,13 @@ impl ConnectingTcp<'_> {
                 let fallback_delay = fallback.delay;
                 futures_util::pin_mut!(fallback_delay);
 
-                let (result, future) =
-                    match futures_util::future::select(preferred_fut, fallback_delay).await {
-                        Either::Left((result, _fallback_delay)) => {
-                            (result, Either::Right(fallback_fut))
-                        }
-                        Either::Right(((), preferred_fut)) => {
-                            // Delay is done, start polling both the preferred and the fallback
-                            futures_util::future::select(preferred_fut, fallback_fut)
-                                .await
-                                .factor_first()
-                        }
-                    };
+                let (result, future) = match futures_util::future::select(preferred_fut, fallback_delay).await {
+                    Either::Left((result, _fallback_delay)) => (result, Either::Right(fallback_fut)),
+                    Either::Right(((), preferred_fut)) => {
+                        // Delay is done, start polling both the preferred and the fallback
+                        futures_util::future::select(preferred_fut, fallback_fut).await.factor_first()
+                    },
+                };
 
                 if result.is_err() {
                     // Fallback to the remaining future (could be preferred or fallback)
@@ -999,7 +946,7 @@ impl ConnectingTcp<'_> {
                 } else {
                     result
                 }
-            }
+            },
         }
     }
 }
@@ -1054,9 +1001,7 @@ mod tests {
         let mut ip_v4 = None;
         let mut ip_v6 = None;
 
-        let ips = pnet_datalink::interfaces()
-            .into_iter()
-            .flat_map(|i| i.ips.into_iter().map(|n| n.ip()));
+        let ips = pnet_datalink::interfaces().into_iter().flat_map(|i| i.ips.into_iter().map(|n| n.ip()));
 
         for ip in ips {
             match ip {
@@ -1145,40 +1090,24 @@ mod tests {
 
         let server6 = TcpListener::bind(format!("[::1]:{port}")).unwrap();
 
-        let assert_interface_name =
-            |dst: String,
-             server: TcpListener,
-             bind_iface: Option<String>,
-             expected_interface: Option<String>| async move {
-                let mut connector = HttpConnector::new();
-                if let Some(iface) = bind_iface {
-                    connector.set_interface(iface);
-                }
+        let assert_interface_name = |dst: String,
+                                     server: TcpListener,
+                                     bind_iface: Option<String>,
+                                     expected_interface: Option<String>| async move {
+            let mut connector = HttpConnector::new();
+            if let Some(iface) = bind_iface {
+                connector.set_interface(iface);
+            }
 
-                connect(connector, dst.parse().unwrap()).await.unwrap();
-                let domain = Domain::for_address(server.local_addr().unwrap());
-                let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+            connect(connector, dst.parse().unwrap()).await.unwrap();
+            let domain = Domain::for_address(server.local_addr().unwrap());
+            let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
-                assert_eq!(
-                    socket.device().unwrap().as_deref(),
-                    expected_interface.as_deref().map(|val| val.as_bytes())
-                );
-            };
+            assert_eq!(socket.device().unwrap().as_deref(), expected_interface.as_deref().map(|val| val.as_bytes()));
+        };
 
-        assert_interface_name(
-            format!("http://127.0.0.1:{port}"),
-            server4,
-            interface.clone(),
-            interface.clone(),
-        )
-        .await;
-        assert_interface_name(
-            format!("http://[::1]:{port}"),
-            server6,
-            interface.clone(),
-            interface.clone(),
-        )
-        .await;
+        assert_interface_name(format!("http://127.0.0.1:{port}"), server4, interface.clone(), interface.clone()).await;
+        assert_interface_name(format!("http://[::1]:{port}"), server6, interface.clone(), interface.clone()).await;
     }
 
     #[test]
@@ -1194,81 +1123,30 @@ mod tests {
         let server4 = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = server4.local_addr().unwrap();
         let _server6 = TcpListener::bind(format!("[::1]:{}", addr.port())).unwrap();
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
 
         let local_timeout = Duration::default();
         let unreachable_v4_timeout = measure_connect(unreachable_ipv4_addr()).1;
         let unreachable_v6_timeout = measure_connect(unreachable_ipv6_addr()).1;
-        let fallback_timeout = std::cmp::max(unreachable_v4_timeout, unreachable_v6_timeout)
-            + Duration::from_millis(250);
+        let fallback_timeout =
+            std::cmp::max(unreachable_v4_timeout, unreachable_v6_timeout) + Duration::from_millis(250);
 
         let scenarios = &[
             // Fast primary, without fallback.
             (&[local_ipv4_addr()][..], 4, local_timeout, false),
             (&[local_ipv6_addr()][..], 6, local_timeout, false),
             // Fast primary, with (unused) fallback.
-            (
-                &[local_ipv4_addr(), local_ipv6_addr()][..],
-                4,
-                local_timeout,
-                false,
-            ),
-            (
-                &[local_ipv6_addr(), local_ipv4_addr()][..],
-                6,
-                local_timeout,
-                false,
-            ),
+            (&[local_ipv4_addr(), local_ipv6_addr()][..], 4, local_timeout, false),
+            (&[local_ipv6_addr(), local_ipv4_addr()][..], 6, local_timeout, false),
             // Unreachable + fast primary, without fallback.
-            (
-                &[unreachable_ipv4_addr(), local_ipv4_addr()][..],
-                4,
-                unreachable_v4_timeout,
-                false,
-            ),
-            (
-                &[unreachable_ipv6_addr(), local_ipv6_addr()][..],
-                6,
-                unreachable_v6_timeout,
-                false,
-            ),
+            (&[unreachable_ipv4_addr(), local_ipv4_addr()][..], 4, unreachable_v4_timeout, false),
+            (&[unreachable_ipv6_addr(), local_ipv6_addr()][..], 6, unreachable_v6_timeout, false),
             // Unreachable + fast primary, with (unused) fallback.
-            (
-                &[
-                    unreachable_ipv4_addr(),
-                    local_ipv4_addr(),
-                    local_ipv6_addr(),
-                ][..],
-                4,
-                unreachable_v4_timeout,
-                false,
-            ),
-            (
-                &[
-                    unreachable_ipv6_addr(),
-                    local_ipv6_addr(),
-                    local_ipv4_addr(),
-                ][..],
-                6,
-                unreachable_v6_timeout,
-                true,
-            ),
+            (&[unreachable_ipv4_addr(), local_ipv4_addr(), local_ipv6_addr()][..], 4, unreachable_v4_timeout, false),
+            (&[unreachable_ipv6_addr(), local_ipv6_addr(), local_ipv4_addr()][..], 6, unreachable_v6_timeout, true),
             // Slow primary, with (used) fallback.
-            (
-                &[slow_ipv4_addr(), local_ipv4_addr(), local_ipv6_addr()][..],
-                6,
-                fallback_timeout,
-                false,
-            ),
-            (
-                &[slow_ipv6_addr(), local_ipv6_addr(), local_ipv4_addr()][..],
-                4,
-                fallback_timeout,
-                true,
-            ),
+            (&[slow_ipv4_addr(), local_ipv4_addr(), local_ipv6_addr()][..], 6, fallback_timeout, false),
+            (&[slow_ipv6_addr(), local_ipv6_addr(), local_ipv4_addr()][..], 4, fallback_timeout, true),
             // Slow primary, with (used) unreachable + fast fallback.
             (
                 &[slow_ipv4_addr(), unreachable_ipv6_addr(), local_ipv6_addr()][..],
@@ -1295,10 +1173,7 @@ mod tests {
 
             let (start, stream) = rt
                 .block_on(async move {
-                    let addrs = hosts
-                        .iter()
-                        .map(|host| (*host, addr.port()).into())
-                        .collect();
+                    let addrs = hosts.iter().map(|host| (*host, addr.port()).into()).collect();
                     let cfg = Config {
                         local_address_ipv4: None,
                         local_address_ipv6: None,
@@ -1310,11 +1185,7 @@ mod tests {
                         enforce_http: false,
                         send_buffer_size: None,
                         recv_buffer_size: None,
-                        #[cfg(any(
-                            target_os = "android",
-                            target_os = "fuchsia",
-                            target_os = "linux"
-                        ))]
+                        #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
                         interface: None,
                         #[cfg(any(
                             target_os = "illumos",
@@ -1326,11 +1197,7 @@ mod tests {
                             target_os = "watchos",
                         ))]
                         interface: None,
-                        #[cfg(any(
-                            target_os = "android",
-                            target_os = "fuchsia",
-                            target_os = "linux"
-                        ))]
+                        #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
                         tcp_user_timeout: None,
                     };
                     let connecting_tcp = ConnectingTcp::new(dns::SocketAddrs::new(addrs), &cfg);
@@ -1338,11 +1205,7 @@ mod tests {
                     Ok::<_, ConnectError>((start, ConnectingTcp::connect(connecting_tcp).await?))
                 })
                 .unwrap();
-            let res = if stream.peer_addr().unwrap().is_ipv4() {
-                4
-            } else {
-                6
-            };
+            let res = if stream.peer_addr().unwrap().is_ipv4() { 4 } else { 6 };
             let duration = start.elapsed();
 
             // Allow actual duration to be +/- 150ms off.
@@ -1386,8 +1249,7 @@ mod tests {
 
         fn measure_connect(addr: IpAddr) -> (bool, Duration) {
             let start = Instant::now();
-            let result =
-                std::net::TcpStream::connect_timeout(&(addr, 80).into(), Duration::from_secs(1));
+            let result = std::net::TcpStream::connect_timeout(&(addr, 80).into(), Duration::from_secs(1));
 
             let reachable = result.is_ok() || result.unwrap_err().kind() == io::ErrorKind::TimedOut;
             let duration = start.elapsed();
@@ -1404,10 +1266,7 @@ mod tests {
 
     #[test]
     fn tcp_keepalive_time_config() {
-        let kac = TcpKeepaliveConfig {
-            time: Some(Duration::from_secs(60)),
-            ..Default::default()
-        };
+        let kac = TcpKeepaliveConfig { time: Some(Duration::from_secs(60)), ..Default::default() };
         if let Some(tcp_keepalive) = kac.into_tcpkeepalive() {
             assert!(format!("{tcp_keepalive:?}").contains("time: Some(60s)"));
         } else {
@@ -1418,10 +1277,7 @@ mod tests {
     #[cfg(not(any(target_os = "openbsd", target_os = "redox", target_os = "solaris")))]
     #[test]
     fn tcp_keepalive_interval_config() {
-        let kac = TcpKeepaliveConfig {
-            interval: Some(Duration::from_secs(1)),
-            ..Default::default()
-        };
+        let kac = TcpKeepaliveConfig { interval: Some(Duration::from_secs(1)), ..Default::default() };
         if let Some(tcp_keepalive) = kac.into_tcpkeepalive() {
             assert!(format!("{tcp_keepalive:?}").contains("interval: Some(1s)"));
         } else {
@@ -1429,18 +1285,10 @@ mod tests {
         }
     }
 
-    #[cfg(not(any(
-        target_os = "openbsd",
-        target_os = "redox",
-        target_os = "solaris",
-        target_os = "windows"
-    )))]
+    #[cfg(not(any(target_os = "openbsd", target_os = "redox", target_os = "solaris", target_os = "windows")))]
     #[test]
     fn tcp_keepalive_retries_config() {
-        let kac = TcpKeepaliveConfig {
-            retries: Some(3),
-            ..Default::default()
-        };
+        let kac = TcpKeepaliveConfig { retries: Some(3), ..Default::default() };
         if let Some(tcp_keepalive) = kac.into_tcpkeepalive() {
             assert!(format!("{tcp_keepalive:?}").contains("retries: Some(3)"));
         } else {

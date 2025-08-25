@@ -175,11 +175,7 @@ impl<T> hyper::rt::Write for TokioIo<T>
 where
     T: tokio::io::AsyncWrite,
 {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
         tokio::io::AsyncWrite::poll_write(self.project().inner, cx, buf)
     }
 
@@ -187,10 +183,7 @@ where
         tokio::io::AsyncWrite::poll_flush(self.project().inner, cx)
     }
 
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         tokio::io::AsyncWrite::poll_shutdown(self.project().inner, cx)
     }
 
@@ -243,11 +236,7 @@ impl<T> tokio::io::AsyncWrite for TokioIo<T>
 where
     T: hyper::rt::Write,
 {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, std::io::Error>> {
         hyper::rt::Write::poll_write(self.project().inner, cx, buf)
     }
 
@@ -255,10 +244,7 @@ where
         hyper::rt::Write::poll_flush(self.project().inner, cx)
     }
 
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Result<(), std::io::Error>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
         hyper::rt::Write::poll_shutdown(self.project().inner, cx)
     }
 
@@ -279,15 +265,11 @@ where
 
 impl Timer for TokioTimer {
     fn sleep(&self, duration: Duration) -> Pin<Box<dyn Sleep>> {
-        Box::pin(TokioSleep {
-            inner: tokio::time::sleep(duration),
-        })
+        Box::pin(TokioSleep { inner: tokio::time::sleep(duration) })
     }
 
     fn sleep_until(&self, deadline: Instant) -> Pin<Box<dyn Sleep>> {
-        Box::pin(TokioSleep {
-            inner: tokio::time::sleep_until(deadline.into()),
-        })
+        Box::pin(TokioSleep { inner: tokio::time::sleep_until(deadline.into()) })
     }
 
     fn reset(&self, sleep: &mut Pin<Box<dyn Sleep>>, new_deadline: Instant) {

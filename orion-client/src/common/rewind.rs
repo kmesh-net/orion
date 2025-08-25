@@ -18,10 +18,7 @@ pub(crate) struct Rewind<T> {
 impl<T> Rewind<T> {
     #[cfg(all(feature = "server", any(feature = "http1", feature = "http2")))]
     pub(crate) fn new_buffered(io: T, buf: Bytes) -> Self {
-        Rewind {
-            pre: Some(buf),
-            inner: io,
-        }
+        Rewind { pre: Some(buf), inner: io }
     }
 }
 
@@ -56,11 +53,7 @@ impl<T> Write for Rewind<T>
 where
     T: Write + Unpin,
 {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.inner).poll_write(cx, buf)
     }
 

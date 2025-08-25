@@ -24,9 +24,7 @@ pub struct TowerToHyperService<S> {
 impl<S> TowerToHyperService<S> {
     /// Create a new [`TowerToHyperService`] from a tower service.
     pub fn new(tower_service: S) -> Self {
-        Self {
-            service: tower_service,
-        }
+        Self { service: tower_service }
     }
 }
 
@@ -39,9 +37,7 @@ where
     type Future = TowerToHyperServiceFuture<S, R>;
 
     fn call(&self, req: R) -> Self::Future {
-        TowerToHyperServiceFuture {
-            future: Oneshot::new(self.service.clone(), req),
-        }
+        TowerToHyperServiceFuture { future: Oneshot::new(self.service.clone(), req) }
     }
 }
 

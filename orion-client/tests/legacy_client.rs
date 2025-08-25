@@ -27,10 +27,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use test_utils::{DebugConnector, DebugStream};
 
 pub fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("new rt")
+    tokio::runtime::Builder::new_current_thread().enable_all().build().expect("new rt")
 }
 
 fn s(buf: &[u8]) -> &str {
@@ -47,32 +44,22 @@ fn drop_body_before_eof_closes_connection() {
     let addr = server.local_addr().unwrap();
     let rt = runtime();
     let (closes_tx, closes) = mpsc::channel::<()>(10);
-    let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(
-        DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx),
-    );
+    let client = Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
     let (tx1, rx1) = oneshot::channel();
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
         let body = vec![b'x'; 1024 * 128];
-        write!(
-            sock,
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
-            body.len()
-        )
-        .expect("write head");
+        write!(sock, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).expect("write head");
         let _ = sock.write_all(&body);
         let _ = tx1.send(());
     });
 
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req).map_ok(move |res| {
         assert_eq!(res.status(), hyper::StatusCode::OK);
     });
@@ -102,9 +89,7 @@ async fn drop_client_closes_idle_connections() {
         sock.read(&mut buf).await.expect("read 1");
         let body = [b'x'; 64];
         let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
-        sock.write_all(headers.as_bytes())
-            .await
-            .expect("write head");
+        sock.write_all(headers.as_bytes()).await.expect("write head");
         sock.write_all(&body).await.expect("write body");
         let _ = tx1.send(());
 
@@ -115,15 +100,10 @@ async fn drop_client_closes_idle_connections() {
         }
     });
 
-    let client = Client::builder(TokioExecutor::new()).build(DebugConnector::with_http_and_closes(
-        HttpConnector::new(),
-        closes_tx,
-    ));
+    let client = Client::builder(TokioExecutor::new())
+        .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
 
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req).map_ok(move |res| {
         assert_eq!(res.status(), hyper::StatusCode::OK);
     });
@@ -164,8 +144,7 @@ async fn drop_response_future_closes_in_progress_connection() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
         // we never write a response head
@@ -178,14 +157,10 @@ async fn drop_response_future_closes_in_progress_connection() {
     });
 
     let res = {
-        let client = Client::builder(TokioExecutor::new()).build(
-            DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx),
-        );
+        let client = Client::builder(TokioExecutor::new())
+            .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
 
-        let req = Request::builder()
-            .uri(&*format!("http://{addr}/a"))
-            .body(Empty::<Bytes>::new())
-            .unwrap();
+        let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
         client.request(req).map(|_| unreachable!())
     };
 
@@ -213,15 +188,10 @@ async fn drop_response_body_closes_in_progress_connection() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        write!(
-            sock,
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-        )
-        .expect("write head");
+        write!(sock, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").expect("write head");
         let _ = tx1.send(());
 
         // prevent this thread from closing until end of test, so the connection
@@ -231,14 +201,10 @@ async fn drop_response_body_closes_in_progress_connection() {
 
     let rx = rx1;
     let res = {
-        let client = Client::builder(TokioExecutor::new()).build(
-            DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx),
-        );
+        let client = Client::builder(TokioExecutor::new())
+            .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
 
-        let req = Request::builder()
-            .uri(&*format!("http://{addr}/a"))
-            .body(Empty::<Bytes>::new())
-            .unwrap();
+        let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
         // notably, haven't read body yet
         client.request(req)
     };
@@ -270,12 +236,10 @@ async fn no_keep_alive_closes_connection() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .unwrap();
+        sock.write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").unwrap();
         let _ = tx1.send(());
 
         // prevent this thread from closing until end of test, so the connection
@@ -285,15 +249,9 @@ async fn no_keep_alive_closes_connection() {
 
     let client = Client::builder(TokioExecutor::new())
         .pool_max_idle_per_host(0)
-        .build(DebugConnector::with_http_and_closes(
-            HttpConnector::new(),
-            closes_tx,
-        ));
+        .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
 
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req).map_ok(move |res| {
         assert_eq!(res.status(), hyper::StatusCode::OK);
     });
@@ -322,24 +280,17 @@ async fn socket_disconnect_closes_idle_conn() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .unwrap();
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").unwrap();
         let _ = tx1.send(());
     });
 
-    let client = Client::builder(TokioExecutor::new()).build(DebugConnector::with_http_and_closes(
-        HttpConnector::new(),
-        closes_tx,
-    ));
+    let client = Client::builder(TokioExecutor::new())
+        .build(DebugConnector::with_http_and_closes(HttpConnector::new(), closes_tx));
 
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req).map_ok(move |res| {
         assert_eq!(res.status(), hyper::StatusCode::OK);
     });
@@ -368,10 +319,7 @@ fn connect_call_is_lazy() {
     let client = Client::builder(TokioExecutor::new()).build(connector);
 
     assert_eq!(connects.load(Ordering::Relaxed), 0);
-    let req = Request::builder()
-        .uri("http://hyper.local/a")
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri("http://hyper.local/a").body(Empty::<Bytes>::new()).unwrap();
     let _fut = client.request(req);
     // internal Connect::connect should have been lazy, and not
     // triggered an actual connect yet.
@@ -396,30 +344,24 @@ fn client_keep_alive_0() {
         let mut sock = server.accept().unwrap().0;
         //drop(server);
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
         let _ = tx1.send(());
 
         let n2 = sock.read(&mut buf).expect("read 2");
         assert_ne!(n2, 0);
         let second_get = "GET /b HTTP/1.1\r\n";
         assert_eq!(s(&buf[..second_get.len()]), second_get);
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 2");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 2");
         let _ = tx2.send(());
     });
 
     assert_eq!(connects.load(Ordering::SeqCst), 0);
 
     let rx = rx1;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req);
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
@@ -430,18 +372,11 @@ fn client_keep_alive_0() {
     thread::sleep(Duration::from_millis(50));
 
     let rx = rx2;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/b"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/b")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req);
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
-    assert_eq!(
-        connects.load(Ordering::SeqCst),
-        1,
-        "second request should still only have 1 connect"
-    );
+    assert_eq!(connects.load(Ordering::SeqCst), 1, "second request should still only have 1 connect");
     drop(client);
 }
 
@@ -463,12 +398,10 @@ fn client_keep_alive_extra_body() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello").expect("write 1");
         // the body "hello", while ignored because its a HEAD request, should mean the connection
         // cannot be put back in the pool
         let _ = tx1.send(());
@@ -478,30 +411,21 @@ fn client_keep_alive_extra_body() {
         assert_ne!(n2, 0);
         let second_get = "GET /b HTTP/1.1\r\n";
         assert_eq!(s(&buf[..second_get.len()]), second_get);
-        sock2
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 2");
+        sock2.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 2");
         let _ = tx2.send(());
     });
 
     assert_eq!(connects.load(Ordering::Relaxed), 0);
 
     let rx = rx1;
-    let req = Request::builder()
-        .method("HEAD")
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().method("HEAD").uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req);
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
     assert_eq!(connects.load(Ordering::Relaxed), 1);
 
     let rx = rx2;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/b"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/b")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req);
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 
@@ -527,12 +451,10 @@ async fn client_keep_alive_when_response_before_request_body_ends() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
         // after writing the response, THEN stream the body
         let _ = tx1.send(());
 
@@ -599,8 +521,7 @@ async fn client_keep_alive_eager_when_chunked() {
         let mut sock = server.accept().unwrap().0;
         //drop(server);
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
         sock.write_all(
@@ -620,18 +541,14 @@ async fn client_keep_alive_eager_when_chunked() {
         assert_ne!(n2, 0, "bytes of second request");
         let second_get = "GET /b HTTP/1.1\r\n";
         assert_eq!(s(&buf[..second_get.len()]), second_get);
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 2");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 2");
         let _ = tx2.send(());
     });
 
     assert_eq!(connects.load(Ordering::SeqCst), 0);
 
     let rx = rx1;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let fut = client.request(req);
 
     let resp = future::join(fut, rx).map(|r| r.0).await.unwrap();
@@ -648,18 +565,11 @@ async fn client_keep_alive_eager_when_chunked() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let rx = rx2;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/b"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/b")).body(Empty::<Bytes>::new()).unwrap();
     let fut = client.request(req);
     future::join(fut, rx).map(|r| r.0).await.unwrap();
 
-    assert_eq!(
-        connects.load(Ordering::SeqCst),
-        1,
-        "second request should still only have 1 connect"
-    );
+    assert_eq!(connects.load(Ordering::SeqCst), 1, "second request should still only have 1 connect");
     drop(client);
 }
 
@@ -679,23 +589,18 @@ fn connect_proxy_sends_absolute_uri() {
         let mut sock = server.accept().unwrap().0;
         //drop(server);
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         let n = sock.read(&mut buf).expect("read 1");
         let expected = format!("GET http://{addr}/foo/bar HTTP/1.1\r\nhost: {addr}\r\n\r\n");
         assert_eq!(s(&buf[..n]), expected);
 
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
         let _ = tx1.send(());
     });
 
     let rx = rx1;
-    let req = Request::builder()
-        .uri(&*format!("http://{addr}/foo/bar"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().uri(&*format!("http://{addr}/foo/bar")).body(Empty::<Bytes>::new()).unwrap();
     let res = client.request(req);
     rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
 }
@@ -716,15 +621,13 @@ fn connect_proxy_http_connect_sends_authority_form() {
         let mut sock = server.accept().unwrap().0;
         //drop(server);
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         let n = sock.read(&mut buf).expect("read 1");
         let expected = format!("CONNECT {addr} HTTP/1.1\r\nhost: {addr}\r\n\r\n");
         assert_eq!(s(&buf[..n]), expected);
 
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
         let _ = tx1.send(());
     });
 
@@ -756,8 +659,7 @@ fn client_upgrade() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
         sock.write_all(
@@ -778,11 +680,7 @@ fn client_upgrade() {
 
     let rx = rx1;
 
-    let req = Request::builder()
-        .method("GET")
-        .uri(&*format!("http://{addr}/up"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let req = Request::builder().method("GET").uri(&*format!("http://{addr}/up")).body(Empty::<Bytes>::new()).unwrap();
 
     let res = client.request(req);
     let res = rt.block_on(future::join(res, rx).map(|r| r.0)).unwrap();
@@ -810,9 +708,7 @@ fn client_http2_upgrade() {
 
     let _ = pretty_env_logger::try_init();
     let rt = runtime();
-    let server = rt
-        .block_on(TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))))
-        .unwrap();
+    let server = rt.block_on(TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))).unwrap();
     let addr = server.local_addr().unwrap();
     let mut connector = DebugConnector::new();
     connector.alpn_h2 = true;
@@ -891,9 +787,7 @@ fn alpn_h2() {
 
     let _ = pretty_env_logger::try_init();
     let rt = runtime();
-    let listener = rt
-        .block_on(TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))))
-        .unwrap();
+    let listener = rt.block_on(TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))).unwrap();
     let addr = listener.local_addr().unwrap();
     let mut connector = DebugConnector::new();
     connector.alpn_h2 = true;
@@ -933,20 +827,11 @@ fn alpn_h2() {
     rt.block_on(res4).unwrap();
 
     // HTTP/2 request allowed
-    let res5 = client.request(
-        Request::builder()
-            .uri(url)
-            .version(hyper::Version::HTTP_2)
-            .body(Empty::<Bytes>::new())
-            .unwrap(),
-    );
+    let res5 = client
+        .request(Request::builder().uri(url).version(hyper::Version::HTTP_2).body(Empty::<Bytes>::new()).unwrap());
     rt.block_on(res5).unwrap();
 
-    assert_eq!(
-        connects.load(Ordering::SeqCst),
-        3,
-        "after ALPN, no more connects"
-    );
+    assert_eq!(connects.load(Ordering::SeqCst), 3, "after ALPN, no more connects");
     drop(client);
 }
 
@@ -965,17 +850,12 @@ fn capture_connection_on_client() {
     thread::spawn(move || {
         let mut sock = server.accept().unwrap().0;
         sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        sock.set_write_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut buf = [0; 4096];
         sock.read(&mut buf).expect("read 1");
-        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-            .expect("write 1");
+        sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
     });
-    let mut req = Request::builder()
-        .uri(&*format!("http://{addr}/a"))
-        .body(Empty::<Bytes>::new())
-        .unwrap();
+    let mut req = Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let captured_conn = capture_connection(&mut req);
     rt.block_on(client.request(req)).expect("200 OK");
     assert!(captured_conn.connection_metadata().is_some());
@@ -1005,24 +885,17 @@ fn connection_poisoning() {
         let num_requests_tracker = num_requests_tracker.clone();
         thread::spawn(move || {
             sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-            sock.set_write_timeout(Some(Duration::from_secs(5)))
-                .unwrap();
+            sock.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
             let mut buf = [0; 4096];
             loop {
                 if sock.read(&mut buf).expect("read 1") > 0 {
                     num_requests_tracker.fetch_add(1, Ordering::Relaxed);
-                    sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                        .expect("write 1");
+                    sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n").expect("write 1");
                 }
             }
         });
     });
-    let make_request = || {
-        Request::builder()
-            .uri(&*format!("http://{addr}/a"))
-            .body(Empty::<Bytes>::new())
-            .unwrap()
-    };
+    let make_request = || Request::builder().uri(&*format!("http://{addr}/a")).body(Empty::<Bytes>::new()).unwrap();
     let mut req = make_request();
     let captured_conn = capture_connection(&mut req);
     rt.block_on(client.request(req)).expect("200 OK");
@@ -1034,11 +907,7 @@ fn connection_poisoning() {
     // Before poisoning the connection is reused
     assert_eq!(num_conns.load(Ordering::SeqCst), 1);
     assert_eq!(num_requests.load(Ordering::SeqCst), 3);
-    captured_conn
-        .connection_metadata()
-        .as_ref()
-        .unwrap()
-        .poison();
+    captured_conn.connection_metadata().as_ref().unwrap().poison();
 
     rt.block_on(client.request(make_request())).expect("200 OK");
 
@@ -1104,13 +973,7 @@ impl MockConnection {
         error: std::sync::Arc<std::io::Error>,
         error_tx: Option<tokio::sync::mpsc::Sender<()>>,
     ) -> Self {
-        MockConnection {
-            inner: hyper_util::rt::TokioIo::new(mock),
-            failed,
-            error,
-            error_tx,
-            bytes_written: 0,
-        }
+        MockConnection { inner: hyper_util::rt::TokioIo::new(mock), failed, error, error_tx, bytes_written: 0 }
     }
 }
 
@@ -1125,10 +988,7 @@ impl hyper::rt::Read for MockConnection {
         buf: hyper::rt::ReadBufCursor<'_>,
     ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
         // Log the current state of the failed flag for debugging.
-        eprintln!(
-            "poll_read: failed={}",
-            self.failed.load(std::sync::atomic::Ordering::SeqCst)
-        );
+        eprintln!("poll_read: failed={}", self.failed.load(std::sync::atomic::Ordering::SeqCst));
         // Check if the connection is marked as failed.
         // If true, return the stored error immediately to simulate a connection failure.
         if self.failed.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1169,10 +1029,7 @@ impl hyper::rt::Write for MockConnection {
                 // Increment the total bytes written for tracking.
                 self.bytes_written += bytes;
                 // Log the number of bytes written and the running total.
-                eprintln!(
-                    "poll_write: wrote {} bytes, total={}",
-                    bytes, self.bytes_written
-                );
+                eprintln!("poll_write: wrote {} bytes, total={}", bytes, self.bytes_written);
                 // If error_tx is present, signal an unexpected write (used in error tests).
                 // This helps detect writes when the connection should fail early.
                 if let Some(tx) = self.error_tx.take() {
@@ -1183,7 +1040,7 @@ impl hyper::rt::Write for MockConnection {
                 }
                 // Return the successful write result.
                 std::task::Poll::Ready(std::result::Result::Ok(bytes))
-            }
+            },
             // For pending or error results, propagate them directly.
             other => other,
         }
@@ -1238,14 +1095,8 @@ struct MockConnector {
 
 impl MockConnector {
     // Constructor for MockConnector, initializing the IoBuilder and optional error.
-    fn new(
-        io_builder: tokio_test::io::Builder,
-        conn_error: Option<std::sync::Arc<std::io::Error>>,
-    ) -> Self {
-        MockConnector {
-            io_builder,
-            conn_error,
-        }
+    fn new(io_builder: tokio_test::io::Builder, conn_error: Option<std::sync::Arc<std::io::Error>>) -> Self {
+        MockConnector { io_builder, conn_error }
     }
 }
 
@@ -1254,12 +1105,8 @@ impl MockConnector {
 impl tower_service::Service<hyper::Uri> for MockConnector {
     type Response = crate::MockConnection;
     type Error = std::io::Error;
-    type Future = std::pin::Pin<
-        Box<
-            dyn futures_util::Future<Output = std::result::Result<Self::Response, Self::Error>>
-                + Send,
-        >,
-    >;
+    type Future =
+        std::pin::Pin<Box<dyn futures_util::Future<Output = std::result::Result<Self::Response, Self::Error>> + Send>>;
 
     // Polls the connector to check if it’s ready to handle a request.
     // Always ready, as we don’t have resource constraints.
@@ -1289,10 +1136,7 @@ impl tower_service::Service<hyper::Uri> for MockConnector {
             let error = if let Some(ref err) = conn_error {
                 err.clone()
             } else {
-                std::sync::Arc::new(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "connection closed",
-                ))
+                std::sync::Arc::new(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "connection closed"))
             };
             // Create an mpsc channel for signaling unexpected writes, if conn_error is set.
             // This helps debug cases where writes occur despite an expected failure.
@@ -1366,10 +1210,7 @@ async fn test_connection_error_propagation_pr184() {
     eprintln!("Actually gotten error is: {:?}", err);
     // Downcast the error to a hyper::Error to verify its type.
     // Expect a hyper::Error wrapping an io::Error from MockConnection.
-    let hyper_err = err
-        .source()
-        .and_then(|e| e.downcast_ref::<hyper::Error>())
-        .expect("expected hyper::Error");
+    let hyper_err = err.source().and_then(|e| e.downcast_ref::<hyper::Error>()).expect("expected hyper::Error");
     // Downcast the hyper::Error’s source to an io::Error.
     // Verify it matches the simulated error from MockConnection.
     let io_err = hyper_err
@@ -1420,24 +1261,14 @@ async fn test_incomplete_message_error_pr184() {
     eprintln!("Actually gotten error is: {:?}", err);
     // Downcast to hyper::Error to verify the error type.
     // Expect IncompleteMessage (with PR #184) or ChannelClosed (without).
-    let hyper_err = err
-        .source()
-        .and_then(|e| e.downcast_ref::<hyper::Error>())
-        .expect("expected hyper::Error");
+    let hyper_err = err.source().and_then(|e| e.downcast_ref::<hyper::Error>()).expect("expected hyper::Error");
     // Verify the error is IncompleteMessage when PR #184 is applied.
     // This checks the parser’s failure due to EOF.
-    assert!(
-        hyper_err.is_incomplete_message(),
-        "expected IncompleteMessage, got {:?}",
-        hyper_err
-    );
+    assert!(hyper_err.is_incomplete_message(), "expected IncompleteMessage, got {:?}", hyper_err);
     // Confirm no io::Error is present, as this is a parsing failure, not I/O.
     // Ensures we’re testing the correct error type.
     assert!(
-        hyper_err
-            .source()
-            .and_then(|e| e.downcast_ref::<std::io::Error>())
-            .is_none(),
+        hyper_err.source().and_then(|e| e.downcast_ref::<std::io::Error>()).is_none(),
         "expected no io::Error, got {:?}",
         hyper_err
     );
@@ -1479,10 +1310,7 @@ async fn test_successful_connection() {
         .expect("failed to build request");
     // Send the request and capture the response.
     // Expect a successful response due to the configured IoBuilder.
-    let response = client
-        .request(request)
-        .await
-        .expect("request should succeed");
+    let response = client.request(request).await.expect("request should succeed");
     // Verify the response status is 200 OK.
     assert_eq!(response.status(), 200);
 }

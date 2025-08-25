@@ -23,9 +23,7 @@ use tokio::{net::TcpListener, task::JoinSet};
 /// the only type that can be returned in this case, but this uses [`BoxBody`]
 /// anyway for demonstration purposes, since this is what's usually used when
 /// writing a more complex webserver library.
-async fn handle_request(
-    _request: Request<Incoming>,
-) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
+async fn handle_request(_request: Request<Incoming>) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
     let response = Response::builder()
         .header(CONTENT_TYPE, "text/plain")
         .body(Full::new(Bytes::from("Hello, world!\n")).boxed())
@@ -47,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync + 'static>> {
             Err(e) => {
                 eprintln!("failed to accept connection: {e}");
                 continue;
-            }
+            },
         };
 
         let serve_connection = async move {

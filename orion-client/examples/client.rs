@@ -11,7 +11,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => {
             eprintln!("Usage: client <url>");
             return Ok(());
-        }
+        },
     };
 
     // HTTPS requires picking a TLS implementation, so give a better
@@ -24,9 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
 
-    let req = Request::builder()
-        .uri(url)
-        .body(Empty::<bytes::Bytes>::new())?;
+    let req = Request::builder().uri(url).body(Empty::<bytes::Bytes>::new())?;
 
     let resp = client.request(req).await?;
 
