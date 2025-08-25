@@ -1897,7 +1897,6 @@ dependencies = [
  "http",
  "http-serde-ext",
  "itoa",
- "lazy_static",
  "ptrie",
  "serde",
  "smol_str",
