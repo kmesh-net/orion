@@ -13,6 +13,7 @@ macro_rules! trie_mapstr {
     };
 }
 
+#[allow(clippy::non_std_lazy_statics)]
 lazy_static! {
     static ref ENVOY_REQ_ARGS: Trie<u8, (Operator, Category, usize, bool)> = {
         let mut trie = Trie::new();
