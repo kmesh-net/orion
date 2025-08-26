@@ -28,5 +28,10 @@ pub fn to_static_str(s: &str) -> &'static str {
     let interner = GLOBAL_INTERNER.get_or_init(ThreadedRodeo::new);
     let key = interner.get_or_intern(s);
     let static_ref = interner.resolve(&key);
+
+    // SAFETY: The `GLOBAL_INTERNER` is a `static` variable, meaning it has a `'static`
+    // lifetime and is never dropped. Therefore, the string slices stored within it
+    // are also valid for the `'static` lifetime. This transmute is safe because
+    // we are extending a lifetime that is already effectively `'static`.
     unsafe { std::mem::transmute::<&str, &'static str>(static_ref) }
 }
