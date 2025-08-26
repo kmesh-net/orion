@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use hyper_util::rt::tokio::TokioIo;
 use orion_data_plane_api::envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
 use orion_data_plane_api::envoy_data_plane_api::envoy::service::cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient;
 use orion_data_plane_api::envoy_data_plane_api::envoy::service::cluster::v3::cluster_discovery_service_server::{
@@ -15,6 +14,7 @@ use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::a
 };
 use orion_data_plane_api::envoy_data_plane_api::tonic;
 use orion_data_plane_api::xds::client::DiscoveryClientBuilder;
+use orion_hyper_util::rt::tokio::TokioIo;
 use tonic::transport::Server;
 
 use orion_data_plane_api::xds::bindings;

@@ -41,13 +41,13 @@ use http::{
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Uri};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
-use hyper_util::client::legacy::connect::Connect;
-use hyper_util::client::legacy::{Builder, Client};
-use hyper_util::rt::tokio::TokioTimer;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
     network_filters::http_connection_manager::RetryPolicy,
 };
+use orion_hyper_util::client::legacy::connect::Connect;
+use orion_hyper_util::client::legacy::{Builder, Client};
+use orion_hyper_util::rt::tokio::TokioTimer;
 use pingora_timeout::fast_timeout::fast_timeout;
 use pretty_duration::pretty_duration;
 use rustls::ClientConfig;

@@ -28,7 +28,7 @@ use std::{
 
 use http::uri::Authority;
 use hyper::Uri;
-use hyper_util::rt::TokioIo;
+use orion_hyper_util::rt::TokioIo;
 use pingora_timeout::fast_timeout::fast_timeout;
 use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
