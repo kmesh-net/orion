@@ -132,17 +132,14 @@ impl BootstrapLoader {
             api_config_source.grpc_services.first().and_then(|grpc_service| grpc_service.target_specifier.as_ref());
 
         if let Some(TargetSpecifier::EnvoyGrpc(grpc_conf)) = target_specifier {
-            let address = self
-                .get_endpoint_by_name(grpc_conf.cluster_name.clone())
+            self.get_endpoint_by_name(grpc_conf.cluster_name.clone())
                 .ok()
                 .and_then(|endpoint| endpoint.address)
-                .and_then(|address| address.address);
-
-            if let Some(address::Address::SocketAddress(socket)) = address {
-                Some(socket)
-            } else {
-                None
-            }
+                .and_then(|address| address.address)
+                .and_then(|address| match address {
+                    address::Address::SocketAddress(socket) => Some(socket),
+                    _ => None,
+                })
         } else {
             None
         }
