@@ -20,8 +20,7 @@
 
 use envoy_data_plane_api::{
     google::protobuf::Any,
-    prost::DecodeError,
-    prost::{Message, Name},
+    prost::{DecodeError, Message, Name},
     prost_reflect::{DescriptorPool, DynamicMessage},
 };
 use serde::de::Error;
@@ -74,12 +73,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_any_type, from_yaml, Any};
-    use envoy_data_plane_api::envoy::config::listener::v3::filter::ConfigType;
-    use envoy_data_plane_api::envoy::config::listener::v3::Listener;
-    use envoy_data_plane_api::envoy::config::listener::v3::{Filter, FilterChain};
-    use envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager;
-    use envoy_data_plane_api::prost::Message;
+    use super::{Any, decode_any_type, from_yaml};
+    use envoy_data_plane_api::{
+        envoy::{
+            config::listener::v3::{Filter, FilterChain, Listener, filter::ConfigType},
+            extensions::filters::network::http_connection_manager::v3::HttpConnectionManager,
+        },
+        prost::Message,
+    };
 
     fn expected_conn_manager() -> HttpConnectionManager {
         HttpConnectionManager { server_name: "name".to_string(), ..Default::default() }

@@ -1,8 +1,12 @@
-use orion_data_plane_api::bootstrap_loader::bootstrap::{BootstrapLoader, BootstrapResolver};
-use orion_data_plane_api::decode::from_yaml;
-use orion_data_plane_api::envoy_validation::{ClusterValidation, FilterChainValidation, FilterValidation, LocalRateLimitValidation};
-use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::CodecType;
-use orion_data_plane_api::envoy_data_plane_api::google::protobuf::Duration;
+use orion_data_plane_api::{
+    bootstrap_loader::bootstrap::{BootstrapLoader, BootstrapResolver},
+    decode::from_yaml,
+    envoy_data_plane_api::{
+        envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::CodecType,
+        google::protobuf::Duration,
+    },
+    envoy_validation::{ClusterValidation, FilterChainValidation, FilterValidation, LocalRateLimitValidation},
+};
 use std::path::PathBuf;
 
 #[test]
@@ -86,9 +90,12 @@ typed_extension_protocol_options:
           timeout: 5s
 "#;
 
-    use orion_data_plane_api::envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::upstreams::http::v3::http_protocol_options::explicit_http_config::ProtocolConfig;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::upstreams::http::v3::http_protocol_options::UpstreamProtocolOptions;
+    use orion_data_plane_api::envoy_data_plane_api::envoy::{
+        config::cluster::v3::Cluster,
+        extensions::upstreams::http::v3::http_protocol_options::{
+            UpstreamProtocolOptions, explicit_http_config::ProtocolConfig,
+        },
+    };
 
     let cluster: Cluster = from_yaml(INP_CLUSTER).unwrap();
     let proto_opts = cluster.get_http_protocol_options().unwrap().unwrap();

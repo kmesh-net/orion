@@ -18,17 +18,20 @@
 //
 //
 
-use std::future::Future;
-use std::pin::Pin;
+use std::{future::Future, pin::Pin};
 
 use super::model;
-use envoy_data_plane_api::envoy::service::cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient;
-use envoy_data_plane_api::envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient;
-use envoy_data_plane_api::envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse};
-use envoy_data_plane_api::envoy::service::endpoint::v3::endpoint_discovery_service_client::EndpointDiscoveryServiceClient;
-use envoy_data_plane_api::envoy::service::listener::v3::listener_discovery_service_client::ListenerDiscoveryServiceClient;
-use envoy_data_plane_api::envoy::service::route::v3::route_discovery_service_client::RouteDiscoveryServiceClient;
-use envoy_data_plane_api::envoy::service::secret::v3::secret_discovery_service_client::SecretDiscoveryServiceClient;
+use envoy_data_plane_api::envoy::service::{
+    cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient,
+    discovery::v3::{
+        DeltaDiscoveryRequest, DeltaDiscoveryResponse,
+        aggregated_discovery_service_client::AggregatedDiscoveryServiceClient,
+    },
+    endpoint::v3::endpoint_discovery_service_client::EndpointDiscoveryServiceClient,
+    listener::v3::listener_discovery_service_client::ListenerDiscoveryServiceClient,
+    route::v3::route_discovery_service_client::RouteDiscoveryServiceClient,
+    secret::v3::secret_discovery_service_client::SecretDiscoveryServiceClient,
+};
 use model::TypeUrl;
 
 use envoy_data_plane_api::tonic;
@@ -51,7 +54,7 @@ pub type DeltaFuture<'a> = Pin<
 pub trait TypedXdsBinding {
     fn type_url() -> Option<TypeUrl>;
     fn delta_request(&mut self, request: impl Stream<Item = DeltaDiscoveryRequest> + Send + 'static)
-        -> DeltaFuture<'_>;
+    -> DeltaFuture<'_>;
 }
 
 /// Handle to ADS client

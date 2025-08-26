@@ -18,20 +18,27 @@
 //
 //
 
-use super::bindings;
-use super::model::{
-    RejectedConfig, ResourceId, ResourceVersion, TypeUrl, XdsError, XdsResourcePayload, XdsResourceUpdate,
+use super::{
+    bindings,
+    model::{RejectedConfig, ResourceId, ResourceVersion, TypeUrl, XdsError, XdsResourcePayload, XdsResourceUpdate},
 };
-use envoy_data_plane_api::envoy::config::core::v3::Node;
-use envoy_data_plane_api::envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse};
-use envoy_data_plane_api::google::rpc::Status;
-use envoy_data_plane_api::tonic;
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
+use envoy_data_plane_api::{
+    envoy::{
+        config::core::v3::Node,
+        service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
+    },
+    google::rpc::Status,
+    tonic,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
-use tokio::time;
+use tokio::{
+    sync::{mpsc, oneshot},
+    time,
+};
 use tracing::{debug, info, warn};
 
 pub struct DiscoveryClientBuilder<C: bindings::TypedXdsBinding> {

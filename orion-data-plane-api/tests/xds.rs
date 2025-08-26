@@ -1,37 +1,56 @@
-use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
-use orion_data_plane_api::envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::cluster::v3::cluster_discovery_service_server::{
-    ClusterDiscoveryService, ClusterDiscoveryServiceServer,
-};
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::aggregated_discovery_service_server::{
-    AggregatedDiscoveryService, AggregatedDiscoveryServiceServer,
-};
-use orion_data_plane_api::envoy_data_plane_api::tonic;
-use orion_data_plane_api::xds::client::DiscoveryClientBuilder;
 use orion_hyper_util::rt::tokio::TokioIo;
+use orion_data_plane_api::{
+    envoy_data_plane_api::{
+        envoy::{
+            config::cluster::v3::Cluster,
+            service::{
+                cluster::v3::{
+                    cluster_discovery_service_client::ClusterDiscoveryServiceClient,
+                    cluster_discovery_service_server::{ClusterDiscoveryService, ClusterDiscoveryServiceServer},
+                },
+                discovery::v3::{
+                    aggregated_discovery_service_client::AggregatedDiscoveryServiceClient,
+                    aggregated_discovery_service_server::{
+                        AggregatedDiscoveryService, AggregatedDiscoveryServiceServer,
+                    },
+                },
+            },
+        },
+        tonic,
+    },
+    xds::client::DiscoveryClientBuilder,
+};
 use tonic::transport::Server;
 
-use orion_data_plane_api::xds::bindings;
-use orion_data_plane_api::xds::model::{TypeUrl, XdsResourceUpdate};
+use orion_data_plane_api::xds::{
+    bindings,
+    model::{TypeUrl, XdsResourceUpdate},
+};
 
 use futures::Stream;
-use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::Node;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::{
-    DeltaDiscoveryResponse, DiscoveryResponse, Resource,
+use orion_data_plane_api::envoy_data_plane_api::{
+    envoy::{
+        config::core::v3::Node,
+        service::discovery::v3::{DeltaDiscoveryResponse, DiscoveryResponse, Resource},
+    },
+    google::protobuf::Any,
+    prost::Message,
 };
-use orion_data_plane_api::envoy_data_plane_api::google::protobuf::Any;
-use orion_data_plane_api::envoy_data_plane_api::prost::Message;
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::{self, sleep};
+use tokio::{
+    sync::{Mutex, mpsc},
+    time::{self, sleep},
+};
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::Uri;
-use tonic::{Response, Status};
+use tonic::{Response, Status, transport::Uri};
 use tower::service_fn;
 pub struct MockDiscoveryService {
     relay: Arc<Mutex<mpsc::Receiver<Result<DeltaDiscoveryResponse, tonic::Status>>>>,

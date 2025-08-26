@@ -19,14 +19,21 @@
 //
 
 use crate::decode::decode_any_type;
-use envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
-use envoy_data_plane_api::envoy::config::core::v3::transport_socket;
-use envoy_data_plane_api::envoy::config::listener::v3::{Filter, FilterChain};
-use envoy_data_plane_api::envoy::config::route::v3::Route;
-use envoy_data_plane_api::envoy::extensions::filters::http::local_ratelimit::v3::LocalRateLimit;
-use envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager;
-use envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::DownstreamTlsContext;
-use envoy_data_plane_api::envoy::extensions::upstreams::http::v3::HttpProtocolOptions;
+use envoy_data_plane_api::envoy::{
+    config::{
+        cluster::v3::Cluster,
+        core::v3::transport_socket,
+        listener::v3::{Filter, FilterChain},
+        route::v3::Route,
+    },
+    extensions::{
+        filters::{
+            http::local_ratelimit::v3::LocalRateLimit, network::http_connection_manager::v3::HttpConnectionManager,
+        },
+        transport_sockets::tls::v3::DownstreamTlsContext,
+        upstreams::http::v3::HttpProtocolOptions,
+    },
+};
 
 type Result<T> = std::result::Result<T, crate::decode::DecodeAnyError>;
 

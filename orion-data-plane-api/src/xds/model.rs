@@ -18,20 +18,25 @@
 //
 //
 
-use std::fmt;
-use std::fmt::Display;
-use std::fmt::Formatter;
+use std::{
+    fmt,
+    fmt::{Display, Formatter},
+};
 
 use anyhow::Result;
-use envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
-use envoy_data_plane_api::envoy::config::endpoint::v3::ClusterLoadAssignment;
-use envoy_data_plane_api::envoy::config::listener::v3::Listener;
-use envoy_data_plane_api::envoy::config::route::v3::RouteConfiguration;
-use envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::Secret;
-use envoy_data_plane_api::envoy::service::discovery::v3::{DeltaDiscoveryRequest, Resource};
-use envoy_data_plane_api::prost;
-use envoy_data_plane_api::prost::Message;
-use envoy_data_plane_api::tonic;
+use envoy_data_plane_api::{
+    envoy::{
+        config::{
+            cluster::v3::Cluster, endpoint::v3::ClusterLoadAssignment, listener::v3::Listener,
+            route::v3::RouteConfiguration,
+        },
+        extensions::transport_sockets::tls::v3::Secret,
+        service::discovery::v3::{DeltaDiscoveryRequest, Resource},
+    },
+    prost,
+    prost::Message,
+    tonic,
+};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::sync::mpsc;

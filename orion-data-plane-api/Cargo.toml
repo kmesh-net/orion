@@ -1,10 +1,10 @@
 [package]
-authors = ["x30050848 <xieliwei5@huawei.com>"]
-description = "Orion proxy dynamic control-planes adapt to Envoy xDS library"
-edition = "2021"
-license = "MIT"
 name = "orion-data-plane-api"
-version = "0.1.9"
+
+edition.workspace      = true
+license-file.workspace = true
+rust-version.workspace = true
+version.workspace      = true
 
 [dependencies]
 anyhow                         = "1"
