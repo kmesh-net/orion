@@ -93,7 +93,7 @@ typed_extension_protocol_options:
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::cluster::v3::Cluster,
         extensions::upstreams::http::v3::http_protocol_options::{
-            UpstreamProtocolOptions, explicit_http_config::ProtocolConfig,
+            explicit_http_config::ProtocolConfig, UpstreamProtocolOptions,
         },
     };
 

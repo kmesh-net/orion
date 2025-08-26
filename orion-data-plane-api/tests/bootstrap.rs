@@ -1,6 +1,6 @@
 use envoy_data_plane_api::envoy::config::{
     bootstrap::v3::Bootstrap,
-    core::v3::{Address, SocketAddress, address, socket_address::PortSpecifier},
+    core::v3::{address, socket_address::PortSpecifier, Address, SocketAddress},
     endpoint::v3::lb_endpoint::HostIdentifier,
 };
 use orion_data_plane_api::{

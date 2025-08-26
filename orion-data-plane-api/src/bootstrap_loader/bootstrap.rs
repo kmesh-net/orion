@@ -24,18 +24,18 @@ use std::{collections::HashSet, fs, path};
 use crate::envoy_validation::FilterValidation;
 use envoy_data_plane_api::envoy::{
     config::{
-        bootstrap::v3::{Bootstrap, bootstrap::DynamicResources},
+        bootstrap::v3::{bootstrap::DynamicResources, Bootstrap},
         cluster::v3::Cluster,
         core::v3::{
-            ApiConfigSource, SocketAddress, address, config_source::ConfigSourceSpecifier,
-            grpc_service::TargetSpecifier,
+            address, config_source::ConfigSourceSpecifier, grpc_service::TargetSpecifier, ApiConfigSource,
+            SocketAddress,
         },
-        endpoint::v3::{Endpoint, lb_endpoint::HostIdentifier},
-        listener::v3::{Listener, filter::ConfigType},
+        endpoint::v3::{lb_endpoint::HostIdentifier, Endpoint},
+        listener::v3::{filter::ConfigType, Listener},
         route::v3::RouteConfiguration,
     },
     extensions::filters::network::http_connection_manager::v3::{
-        HttpConnectionManager, http_connection_manager::RouteSpecifier,
+        http_connection_manager::RouteSpecifier, HttpConnectionManager,
     },
 };
 
@@ -138,7 +138,11 @@ impl BootstrapLoader {
                 .and_then(|endpoint| endpoint.address)
                 .and_then(|address| address.address);
 
-            if let Some(address::Address::SocketAddress(socket)) = address { Some(socket) } else { None }
+            if let Some(address::Address::SocketAddress(socket)) = address {
+                Some(socket)
+            } else {
+                None
+            }
         } else {
             None
         }

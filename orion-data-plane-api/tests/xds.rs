@@ -1,13 +1,12 @@
 use std::{
     pin::Pin,
     sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     },
     time::Duration,
 };
 
-use orion_hyper_util::rt::tokio::TokioIo;
 use orion_data_plane_api::{
     envoy_data_plane_api::{
         envoy::{
@@ -29,6 +28,7 @@ use orion_data_plane_api::{
     },
     xds::client::DiscoveryClientBuilder,
 };
+use orion_hyper_util::rt::tokio::TokioIo;
 use tonic::transport::Server;
 
 use orion_data_plane_api::xds::{
@@ -46,11 +46,11 @@ use orion_data_plane_api::envoy_data_plane_api::{
     prost::Message,
 };
 use tokio::{
-    sync::{Mutex, mpsc},
+    sync::{mpsc, Mutex},
     time::{self, sleep},
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Response, Status, transport::Uri};
+use tonic::{transport::Uri, Response, Status};
 use tower::service_fn;
 pub struct MockDiscoveryService {
     relay: Arc<Mutex<mpsc::Receiver<Result<DeltaDiscoveryResponse, tonic::Status>>>>,

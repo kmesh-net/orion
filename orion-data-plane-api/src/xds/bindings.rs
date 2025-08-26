@@ -24,8 +24,8 @@ use super::model;
 use envoy_data_plane_api::envoy::service::{
     cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient,
     discovery::v3::{
-        DeltaDiscoveryRequest, DeltaDiscoveryResponse,
-        aggregated_discovery_service_client::AggregatedDiscoveryServiceClient,
+        aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, DeltaDiscoveryRequest,
+        DeltaDiscoveryResponse,
     },
     endpoint::v3::endpoint_discovery_service_client::EndpointDiscoveryServiceClient,
     listener::v3::listener_discovery_service_client::ListenerDiscoveryServiceClient,
@@ -54,7 +54,7 @@ pub type DeltaFuture<'a> = Pin<
 pub trait TypedXdsBinding {
     fn type_url() -> Option<TypeUrl>;
     fn delta_request(&mut self, request: impl Stream<Item = DeltaDiscoveryRequest> + Send + 'static)
-    -> DeltaFuture<'_>;
+        -> DeltaFuture<'_>;
 }
 
 /// Handle to ADS client
