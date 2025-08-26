@@ -49,9 +49,14 @@ impl<S: Eq + Hash> ShardedU64<S> {
     pub fn sub(&self, value: u64, shard_id: S, key: &[KeyValue]) {
         if let Some(shard) = self.data.get_mut(&shard_id) {
             if let Some(counter) = shard.get(key) {
-                let current_value = counter.load(Ordering::Relaxed);
-                let new_value = current_value.saturating_sub(value);
-                counter.store(new_value, Ordering::Relaxed);
+                let mut current = counter.load(Ordering::Relaxed);
+                loop {
+                    let new = current.saturating_sub(value);
+                    match counter.compare_exchange_weak(current, new, Ordering::Relaxed, Ordering::Relaxed) {
+                        Ok(_) => break,
+                        Err(x) => current = x,
+                    }
+                }
             }
         }
     }
