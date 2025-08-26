@@ -21,10 +21,11 @@ rust-version = "1.84"
 version      = "0.1.0"
 
 [patch.crates-io]
-hyper-util   = { path = "orion-hyper-util" }
+hyper-util   = { git = "https://github.com/awgn/hyper-util.git", branch = "event-handler" }
 
 [workspace.dependencies]
 envoy-data-plane-api = { path = "envoy-data-plane-api" }
+orion-hyper-util     = { package = "hyper-util", version = "0.1.15", features = ["full"] }
 orion-configuration  = { path = "orion-configuration" }
 orion-data-plane-api = { path = "orion-data-plane-api" }
 orion-error          = { path = "orion-error" }

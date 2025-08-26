@@ -25,6 +25,3 @@
 [submodule "envoy-data-plane-api/protobuf"]
 	path = envoy-data-plane-api/protobuf
 	url = https://github.com/protocolbuffers/protobuf.git
-[submodule "orion-hyper-util"]
-	path = orion-hyper-util
-	url = https://github.com/awgn/hyper-util.git
