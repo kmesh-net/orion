@@ -10,7 +10,6 @@ members = [
   "orion-xds",
 ]
 
-
 resolver = "2"
 
 
@@ -21,10 +20,12 @@ license-file = "./LICENSE"
 rust-version = "1.84"
 version      = "0.1.0"
 
-
+[patch.crates-io]
+hyper-util   = { git = "https://github.com/awgn/hyper-util.git", branch = "event-handler" }
 
 [workspace.dependencies]
 envoy-data-plane-api = { path = "envoy-data-plane-api" }
+orion-hyper-util     = { package = "hyper-util", version = "0.1.15", features = ["full"] }
 orion-configuration  = { path = "orion-configuration" }
 orion-data-plane-api = { path = "orion-data-plane-api" }
 orion-error          = { path = "orion-error" }
@@ -40,7 +41,6 @@ futures             = "0.3"
 http                = "1.0"
 http-body           = "1.0"
 http-body-util      = "0.1.0"
-hyper-util          = { version = "0.1.15" }
 num_cpus            = "1"
 ppp                 = "2.3"
 prost               = "0.13"

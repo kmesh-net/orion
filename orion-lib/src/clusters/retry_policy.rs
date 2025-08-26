@@ -85,7 +85,7 @@ impl<'a, B: Body> FailureKind<'a, B> {
             }
         }
 
-        if let Some(h_err) = err.downcast_ref::<hyper_util::client::legacy::Error>() {
+        if let Some(h_err) = err.downcast_ref::<orion_hyper_util::client::legacy::Error>() {
             if let Some(source) = h_err.source() {
                 return Self::try_infer_from_error(source);
             }

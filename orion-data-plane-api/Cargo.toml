@@ -20,4 +20,4 @@ tower.workspace                = true
 tracing.workspace              = true
 
 [dev-dependencies]
-hyper-util.workspace = true
+orion-hyper-util.workspace     = true
