@@ -40,7 +40,7 @@ use orion_configuration::config::{
         network_rbac::{NetworkContext, NetworkRbac},
     },
 };
-use orion_hyper_util::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
+use hyper_util::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
 use rustls::{server::Acceptor, ServerConfig};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpStream;
