@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "envoy-data-plane-api"
-version = "0.1.9"
+version = "0.1.0"
 dependencies = [
  "glob",
  "prost",
@@ -1866,7 +1866,7 @@ dependencies = [
 
 [[package]]
 name = "orion-data-plane-api"
-version = "0.1.9"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-stream",

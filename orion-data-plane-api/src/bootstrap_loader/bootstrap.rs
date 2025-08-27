@@ -19,25 +19,25 @@
 //
 
 use crate::decode::decode_any_type;
-use std::collections::HashSet;
-use std::fs;
-use std::path;
+use std::{collections::HashSet, fs, path};
 
 use crate::envoy_validation::FilterValidation;
-use envoy_data_plane_api::envoy::config::bootstrap::v3::bootstrap::DynamicResources;
-use envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap;
-use envoy_data_plane_api::envoy::config::cluster::v3::Cluster;
-use envoy_data_plane_api::envoy::config::core::v3::address;
-use envoy_data_plane_api::envoy::config::core::v3::config_source::ConfigSourceSpecifier;
-use envoy_data_plane_api::envoy::config::core::v3::grpc_service::TargetSpecifier;
-use envoy_data_plane_api::envoy::config::core::v3::{ApiConfigSource, SocketAddress};
-use envoy_data_plane_api::envoy::config::endpoint::v3::lb_endpoint::HostIdentifier;
-use envoy_data_plane_api::envoy::config::endpoint::v3::Endpoint;
-use envoy_data_plane_api::envoy::config::listener::v3::filter::ConfigType;
-use envoy_data_plane_api::envoy::config::listener::v3::Listener;
-use envoy_data_plane_api::envoy::config::route::v3::RouteConfiguration;
-use envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::RouteSpecifier;
-use envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager;
+use envoy_data_plane_api::envoy::{
+    config::{
+        bootstrap::v3::{bootstrap::DynamicResources, Bootstrap},
+        cluster::v3::Cluster,
+        core::v3::{
+            address, config_source::ConfigSourceSpecifier, grpc_service::TargetSpecifier, ApiConfigSource,
+            SocketAddress,
+        },
+        endpoint::v3::{lb_endpoint::HostIdentifier, Endpoint},
+        listener::v3::{filter::ConfigType, Listener},
+        route::v3::RouteConfiguration,
+    },
+    extensions::filters::network::http_connection_manager::v3::{
+        http_connection_manager::RouteSpecifier, HttpConnectionManager,
+    },
+};
 
 use crate::xds::model::TypeUrl;
 
@@ -132,17 +132,14 @@ impl BootstrapLoader {
             api_config_source.grpc_services.first().and_then(|grpc_service| grpc_service.target_specifier.as_ref());
 
         if let Some(TargetSpecifier::EnvoyGrpc(grpc_conf)) = target_specifier {
-            let address = self
-                .get_endpoint_by_name(grpc_conf.cluster_name.clone())
+            self.get_endpoint_by_name(grpc_conf.cluster_name.clone())
                 .ok()
                 .and_then(|endpoint| endpoint.address)
-                .and_then(|address| address.address);
-
-            if let Some(address::Address::SocketAddress(socket)) = address {
-                Some(socket)
-            } else {
-                None
-            }
+                .and_then(|address| address.address)
+                .and_then(|address| match address {
+                    address::Address::SocketAddress(socket) => Some(socket),
+                    _ => None,
+                })
         } else {
             None
         }

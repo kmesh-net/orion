@@ -13,10 +13,13 @@ include!(concat!(env!("OUT_DIR"), "/mod.rs"));
 
 #[test]
 fn test_json_any_decode() {
-    use crate::envoy::config::bootstrap::v3::Bootstrap;
-    use crate::envoy::config::core::v3::data_source::Specifier;
-    use crate::envoy::config::core::v3::transport_socket::ConfigType;
-    use crate::envoy::extensions::transport_sockets::tls::v3::DownstreamTlsContext;
+    use crate::envoy::{
+        config::{
+            bootstrap::v3::Bootstrap,
+            core::v3::{data_source::Specifier, transport_socket::ConfigType},
+        },
+        extensions::transport_sockets::tls::v3::DownstreamTlsContext,
+    };
     use prost::{Message, Name};
 
     const BOOTSTRAP_JSON: &str = r#"{
@@ -105,11 +108,12 @@ fn test_json_any_decode() {
 
 #[test]
 fn test_yaml_any_decode() {
-    use crate::envoy::config::bootstrap::v3::Bootstrap;
-    use crate::envoy::config::listener::v3::filter::ConfigType;
-    use crate::envoy::config::route::v3::route_match::PathSpecifier;
-    use crate::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::RouteSpecifier;
-    use crate::envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager;
+    use crate::envoy::{
+        config::{bootstrap::v3::Bootstrap, listener::v3::filter::ConfigType, route::v3::route_match::PathSpecifier},
+        extensions::filters::network::http_connection_manager::v3::{
+            http_connection_manager::RouteSpecifier, HttpConnectionManager,
+        },
+    };
     use prost::{Message, Name};
 
     const BOOTSTRAP_YAML: &str = r#"
