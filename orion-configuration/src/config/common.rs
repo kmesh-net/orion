@@ -18,15 +18,48 @@
 //
 //
 
+use compact_str::CompactString;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::{
     borrow::Cow,
     error::Error,
     fmt::{Debug, Display},
+    string::FromUtf8Error,
 };
 
 pub(crate) fn is_default<T: PartialEq + Default>(value: &T) -> bool {
     *value == T::default()
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ProxyProtocolVersion {
+    V1,
+    V2,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub enum TlvType {
+    Custom(u8),
+    NoOp,
+}
+
+impl From<u8> for TlvType {
+    fn from(value: u8) -> Self {
+        match value {
+            0x00 => Self::NoOp,
+            other => Self::Custom(other),
+        }
+    }
+}
+
+impl From<TlvType> for u8 {
+    fn from(tlv_type: TlvType) -> Self {
+        match tlv_type {
+            TlvType::NoOp => 0x00,
+            TlvType::Custom(value) => value,
+        }
+    }
 }
 
 pub(crate) trait RegexExtension {
@@ -118,6 +151,10 @@ pub enum GenericError {
     MissingField(&'static str),
     #[error("Unsupported field: {0}")]
     UnsupportedField(&'static str),
+    #[error("DataSource: {0}")]
+    DataSource(#[from] DataSourceReadError),
+    #[error("Utf8: {0}")]
+    Utf8(#[from] FromUtf8Error),
 }
 
 impl GenericError {
@@ -184,11 +221,19 @@ impl<T> WithNodeOnResult for Result<T, GenericError> {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MetadataKey {
+    pub key: CompactString,
+    pub path: Vec<CompactString>,
+}
+
 #[cfg(feature = "envoy-conversions")]
 pub use envoy_conversions::*;
 
+use super::core::DataSourceReadError;
+
 #[cfg(feature = "envoy-conversions")]
-mod envoy_conversions {
+pub(crate) mod envoy_conversions {
     use super::*;
     use std::{collections::HashMap, hash::BuildHasher};
 
