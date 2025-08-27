@@ -1,7 +1,4 @@
 #![allow(clippy::wildcard_imports)]
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
 // Copyright 2025 kmesh authors
 //
 //
