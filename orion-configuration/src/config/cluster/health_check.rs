@@ -527,7 +527,7 @@ mod envoy_conversions {
 
         payload.map(|payload| match payload {
             EnvoyPayload::Text(text) => try_convert_text_payload(&text),
-            EnvoyPayload::Binary(binary) => Ok(binary.clone()),
+            EnvoyPayload::Binary(binary) => Ok(binary),
         })
     }
 
@@ -572,8 +572,8 @@ mod envoy_conversions {
         type Error = GenericError;
 
         fn try_from(value: EnvoyTcpHealthCheck) -> Result<Self, Self::Error> {
-            let EnvoyTcpHealthCheck { send, receive, proxy_protocol_config: _ } = value;
-
+            let EnvoyTcpHealthCheck { send, receive, proxy_protocol_config } = value;
+            unsupported_field!(proxy_protocol_config)?;
             Ok(TcpHealthCheck {
                 send: send.and_then(try_convert_payload).transpose()?,
                 receive: receive.into_iter().filter_map(try_convert_payload).collect::<Result<Vec<_>, _>>()?,

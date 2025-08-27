@@ -22,17 +22,21 @@
 use crate::config::cluster::ClusterSpecifier;
 use serde::{Deserialize, Serialize};
 
+use super::access_log::AccessLog;
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct TcpProxy {
     pub cluster_specifier: ClusterSpecifier,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
+    pub access_log: Vec<AccessLog>,
 }
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::TcpProxy;
-    use crate::config::common::*;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy as EnvoyTcpProxy;
+    use crate::config::{common::*, network_filters::access_log::AccessLog};
+    use envoy_data_plane_api::envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy as EnvoyTcpProxy;
 
     impl TryFrom<EnvoyTcpProxy> for TcpProxy {
         type Error = GenericError;
@@ -53,7 +57,6 @@ mod envoy_conversions {
                 flush_access_log_on_connected,
                 access_log_options,
                 cluster_specifier,
-                proxy_protocol_tlvs,
                 backoff_options,
             } = value;
             unsupported_field!(
@@ -63,22 +66,25 @@ mod envoy_conversions {
                 idle_timeout,
                 downstream_idle_timeout,
                 upstream_idle_timeout,
-                access_log,
+                // access_log,
                 max_connect_attempts,
                 hash_policy,
                 tunneling_config,
                 max_downstream_connection_duration,
                 access_log_flush_interval,
                 flush_access_log_on_connected,
-                access_log_options, // cluster_specifier,
-                backoff_options,
-                proxy_protocol_tlvs
+                access_log_options,
+                backoff_options // cluster_specifier
             )?;
             if stat_prefix.is_used() {
                 tracing::warn!("unsupported field stat_prefix used in tcp_proxy. This field will be ignored.");
             }
             let cluster_specifier = convert_opt!(cluster_specifier)?;
-            Ok(Self { cluster_specifier })
+
+            let access_log =
+                access_log.iter().map(|al| AccessLog::try_from(al.clone())).collect::<Result<Vec<_>, _>>()?;
+
+            Ok(Self { cluster_specifier, access_log })
         }
     }
 }

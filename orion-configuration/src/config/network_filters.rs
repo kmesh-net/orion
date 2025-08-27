@@ -22,5 +22,7 @@ pub mod http_connection_manager;
 pub use http_connection_manager::HttpConnectionManager;
 pub mod network_rbac;
 pub use network_rbac::NetworkRbac;
+pub mod access_log;
 pub mod tcp_proxy;
+pub mod tracing;
 pub use tcp_proxy::TcpProxy;

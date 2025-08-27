@@ -27,11 +27,14 @@ pub mod listener;
 pub use listener::Listener;
 pub mod listener_filters;
 pub mod log;
-pub use log::Log;
+pub mod metrics;
+use log::AccessLogConfig;
+pub use log::LogConfig;
 pub mod network_filters;
 pub mod runtime;
 pub use runtime::Runtime;
 pub mod common;
+pub mod grpc;
 pub mod secret;
 pub mod transport;
 
@@ -47,7 +50,9 @@ pub struct Config {
     #[serde(skip_serializing_if = "is_default", default)]
     pub runtime: Runtime,
     #[serde(skip_serializing_if = "is_default", default)]
-    pub logging: Log,
+    pub logging: LogConfig,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub access_logging: Option<AccessLogConfig>,
     #[serde(skip_serializing_if = "is_default", default)]
     pub bootstrap: Bootstrap,
 }
@@ -57,16 +62,12 @@ impl Config {
         let runtime = self.runtime.update_from_env_and_options(opt);
         let max_cpus = num_cpus::get();
         if runtime.num_cpus() > max_cpus {
-            tracing::warn!(
-                max_cpus,
-                ORION_GATEWAY_CORES = runtime.num_cpus(),
-                "Requested more cores than available CPUs"
-            );
+            tracing::warn!(max_cpus, NG_GATEWAY_CORES = runtime.num_cpus(), "Requested more cores than available CPUs");
         }
         if runtime.num_runtimes() > runtime.num_cpus() {
             tracing::warn!(
                 runtime.num_cpus,
-                ORION_GATEWAY_RUNTIMES = runtime.num_runtimes(),
+                NG_GATEWAY_RUNTIMES = runtime.num_runtimes(),
                 "Requested more runtimes than cores"
             );
         }
@@ -88,44 +89,48 @@ pub fn deserialize_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
 mod envoy_conversions {
     use std::path::Path;
 
-    use super::{deserialize_yaml, Bootstrap, Config};
+    use super::{deserialize_yaml, log::AccessLogConfig, Bootstrap, Config};
     use crate::{
-        config::{log::Log, runtime::Runtime},
+        config::{log::LogConfig, runtime::Runtime},
         options::Options,
         Result,
     };
+    pub use envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
     use orion_data_plane_api::decode::from_serde_deserializer;
-    pub use orion_data_plane_api::envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
-    use orion_error::Context;
+    use orion_error::{Context, ErrorInfo};
     use serde::Deserialize;
 
     #[derive(Deserialize)]
-    struct Wrapper(#[serde(deserialize_with = "orion_data_plane_api::decode::from_serde_deserializer")] EnvoyBootstrap);
+    struct Wrapper(#[serde(deserialize_with = "from_serde_deserializer")] EnvoyBootstrap);
 
     #[derive(Deserialize)]
     struct ShimConfig {
         #[serde(default)]
         pub runtime: Runtime,
         #[serde(default)]
-        pub logging: Log,
+        pub logging: LogConfig,
+        #[serde(default)]
+        pub access_logging: Option<AccessLogConfig>,
         #[serde(default)]
         pub bootstrap: Option<Bootstrap>,
-
         pub envoy_bootstrap: Option<Wrapper>,
     }
 
     fn bootstrap_from_path_to_envoy_bootstrap(envoy_path: impl AsRef<Path>) -> Result<Bootstrap> {
         (|| -> Result<_> {
-            let envoy_file = std::fs::File::open(&envoy_path).context("failed to open file")?;
+            let envoy_file = std::fs::File::open(&envoy_path).with_context_msg("failed to open file")?;
             let mut track = serde_path_to_error::Track::new();
             let envoy: EnvoyBootstrap = from_serde_deserializer(serde_path_to_error::Deserializer::new(
                 serde_yaml::Deserializer::from_reader(&envoy_file),
                 &mut track,
             ))
-            .with_context(|| format!("failed to deserialize {}", track.path()))?;
-            Bootstrap::try_from(envoy).context("failed to convert into orion bootstrap")
+            .with_context_fn(|| ErrorInfo::default().with_message(format!("failed to deserialize {}", track.path())))?;
+            Bootstrap::try_from(envoy).with_context_msg("failed to convert into orion bootstrap")
         })()
-        .with_context(|| format!("failed to read config from \"{}\"", envoy_path.as_ref().display()))
+        .with_context_fn(|| {
+            ErrorInfo::default()
+                .with_message(format!("failed to read config from \"{}\"", envoy_path.as_ref().display()))
+        })
     }
 
     impl Config {
@@ -134,24 +139,26 @@ mod envoy_conversions {
                 (None, None) => return Err("no config file specified".into()),
                 (None, Some(envoy_path)) => {
                     let bootstrap = bootstrap_from_path_to_envoy_bootstrap(envoy_path)?;
-                    Self { runtime: Runtime::default(), logging: Log::default(), bootstrap }
+                    Self { runtime: Runtime::default(), logging: LogConfig::default(), access_logging: None, bootstrap }
                 },
                 (Some(config), maybe_override) => {
-                    let ShimConfig { runtime, logging, bootstrap, envoy_bootstrap } = deserialize_yaml(config)
-                        .with_context(|| format!("failed to deserialize \"{}\"", config.display()))?;
+                    let ShimConfig { runtime, logging, access_logging, bootstrap, envoy_bootstrap } =
+                        deserialize_yaml(config).with_context_fn(|| {
+                            ErrorInfo::default().with_message(format!("failed to deserialize \"{}\"", config.display()))
+                        })?;
                     let mut bootstrap = match (bootstrap, envoy_bootstrap) {
                         (None, None) => Bootstrap::default(),
                         (Some(b), None) => b,
                         (None, Some(envoy)) => Bootstrap::try_from(envoy.0)
-                            .context("failed to convert envoy bootstrap to orion bootstrap")?,
+                            .with_context_msg("failed to convert envoy bootstrap to orion bootstrap")?,
                         (Some(_), Some(_)) => {
-                            return Err("only one of `bootstrap` and `envoy_bootstrap` may be set".into())
+                            return Err("only one of `bootstrap` and `envoy_bootstrap` may be set".into());
                         },
                     };
                     if let Some(bootstrap_override) = maybe_override {
                         bootstrap = bootstrap_from_path_to_envoy_bootstrap(bootstrap_override)?;
                     }
-                    Self { runtime, logging, bootstrap }
+                    Self { runtime, logging, access_logging, bootstrap }
                 },
             };
             Ok(config.apply_options(opt))
@@ -186,18 +193,18 @@ mod envoy_conversions {
                     })?;
                     let serialized = serde_yaml::to_string(&new_conf)?;
                     tracing::info!("\n{serialized}\n");
-                    // if !path.ends_with("new.yaml") {
-                    //     let new_path = format!(
-                    //         "../orion-proxy/conf/{}-new.yaml",
-                    //         path.file_name()
-                    //             .unwrap()
-                    //             .to_str()
-                    //             .unwrap()
-                    //             .trim_end_matches(".yaml")
-                    //             .replace("envoy-", "orion-")
-                    //     );
-                    //     std::fs::write(new_path, serialized.as_bytes())?;
-                    // }
+                    if !path.ends_with("new.yaml") {
+                        let new_path = format!(
+                            "../orion-proxy/conf/{}-new.yaml",
+                            path.file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .trim_end_matches(".yaml")
+                                .replace("envoy-", "orion-")
+                        );
+                        std::fs::write(new_path, serialized.as_bytes())?;
+                    }
                     let deserialized: Config = serde_yaml::from_str(&serialized)?;
                     assert_eq!(new_conf, deserialized, "failed to roundtrip config transcoding");
                 } else {
