@@ -5,6 +5,9 @@ This document provides detailed instructions for building and running Orion usin
 ## Building the Image
 
 ```bash
+# Initialize git submodules before building
+git submodule update --init --recursive
+
 docker build -t orion-proxy -f docker/Dockerfile .
 ```
 
@@ -70,10 +73,10 @@ docker run -d \
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CONTROL_PLANE_IP` | IP address of the control plane | `127.0.0.1` |
-| `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` |
+| Variable           | Description                              | Default     |
+| ------------------ | ---------------------------------------- | ----------- |
+| `CONTROL_PLANE_IP` | IP address of the control plane          | `127.0.0.1` |
+| `LOG_LEVEL`        | Logging level (debug, info, warn, error) | `info`      |
 
 ## Verification
 
@@ -143,10 +146,10 @@ For production deployment, update the cluster configuration in `orion-runtime.ya
 
 ## Port Reference
 
-| Port  | Purpose                   | Required for Basic Setup |
-|-------|---------------------------|---------------------------|
-| 8000  | HTTP Listener             | ✅ Yes (primary service)   |
-| 8001  | TCP Listener              | ❌ Only if using TCP proxy |
-| 50051 | xDS gRPC Configuration    | ❌ Only with external xDS  |
+| Port  | Purpose                | Required for Basic Setup  |
+| ----- | ---------------------- | ------------------------- |
+| 8000  | HTTP Listener          | ✅ Yes (primary service)   |
+| 8001  | TCP Listener           | ❌ Only if using TCP proxy |
+| 50051 | xDS gRPC Configuration | ❌ Only with external xDS  |
 
 > **Note**: Only port 8000 is required for basic HTTP proxy functionality. Map additional ports only when needed for specific features.
