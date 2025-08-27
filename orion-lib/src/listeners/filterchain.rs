@@ -33,6 +33,7 @@ use compact_str::CompactString;
 use futures::TryFutureExt;
 use http::Request;
 use hyper::service::Service;
+use hyper_util::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
 use orion_configuration::config::{
     listener::{FilterChain as FilterChainConfig, MainFilter},
     network_filters::{
@@ -40,7 +41,6 @@ use orion_configuration::config::{
         network_rbac::{NetworkContext, NetworkRbac},
     },
 };
-use orion_hyper_util::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
 use rustls::{server::Acceptor, ServerConfig};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpStream;

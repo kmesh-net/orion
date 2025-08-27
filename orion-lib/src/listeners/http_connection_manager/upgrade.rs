@@ -8,11 +8,11 @@ use crate::{
 };
 use http::{uri::Parts as UriParts, StatusCode, Uri, Version};
 use hyper::{body::Incoming, Request, Response};
+use hyper_util::rt::TokioIo;
 use orion_configuration::config::network_filters::http_connection_manager::route::{
     RouteMatchResult, UpgradeAction, UpgradeActionType,
 };
 use orion_error::Context;
-use orion_hyper_util::rt::TokioIo;
 use std::net::SocketAddr;
 use tokio::io::copy_bidirectional;
 use tracing::{debug, error};

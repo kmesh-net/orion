@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use hyper_util::rt::tokio::TokioIo;
 use orion_data_plane_api::{
     envoy_data_plane_api::{
         envoy::{
@@ -28,7 +29,6 @@ use orion_data_plane_api::{
     },
     xds::client::DiscoveryClientBuilder,
 };
-use orion_hyper_util::rt::tokio::TokioIo;
 use tonic::transport::Server;
 
 use orion_data_plane_api::xds::{

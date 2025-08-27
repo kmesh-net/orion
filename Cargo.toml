@@ -25,7 +25,6 @@ hyper-util   = { git = "https://github.com/awgn/hyper-util.git", branch = "event
 
 [workspace.dependencies]
 envoy-data-plane-api = { path = "envoy-data-plane-api" }
-orion-hyper-util     = { package = "hyper-util", version = "0.1.15", features = ["full"] }
 orion-configuration  = { path = "orion-configuration" }
 orion-data-plane-api = { path = "orion-data-plane-api" }
 orion-error          = { path = "orion-error" }
@@ -61,6 +60,7 @@ tracing             = "0.1"
 tracing-subscriber  = "0.3"
 tracing-test        = { version = "0.2", features = ["no-env-filter"] }
 url                 = "2"
+hyper-util          = { version = "0.1.15",   features = ["full"] }
 
 
 [profile.release]
