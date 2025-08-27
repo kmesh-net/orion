@@ -44,7 +44,7 @@ pub const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 pub const MAX_BACKOFF: Duration = Duration::from_secs(20);
 pub const BACKOFF_INTERVAL: Duration = Duration::from_secs(2);
 pub const RETRY_INTERVAL: Duration = Duration::from_secs(5);
-pub const ACK_TIMEOUT: Duration = Duration::from_secs(5);
+pub const ACK_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct DiscoveryClientBuilder<C: bindings::TypedXdsBinding> {
     node: Node,

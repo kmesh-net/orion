@@ -49,6 +49,7 @@ pub mod grpc_deps {
         tonic_health,
     };
 }
+pub const DECODED_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 
 pub async fn start_aggregate_client(
     node: Node,
@@ -88,7 +89,8 @@ where
     C: Service<Request<BoxBody>, Response = Response<BoxBody>, Error = TonicError> + Send,
     C::Future: Send,
 {
-    let underlying_client = AggregatedDiscoveryServiceClient::new(channel);
+    let underlying_client =
+        AggregatedDiscoveryServiceClient::new(channel).max_decoding_message_size(DECODED_MESSAGE_SIZE);
     let aggregated_discovery_service_client = AggregatedDiscoveryType { underlying_client };
     DiscoveryClientBuilder::new(node, aggregated_discovery_service_client).build()
 }
