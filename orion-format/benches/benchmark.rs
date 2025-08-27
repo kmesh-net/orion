@@ -1,10 +1,10 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
-    context::{Context, DownstreamRequest, DownstreamResponse, FinishContext, InitContext},
+    DEFAULT_ACCESS_LOG_FORMAT, LogFormatter, LogFormatterLocal,
+    context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
     types::{ResponseFlags, ResponseFlagsShort},
-    LogFormatter, DEFAULT_ENVOY_FORMAT,
 };
 use smol_str::ToSmolStr;
 use std::time::Duration;
@@ -14,7 +14,7 @@ use std::time::Duration;
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
 #[inline]
-fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatter)
+fn eval_format<C1, C2, C3, C4>(req: &C1, resp: &C2, start: &C3, end: &C4, fmt: &mut LogFormatterLocal)
 where
     C1: Context,
     C2: Context,
@@ -63,6 +63,7 @@ where
     }
 }
 
+#[allow(clippy::unit_arg)]
 fn benchmark_rust_format(c: &mut Criterion) {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
@@ -138,6 +139,7 @@ fn benchmark_rust_format(c: &mut Criterion) {
     });
 }
 
+#[allow(clippy::unit_arg)]
 fn benchmark_log_formatter(c: &mut Criterion) {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
@@ -157,15 +159,15 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).stealth_unwrap();
+    let fmt = LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false).stealth_unwrap();
     let mut sink = std::io::sink();
 
     c.bench_function("log_formatter_full", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
+            let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
                 &mut fmt,
@@ -175,10 +177,10 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     c.bench_function("log_formatter_full_write", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
+            let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
                 &mut fmt,
@@ -189,12 +191,18 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     c.bench_function("log_formatter_clone_only", |b| {
         b.iter(|| {
-            black_box(fmt.clone());
+            black_box(fmt.local_clone());
         })
     });
 
-    let mut formatted = fmt.clone();
-    eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut formatted);
+    let mut formatted = fmt.local_clone();
+    eval_format(
+        &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+        &DownstreamResponse { response: &response, response_head_size: 0 },
+        &start,
+        &end,
+        &mut formatted,
+    );
 
     let message = formatted.into_message();
     c.bench_function("log_formatter_write_only", |b| {
@@ -204,6 +212,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
     });
 }
 
+#[allow(clippy::unit_arg)]
 fn benchmark_request_parts(c: &mut Criterion) {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
@@ -220,34 +229,72 @@ fn benchmark_request_parts(c: &mut Criterion) {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new("%REQ(:PATH)%").stealth_unwrap();
+    let fmt = LogFormatter::try_new("%START_TIME%", false).stealth_unwrap();
+    c.bench_function("%START_TIME%", |b| {
+        b.iter(|| {
+            let mut fmt = fmt.local_clone();
+            black_box(eval_format(
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
+                &start,
+                &end,
+                &mut fmt,
+            ))
+        })
+    });
+
+    let fmt = LogFormatter::try_new("%REQ(:PATH)%", false).stealth_unwrap();
     c.bench_function("REQ(:PATH)", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
+            let mut fmt = fmt.local_clone();
+            black_box(eval_format(
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
+                &start,
+                &end,
+                &mut fmt,
+            ))
         })
     });
 
-    let fmt = LogFormatter::try_new("%REQ(:METHOD)%").stealth_unwrap();
+    let fmt = LogFormatter::try_new("%REQ(:METHOD)%", false).stealth_unwrap();
     c.bench_function("REQ(:METHOD)", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
+            let mut fmt = fmt.local_clone();
+            black_box(eval_format(
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
+                &start,
+                &end,
+                &mut fmt,
+            ))
         })
     });
 
-    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%").stealth_unwrap();
+    let fmt = LogFormatter::try_new("%REQ(USER-AGENT)%", false).stealth_unwrap();
     c.bench_function("REQ(USER-AGENT)", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
-            black_box(eval_format(&DownstreamRequest(&request), &DownstreamResponse(&response), &start, &end, &mut fmt))
+            let mut fmt = fmt.local_clone();
+            black_box(eval_format(
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
+                &start,
+                &end,
+                &mut fmt,
+            ))
         })
     });
 }
 
+#[allow(clippy::unit_arg)]
 fn benchmark_log_headers(c: &mut Criterion) {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
+
+    const ENVOY_FORMAT: &str = "%REQ(X-Header-0)% %REQ(X-Header-1)% %REQ(X-Header-2)% %REQ(X-Header-3)% %REQ(X-Header-4)% %REQ(X-Header-5)% %REQ(X-Header-6)% %REQ(X-Header-7)% %REQ(X-Header-8)% %REQ(X-Header-9)% \
+        %REQ(X-Header-10)% %REQ(X-Header-11)% %REQ(X-Header-12)% %REQ(X-Header-13)% %REQ(X-Header-14)% %REQ(X-Header-15)% %REQ(X-Header-16)% %REQ(X-Header-17)% %REQ(X-Header-18)% %REQ(X-Header-19)% %REQ(X-Header-20)% \
+        %REQ(X-Header-21)% %REQ(X-Header-22)% %REQ(X-Header-23)% %REQ(X-Header-24)% %REQ(X-Header-25)% %REQ(X-Header-26)% %REQ(X-Header-27)% %REQ(X-Header-28)% %REQ(X-Header-29)% %REQ(X-Header-30)% %REQ(X-Header-31)% \
+        %REQ(X-Header-32)%";
 
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
@@ -286,11 +333,6 @@ fn benchmark_log_headers(c: &mut Criterion) {
         .body(())
         .stealth_unwrap();
 
-    const ENVOY_FORMAT: &str = r#"%REQ(X-Header-0)% %REQ(X-Header-1)% %REQ(X-Header-2)% %REQ(X-Header-3)% %REQ(X-Header-4)% %REQ(X-Header-5)% %REQ(X-Header-6)% %REQ(X-Header-7)% %REQ(X-Header-8)% %REQ(X-Header-9)%
-     %REQ(X-Header-10)% %REQ(X-Header-11)% %REQ(X-Header-12)% %REQ(X-Header-13)% %REQ(X-Header-14)% %REQ(X-Header-15)% %REQ(X-Header-16)% %REQ(X-Header-17)% %REQ(X-Header-18)% %REQ(X-Header-19)% %REQ(X-Header-20)%
-     %REQ(X-Header-21)% %REQ(X-Header-22)% %REQ(X-Header-23)% %REQ(X-Header-24)% %REQ(X-Header-25)% %REQ(X-Header-26)% %REQ(X-Header-27)% %REQ(X-Header-28)% %REQ(X-Header-29)% %REQ(X-Header-30)% %REQ(X-Header-31)%
-     %REQ(X-Header-32)%"#;
-
     let response = Response::builder().status(StatusCode::OK).body(()).stealth_unwrap();
     let start = InitContext { start_time: std::time::SystemTime::now() };
     let end = FinishContext {
@@ -300,14 +342,14 @@ fn benchmark_log_headers(c: &mut Criterion) {
         response_flags: ResponseFlags::empty(),
     };
 
-    let fmt = LogFormatter::try_new(ENVOY_FORMAT).stealth_unwrap();
+    let fmt = LogFormatter::try_new(ENVOY_FORMAT, false).stealth_unwrap();
 
     c.bench_function("log_format_headers", |b| {
         b.iter(|| {
-            let mut fmt = fmt.clone();
+            let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamRequest(&request),
-                &DownstreamResponse(&response),
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
                 &mut fmt,

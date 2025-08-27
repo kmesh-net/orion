@@ -29,6 +29,7 @@ orion-configuration  = { path = "orion-configuration" }
 orion-data-plane-api = { path = "orion-data-plane-api" }
 orion-error          = { path = "orion-error" }
 orion-format         = { path = "orion-format" }
+orion-http-header    = { path = "orion-http-header" }
 orion-lib            = { path = "orion-lib" }
 orion-xds            = { path = "orion-xds" }
 

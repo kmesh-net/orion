@@ -1,24 +1,53 @@
-use http::HeaderName;
-use serde::{Deserialize, Serialize};
-use strum_macros::EnumCount;
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, EnumCount)]
-#[repr(usize)]
-pub enum Category {
-    InitContext,
-    FinishContext,
-    UpstreamContext,
-    DownstreamContext,
-    DownstreamRequest,
-    DownstreamResponse,
-    UpstreamRequest,
-    UpstreamResponse,
-    Argument,
+use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
+
+pub const NUM_OPERATOR_CATEGORIES: usize = 11;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+    pub struct Category : u16 {
+        const INIT_CONTEXT = 1 << 0;
+        const FINISH_CONTEXT = 1 << 1;
+        const UPSTREAM_CONTEXT = 1 << 2;
+        const DOWNSTREAM_CONTEXT = 1 << 3;
+        const DOWNSTREAM_REQUEST = 1 << 4;
+        const DOWNSTREAM_RESPONSE = 1 << 5;
+        const UPSTREAM_REQUEST = 1 << 6;
+        const UPSTREAM_RESPONSE = 1 << 7;
+        const REQUEST_DURATION = 1 << 8;
+        const RESPONSE_DURATION = 1 << 9;
+        const ARGUMENT = 1 << 10;
+    }
 }
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub struct HeaderName(pub SmolStr);
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 pub enum Operator {
     RequestDuration,
+    RequestHeadersBytes,
     RequestTxDuration,
     ResponseDuration,
     ResponseTxDuration,
@@ -35,6 +64,7 @@ pub enum Operator {
     UpstreamProtocol,
     ResponseCode,
     ResponseCodeDetails,
+    ResponseHeadersBytes,
     ConnectionTerminationDetails,
     BytesSent,
     UpstreamWireBytesSent,
@@ -117,6 +147,7 @@ pub enum Operator {
     TlsJa3Fingerprint,
     UniqueId,
     StreamId,
+    TraceId,
     StartTime,
     StartTimeLocal,
     EmitTime,
@@ -132,15 +163,28 @@ pub enum Operator {
     UpstreamPeerCertVEnd,
     Environment,
     UpstreamConnectionPoolReadyDuration,
-    Request, // placeholder
     RequestScheme,
     RequestMethod,
     RequestPath,
     RequestOriginalPathOrPath,
     RequestAuthority,
-    #[serde(with = "http_serde_ext::header_name")]
-    RequestStandard(HeaderName),
-    Response, // placeholder
-    #[serde(with = "http_serde_ext::header_name")]
-    ResponseStandard(HeaderName),
+    Request(HeaderName),
+    ResponseStatus,
+    Response(HeaderName),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum ReqArgument {
+    Scheme,
+    Method,
+    Path,
+    OriginalPathOrPath,
+    Authority,
+    Header(HeaderName),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub enum RespArgument {
+    Status,
+    Header(HeaderName),
 }
