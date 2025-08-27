@@ -3,15 +3,16 @@ use std::{future::IntoFuture, time::Duration};
 
 use orion_xds::xds::{
     resources,
-    server::{start_aggregate_server, ServerAction},
+    server::{ServerAction, start_aggregate_server},
 };
 use tracing::info;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info, orion_xds=debug".into()))
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
     let (delta_resource_tx, delta_resources_rx) = tokio::sync::mpsc::channel(100);

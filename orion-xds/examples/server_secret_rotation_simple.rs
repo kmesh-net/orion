@@ -1,8 +1,8 @@
 use std::future::IntoFuture;
 
 use orion_data_plane_api::envoy_data_plane_api::envoy::{
-    config::core::v3::{data_source::Specifier, DataSource},
-    extensions::transport_sockets::tls::v3::{secret, CertificateValidationContext},
+    config::core::v3::{DataSource, data_source::Specifier},
+    extensions::transport_sockets::tls::v3::{CertificateValidationContext, secret},
 };
 use orion_xds::xds::{resources, server::start_aggregate_server};
 use tracing::info;
@@ -39,7 +39,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let validation_context = CertificateValidationContext {
             trusted_ca: Some(DataSource {
                 specifier: Some(Specifier::Filename(
-                    //"./test_certs/deadbeefCA-gathered/deadbeef.intermediate.ca-chain.cert.pem"
                     "./test_certs/beefcakeCA-gathered/beefcake.intermediate.ca-chain.cert.pem".to_owned(),
                 )),
                 ..Default::default()

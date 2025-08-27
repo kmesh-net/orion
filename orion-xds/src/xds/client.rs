@@ -24,11 +24,12 @@ use super::{
     request::{DeltaDiscoveryRequestBuilder, StatusBuilder},
 };
 use core::result::Result::{Err, Ok};
-use orion_configuration::config::bootstrap::Node;
+
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
     tonic,
 };
+use orion_configuration::config::bootstrap::Node;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -105,7 +106,7 @@ where
 }
 
 /// Incremental Client that operates the delta version of the xDS protocol
-/// use to consume xDS configuration updates asychronously, modify resource subscriptions
+/// use to consume xDS configuration updates asynchronously, modify resource subscriptions
 
 #[derive(Debug)]
 pub struct DeltaDiscoveryClient {
@@ -199,7 +200,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 {
                     warn!("xDS client terminated: {}, retrying in {:?}", err_detail, backoff);
                 } else {
-                    warn!("xDS client interupted: {}, retrying in {:?}", err_detail, backoff);
+                    warn!("xDS client interrupted: {}, retrying in {:?}", err_detail, backoff);
                 }
                 let backoff = std::cmp::min(MAX_BACKOFF, state.backoff * 2);
                 tokio::time::sleep(backoff).await;
@@ -274,7 +275,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     if let Err(err) = discovery_requests_tx
                         .send(
                             DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                                .with_node_id(self.node.id.clone().to_string())
+                                .with_node_id(self.node.clone())
                                 .with_resource_names_subscribe(vec![resource_id])
                                 .build(),
                         )
@@ -291,7 +292,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     if let Err(err) = discovery_requests_tx
                         .send(
                             DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                                .with_node_id(self.node.id.clone().to_string())
+                                .with_node_id(self.node.clone())
                                 .with_resource_names_unsubscribe(vec![resource_id])
                                 .build(),
                         )
@@ -404,10 +405,10 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             Some(type_url) => vec![type_url],
             _ => vec![
                 TypeUrl::Secret,
-                TypeUrl::ClusterLoadAssignment,
                 TypeUrl::Cluster,
-                TypeUrl::RouteConfiguration,
+                TypeUrl::ClusterLoadAssignment,
                 TypeUrl::Listener,
+                TypeUrl::RouteConfiguration,
             ],
         };
         resource_types
@@ -417,7 +418,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let already_tracked: HashMap<ResourceId, ResourceVersion> =
                     tracking_state.tracked.get(resource_type).cloned().unwrap_or_default();
                 DeltaDiscoveryRequestBuilder::for_resource(resource_type.to_owned())
-                    .with_node_id(self.node.id.clone().to_string())
+                    .with_node_id(self.node.clone())
                     .with_initial_resource_versions(already_tracked)
                     .with_resource_names_subscribe(subscriptions.into_iter().collect())
                     .build()
@@ -469,11 +470,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id, value, resource_version))
             })
             .collect();
-        if decoding_errors.is_empty() {
-            Ok(decoded_updates)
-        } else {
-            Err(decoding_errors)
-        }
+        if decoding_errors.is_empty() { Ok(decoded_updates) } else { Err(decoding_errors) }
     }
 
     fn extract_update_versions(updates: &[XdsResourceUpdate]) -> HashMap<ResourceId, ResourceVersion> {

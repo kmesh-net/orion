@@ -6,17 +6,20 @@ use orion_xds::{
 };
 use std::future::IntoFuture;
 use tracing::{debug, info};
-
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,orion_xds=debug".into()))
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info, orion_xds=debug".into()))
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let (mut worker, mut client, _subscription_manager) =
-        start_aggregate_client(Node { id: "node1".into() }, "http://127.0.0.1:50051".parse()?).await?;
+    let (mut worker, mut client, _subscription_manager) = start_aggregate_client(
+        Node { id: "node1".into(), cluster_id: "cluster_id".into() },
+        "http://127.0.0.1:50051".parse()?,
+    )
+    .await?;
     let xds_worker = tokio::spawn(async move {
         let subscribe = worker.run().await;
         info!("Worker exited {subscribe:?}");
