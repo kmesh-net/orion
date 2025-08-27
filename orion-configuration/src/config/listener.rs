@@ -19,10 +19,14 @@
 //
 
 use super::{
-    network_filters::{HttpConnectionManager, NetworkRbac, TcpProxy},
+    network_filters::{
+        access_log::{AccessLog, AccessLogConf},
+        HttpConnectionManager, NetworkRbac, TcpProxy,
+    },
     transport::{BindDevice, CommonTlsContext},
     GenericError,
 };
+use crate::config::listener;
 use compact_str::CompactString;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize, Serializer};
@@ -42,6 +46,24 @@ pub struct Listener {
     pub bind_device: Option<BindDevice>,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub with_tls_inspector: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub proxy_protocol_config: Option<super::listener_filters::DownstreamProxyProtocolConfig>,
+}
+
+impl Listener {
+    pub fn get_access_log_configurations(&self) -> Vec<AccessLogConf> {
+        self.filter_chains
+            .iter()
+            .flat_map(|(_, filter_chain)| match &filter_chain.terminal_filter {
+                crate::config::listener::MainFilter::Http(http_connection_manager) => {
+                    http_connection_manager.access_log.iter().map(AccessLog::get_config).cloned().collect::<Vec<_>>()
+                },
+                crate::config::listener::MainFilter::Tcp(tcp_proxy) => {
+                    tcp_proxy.access_log.iter().map(AccessLog::get_config).cloned().collect::<Vec<_>>()
+                },
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 mod serde_filterchains {
@@ -91,7 +113,7 @@ mod serde_filterchains {
 pub struct FilterChain {
     pub name: CompactString,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub tls_config: Option<TlsConfig>,
+    pub tls_config: Option<listener::TlsConfig>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub rbac: Vec<NetworkRbac>,
     pub terminal_filter: MainFilter,
@@ -222,7 +244,7 @@ impl FilterChainMatch {
     pub fn matches_source_port(&self, source_port: u16) -> MatchResult {
         if self.source_ports.is_empty() {
             MatchResult::NoRule
-        } else if self.source_ports.iter().any(|p| *p == source_port) {
+        } else if self.source_ports.contains(&source_port) {
             MatchResult::Matched(0)
         } else {
             MatchResult::FailedMatch
@@ -268,19 +290,18 @@ pub struct TlsConfig {
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use std::collections::HashMap;
-    use std::str::FromStr;
+    use std::{collections::HashMap, str::FromStr};
 
     use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
-    use crate::config::transport::SupportedEnvoyTransportSocket;
     use crate::config::{
         common::*,
         core::{Address, CidrRange},
-        listener_filters::ListenerFilter,
+        listener_filters::{ListenerFilter, ListenerFilterConfig},
+        transport::SupportedEnvoyTransportSocket,
         util::{envoy_u32_to_u16, u32_to_u16},
     };
     use compact_str::CompactString;
-    use orion_data_plane_api::envoy_data_plane_api::{
+    use envoy_data_plane_api::{
         envoy::{
             config::{
                 core::v3::TransportSocket as EnvoyTransportSocket,
@@ -338,7 +359,6 @@ mod envoy_conversions {
                 ignore_global_conn_limit,
                 listener_specifier,
                 bypass_overload_manager,
-                fcds_config,
             } = envoy;
             unsupported_field!(
                 // name,
@@ -373,13 +393,12 @@ mod envoy_conversions {
                 enable_mptcp,
                 ignore_global_conn_limit,
                 listener_specifier,
-                bypass_overload_manager,
-                fcds_config
+                bypass_overload_manager
             )?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
-                let address = Address::into_socket_addr(convert_opt!(address)?);
+                let address = Address::into_addr(convert_opt!(address)?)?;
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();
@@ -390,18 +409,34 @@ mod envoy_conversions {
                         .with_node("filter_chains"));
                 }
                 let listener_filters: Vec<ListenerFilter> = convert_vec!(listener_filters)?;
-                if listener_filters.len() > 1 {
-                    return Err(GenericError::from_msg("at most one TLS inspector is supported as a listener filter"))
-                        .with_node("listener_filters");
+                let mut with_tls_inspector = false;
+                let mut proxy_protocol_config = None;
+
+                for filter in listener_filters {
+                    match filter.config {
+                        ListenerFilterConfig::TlsInspector => {
+                            if with_tls_inspector {
+                                return Err(GenericError::from_msg("duplicate TLS inspector listener filter"))
+                                    .with_node("listener_filters");
+                            }
+                            with_tls_inspector = true;
+                        },
+                        ListenerFilterConfig::ProxyProtocol(config) => {
+                            if proxy_protocol_config.is_some() {
+                                return Err(GenericError::from_msg("duplicate proxy protocol listener filter"))
+                                    .with_node("listener_filters");
+                            }
+                            proxy_protocol_config = Some(config);
+                        },
+                    }
                 }
-                let with_tls_inspector = !listener_filters.is_empty();
                 let bind_device = convert_vec!(socket_options)?;
                 if bind_device.len() > 1 {
                     return Err(GenericError::from_msg("at most one bind device is supported"))
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
-                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector })
+                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector, proxy_protocol_config })
             }())
             .with_name(name)
         }
@@ -459,6 +494,7 @@ mod envoy_conversions {
                                     }
                                 }
                             },
+
                             SupportedEnvoyFilter::HttpConnectionManager(http) => {
                                 if main_filter.is_some() {
                                     Err(GenericError::from_msg(
@@ -501,7 +537,11 @@ mod envoy_conversions {
                     return Err(GenericError::from_msg("no tcp proxy or http connection manager specified for chain")
                         .with_node("filters"));
                 };
-                let tls_config = transport_socket.map(TlsConfig::try_from).transpose()?;
+                let tls_config = transport_socket
+                    .map(try_tls_config_from_envoy)
+                    .transpose()
+                    .with_node("transport_socket")?
+                    .flatten();
                 Ok(FilterChainWrapper((filter_chain_match, FilterChain { name, rbac, terminal_filter, tls_config })))
             }())
             .with_name(name)
@@ -623,40 +663,26 @@ mod envoy_conversions {
         })
         }
     }
-    impl TryFrom<Any> for TlsConfig {
-        type Error = GenericError;
-        fn try_from(envoy: Any) -> Result<Self, Self::Error> {
-            SupportedEnvoyTransportSocket::try_from(envoy)?.try_into()
-        }
-    }
 
-    impl TryFrom<EnvoyTransportSocket> for TlsConfig {
-        type Error = GenericError;
-        fn try_from(envoy: EnvoyTransportSocket) -> Result<Self, Self::Error> {
-            let EnvoyTransportSocket { name, config_type } = envoy;
-            // the envoy docs say that name has to be envoy.transport_sockets.tls or tls (deprecated)
-            // but it doesn't actually have to be, it just works with any string but it _is_ required to be
-            // non-empty.
-            //  so in order to maximize compat with Envoys actual behaviour we check that it's not empty and leave it at that
-            let name = required!(name)?;
-            match required!(config_type)? {
-                orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
-                    Self::try_from(any)
+    fn try_tls_config_from_envoy(transport_socket: EnvoyTransportSocket) -> Result<Option<TlsConfig>, GenericError> {
+        let EnvoyTransportSocket { name, config_type } = transport_socket;
+        let name = required!(name)?;
+        let maybe_tls_config = match required!(config_type)? {
+            envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
+                let transport_socket = SupportedEnvoyTransportSocket::try_from(any)?;
+                match transport_socket {
+                    SupportedEnvoyTransportSocket::DownstreamTlsContext(x) => Some(x.try_into()).transpose(),
+                    SupportedEnvoyTransportSocket::RawBuffer(_) => Ok(None),
+                    SupportedEnvoyTransportSocket::UpstreamTlsContext(_)
+                    | SupportedEnvoyTransportSocket::ProxyProtocolUpstreamTransport(_) => {
+                        Err(GenericError::unsupported_variant(
+                            "Only DownstreamTlsContext or RawBuffer transport sockets are supported on listeners",
+                        ))
+                    },
                 }
-            }.with_node("config_type").with_name(name)
-        }
-    }
-
-    impl TryFrom<SupportedEnvoyTransportSocket> for TlsConfig {
-        type Error = GenericError;
-        fn try_from(value: SupportedEnvoyTransportSocket) -> Result<Self, Self::Error> {
-            match value {
-                SupportedEnvoyTransportSocket::DownstreamTlsContext(x) => x.try_into(),
-                SupportedEnvoyTransportSocket::UpstreamTlsContext(_) => {
-                    Err(GenericError::unsupported_variant("UpstreamTlsContext"))
-                },
-            }
-        }
+            },
+        };
+        maybe_tls_config.with_node("config_type").with_name(name)
     }
 
     impl TryFrom<EnvoyDownstreamTlsContext> for TlsConfig {
