@@ -18,7 +18,9 @@
 //
 //
 
+use crate::config::{common::ProxyProtocolVersion, transport::ProxyProtocolPassThroughTlvs};
 use compact_str::CompactString;
+use serde::{Deserialize, Serialize};
 
 pub struct ListenerFilter {
     pub name: CompactString,
@@ -27,20 +29,39 @@ pub struct ListenerFilter {
 
 pub enum ListenerFilterConfig {
     TlsInspector,
+    ProxyProtocol(DownstreamProxyProtocolConfig),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+pub struct DownstreamProxyProtocolConfig {
+    #[serde(default)]
+    pub allow_requests_without_proxy_protocol: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stat_prefix: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
+    pub disallowed_versions: Vec<ProxyProtocolVersion>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub pass_through_tlvs: Option<ProxyProtocolPassThroughTlvs>,
 }
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use super::{ListenerFilter, ListenerFilterConfig};
-    use crate::config::common::*;
+    use super::{DownstreamProxyProtocolConfig, ListenerFilter, ListenerFilterConfig};
+    use crate::config::{
+        common::{ProxyProtocolVersion, *},
+        transport::ProxyProtocolPassThroughTlvs,
+    };
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::listener::v3::{
                 listener_filter::ConfigType as EnvoyListenerFilterConfigType, ListenerFilter as EnvoyListenerFilter,
             },
-            extensions::filters::listener::tls_inspector::v3::TlsInspector as EnvoyTlsInspector,
+            extensions::filters::listener::{
+                proxy_protocol::v3::ProxyProtocol as EnvoyProxyProtocol,
+                tls_inspector::v3::TlsInspector as EnvoyTlsInspector,
+            },
         },
         google::protobuf::Any,
         prost::Message,
@@ -48,6 +69,7 @@ mod envoy_conversions {
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
+        ProxyProtocol(EnvoyProxyProtocol),
     }
 
     impl TryFrom<Any> for SupportedEnvoyListenerFilter {
@@ -56,6 +78,9 @@ mod envoy_conversions {
             match typed_config.type_url.as_str() {
                 "type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector" => {
                     EnvoyTlsInspector::decode(typed_config.value.as_slice()).map(Self::TlsInspector)
+                },
+                "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol" => {
+                    EnvoyProxyProtocol::decode(typed_config.value.as_slice()).map(Self::ProxyProtocol)
                 },
                 _ => {
                     return Err(GenericError::unsupported_variant(typed_config.type_url));
@@ -105,7 +130,6 @@ mod envoy_conversions {
             match value {
                 SupportedEnvoyListenerFilter::TlsInspector(EnvoyTlsInspector {
                     enable_ja3_fingerprinting,
-                    enable_ja4_fingerprinting,
                     initial_read_buffer_size,
                 }) => {
                     // both fields are optional, and unsupported, but serde_yaml requires that at least one field is populated
@@ -114,12 +138,39 @@ mod envoy_conversions {
                     if enable_ja3_fingerprinting.is_some_and(|b| b.value) {
                         return Err(GenericError::UnsupportedField("enable_ja3_fingerprinting"));
                     }
-                    if enable_ja4_fingerprinting.is_some_and(|b| b.value) {
-                        return Err(GenericError::UnsupportedField("enable_ja4_fingerprinting"));
-                    }
                     Ok(Self::TlsInspector)
                 },
+                SupportedEnvoyListenerFilter::ProxyProtocol(envoy_proxy_protocol) => {
+                    let config = DownstreamProxyProtocolConfig::try_from(envoy_proxy_protocol)?;
+                    Ok(Self::ProxyProtocol(config))
+                },
             }
+        }
+    }
+
+    impl TryFrom<EnvoyProxyProtocol> for DownstreamProxyProtocolConfig {
+        type Error = GenericError;
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+        fn try_from(value: EnvoyProxyProtocol) -> Result<Self, Self::Error> {
+            let EnvoyProxyProtocol {
+                rules,
+                allow_requests_without_proxy_protocol,
+                pass_through_tlvs,
+                disallowed_versions,
+                stat_prefix,
+            } = value;
+            unsupported_field!(rules)?;
+            let stat_prefix = if stat_prefix.is_empty() { None } else { Some(stat_prefix) };
+            let disallowed_versions = disallowed_versions
+                .into_iter()
+                .map(|v| match v {
+                    0 => Ok(ProxyProtocolVersion::V1),
+                    1 => Ok(ProxyProtocolVersion::V2),
+                    other => Err(GenericError::from_msg(format!("Unsupported proxy protocol version: {other}"))),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let pass_through_tlvs = pass_through_tlvs.map(ProxyProtocolPassThroughTlvs::try_from).transpose()?;
+            Ok(Self { allow_requests_without_proxy_protocol, stat_prefix, disallowed_versions, pass_through_tlvs })
         }
     }
 }

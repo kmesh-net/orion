@@ -19,7 +19,7 @@
 //
 
 use super::secret::{TlsCertificate, ValidationContext};
-use crate::config::common::*;
+use crate::config::{cluster, common::*};
 use base64::Engine as _;
 use compact_str::CompactString;
 use serde::{
@@ -249,25 +249,68 @@ pub enum CommonTlsValidationContext {
     ValidationContext(ValidationContext),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum UpstreamTransportSocketConfig {
+    Tls(cluster::TlsConfig),
+    ProxyProtocol(UpstreamProxyProtocolConfig),
+    RawBuffer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UpstreamProxyProtocolConfig {
+    pub version: ProxyProtocolVersion,
+    pub pass_through_tlvs: Option<ProxyProtocolPassThroughTlvs>,
+    pub added_tlvs: Vec<TlvEntry>,
+    pub inner_tls_config: Option<cluster::TlsConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProxyProtocolPassThroughTlvs {
+    pub match_type: PassTlvMatchType,
+    pub tlv_types: Vec<TlvType>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum PassTlvMatchType {
+    #[default]
+    IncludeAll,
+    Include,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TlvEntry {
+    pub tlv_type: TlvType,
+    pub value: Vec<u8>,
+}
+
 #[cfg(feature = "envoy-conversions")]
 pub(crate) use envoy_conversions::*;
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        BindDevice, CommonTlsContext, CommonTlsValidationContext, SdsConfig, Secrets, TlsCertificate, TlsParameters,
-        TlsVersion,
+        BindDevice, CommonTlsContext, CommonTlsValidationContext, PassTlvMatchType, ProxyProtocolPassThroughTlvs,
+        SdsConfig, Secrets, TlsCertificate, TlsParameters, TlsVersion, TlvEntry, UpstreamProxyProtocolConfig,
     };
-    use crate::config::common::*;
+    use crate::config::{cluster, common::*};
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
-            config::core::v3::{socket_option::Value as EnvoySocketOptionValue, SocketOption as EnvoySocketOption},
-            extensions::transport_sockets::tls::v3::{
-                common_tls_context::ValidationContextType as EnvoyValidationContextType,
-                tls_parameters::TlsProtocol as EnvoyTlsProtocol, CommonTlsContext as EnvoyCommonTlsContext,
-                DownstreamTlsContext as EnvoyDownstreamTlsContext, SdsSecretConfig as EnvoySdsSecretConfig,
-                TlsParameters as EnvoyTlsParameters, UpstreamTlsContext as EnvoyUpstreamTlsContext,
+            config::core::v3::{
+                socket_option::Value as EnvoySocketOptionValue, ProxyProtocolConfig as EnvoyProxyProtocolConfig,
+                ProxyProtocolPassThroughTlVs as EnvoyPassTlvs, SocketOption as EnvoySocketOption,
+                TlvEntry as EnvoyTlvEntry,
+            },
+            extensions::transport_sockets::{
+                proxy_protocol::v3::ProxyProtocolUpstreamTransport as EnvoyProxyProtocolUpstreamTransport,
+                raw_buffer::v3::RawBuffer as EnvoyRawBuffer,
+                tls::v3::{
+                    common_tls_context::ValidationContextType as EnvoyValidationContextType,
+                    tls_parameters::TlsProtocol as EnvoyTlsProtocol, CommonTlsContext as EnvoyCommonTlsContext,
+                    DownstreamTlsContext as EnvoyDownstreamTlsContext, SdsSecretConfig as EnvoySdsSecretConfig,
+                    TlsParameters as EnvoyTlsParameters, UpstreamTlsContext as EnvoyUpstreamTlsContext,
+                },
             },
         },
         google::protobuf::Any,
@@ -283,8 +326,8 @@ mod envoy_conversions {
     impl TryFrom<EnvoySocketOption> for BindDevice {
         type Error = GenericError;
         fn try_from(value: EnvoySocketOption) -> Result<Self, Self::Error> {
-            let EnvoySocketOption { description, level, name, state, value, r#type: _ } = value;
-            unsupported_field!(state)?;
+            let EnvoySocketOption { description, level, name, state, value, r#type } = value;
+            unsupported_field!(state, r#type)?;
             // this field is
             // > An optional name to give this socket option for debugging, etc.
             // > Uniqueness is not required and no special meaning is assumed.
@@ -316,15 +359,13 @@ mod envoy_conversions {
                 cipher_suites,
                 ecdh_curves,
                 signature_algorithms,
-                compliance_policies,
             } = value;
             unsupported_field!(
                 // tls_minimum_protocol_version,
                 // tls_maximum_protocol_version,
                 cipher_suites,
                 ecdh_curves,
-                signature_algorithms,
-                compliance_policies
+                signature_algorithms
             )?;
 
             let tls_minimum_protocol_version = EnvoyTlsProtocol::from_i32(tls_minimum_protocol_version)
@@ -339,7 +380,7 @@ mod envoy_conversions {
                 EnvoyTlsProtocol::TlSv13 => TlsVersion::TLSv1_3,
                 EnvoyTlsProtocol::TlSv10 | EnvoyTlsProtocol::TlSv11 => {
                     return Err(GenericError::from_msg("TLS 1.2 is the minimum supported version"))
-                        .with_node("tls_minimum_protocol_version")
+                        .with_node("tls_minimum_protocol_version");
                 },
             };
             let tls_maximum_protocol_version = EnvoyTlsProtocol::from_i32(tls_maximum_protocol_version)
@@ -356,7 +397,7 @@ mod envoy_conversions {
                 EnvoyTlsProtocol::TlSv12 => Some(TlsVersion::TLSv1_2),
                 EnvoyTlsProtocol::TlSv10 | EnvoyTlsProtocol::TlSv11 => {
                     return Err(GenericError::from_msg("TLS 1.2 is the minimum supported version"))
-                        .with_node("tls_maximum_protocol_version")
+                        .with_node("tls_maximum_protocol_version");
                 },
             };
             if matches!(
@@ -394,7 +435,7 @@ mod envoy_conversions {
                 tls_certificate_certificate_provider_instance,
                 alpn_protocols,
                 custom_handshaker,
-                key_log, // validation_context_type,
+                key_log, // validation_context_type
                 custom_tls_certificate_selector
             )?;
             let parameters = tls_params.map(TlsParameters::try_from).transpose()?.unwrap_or_default();
@@ -407,7 +448,7 @@ mod envoy_conversions {
                 (_, _) => {
                     return Err(GenericError::from_msg(
                         "Only one of tls_certificates OR tls_certificate_sds_secret_configs may be set",
-                    ))
+                    ));
                 },
             };
             let validation_context = validation_context_type.map(CommonTlsValidationContext::try_from).transpose()?;
@@ -451,6 +492,8 @@ mod envoy_conversions {
     pub(crate) enum SupportedEnvoyTransportSocket {
         DownstreamTlsContext(EnvoyDownstreamTlsContext),
         UpstreamTlsContext(EnvoyUpstreamTlsContext),
+        ProxyProtocolUpstreamTransport(EnvoyProxyProtocolUpstreamTransport),
+        RawBuffer(EnvoyRawBuffer),
     }
 
     impl TryFrom<Any> for SupportedEnvoyTransportSocket {
@@ -477,8 +520,110 @@ mod envoy_conversions {
                             )
                         })
                 },
+                "type.googleapis.com/envoy.extensions.transport_sockets.proxy_protocol.v3.ProxyProtocolUpstreamTransport" => {
+                    EnvoyProxyProtocolUpstreamTransport::decode(typed_config.value.as_slice())
+                        .map(SupportedEnvoyTransportSocket::ProxyProtocolUpstreamTransport)
+                        .map_err(|e| {
+                            GenericError::from_msg_with_cause(
+                                format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
+                                e,
+                            )
+                        })
+                },
+                "type.googleapis.com/envoy.extensions.transport_sockets.raw_buffer.v3.RawBuffer" => {
+                    EnvoyRawBuffer::decode(typed_config.value.as_slice())
+                        .map(SupportedEnvoyTransportSocket::RawBuffer)
+                        .map_err(|e| {
+                            GenericError::from_msg_with_cause(
+                                format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
+                                e,
+                            )
+                        })
+                },
                 s => Err(GenericError::unsupported_variant(s.to_owned())),
             }
+        }
+    }
+
+    impl TryFrom<EnvoyProxyProtocolUpstreamTransport> for UpstreamProxyProtocolConfig {
+        type Error = GenericError;
+        fn try_from(envoy: EnvoyProxyProtocolUpstreamTransport) -> Result<Self, Self::Error> {
+            let EnvoyProxyProtocolUpstreamTransport {
+                config,
+                transport_socket,
+                allow_unspecified_address,
+                tlv_as_pool_key,
+            } = envoy;
+            unsupported_field!(allow_unspecified_address, tlv_as_pool_key)?;
+
+            let config = required!(config)?;
+            let EnvoyProxyProtocolConfig { version, pass_through_tlvs, added_tlvs } = config;
+            let version = match version {
+                0 => ProxyProtocolVersion::V1,
+                1 => ProxyProtocolVersion::V2,
+                _ => return Err(GenericError::unsupported_variant(format!("proxy protocol version {version}"))),
+            };
+            let pass_through_tlvs = pass_through_tlvs.map(ProxyProtocolPassThroughTlvs::try_from).transpose()?;
+            let added_tlvs: Vec<TlvEntry> = convert_vec!(added_tlvs)?;
+
+            let inner_tls_config = if let Some(ts) = transport_socket {
+                let config_type = ts.config_type.ok_or(GenericError::MissingField("config_type"))?;
+                match config_type {
+                    envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
+                        match SupportedEnvoyTransportSocket::try_from(any)? {
+                            SupportedEnvoyTransportSocket::UpstreamTlsContext(tls) => {
+                                Some(cluster::TlsConfig::try_from(tls)?)
+                            },
+                            SupportedEnvoyTransportSocket::RawBuffer(_) => None,
+                            _ => {
+                                return Err(GenericError::unsupported_variant(
+                                    "Only TLS or RawBuffer transport sockets are supported as the inner transport_socket",
+                                ));
+                            },
+                        }
+                    },
+                }
+            } else {
+                None
+            };
+
+            Ok(Self { version, pass_through_tlvs, added_tlvs, inner_tls_config })
+        }
+    }
+
+    impl TryFrom<EnvoyPassTlvs> for ProxyProtocolPassThroughTlvs {
+        type Error = GenericError;
+        #[allow(clippy::cast_possible_truncation)]
+        fn try_from(envoy: EnvoyPassTlvs) -> Result<Self, Self::Error> {
+            let EnvoyPassTlvs { match_type, tlv_type } = envoy;
+            let match_type = match match_type {
+                0 => PassTlvMatchType::IncludeAll,
+                1 => PassTlvMatchType::Include,
+                _ => return Err(GenericError::unsupported_variant(format!("pass tlv match type {match_type}"))),
+            };
+            let tlv_types = tlv_type
+                .into_iter()
+                .map(|t| {
+                    if t > 255 {
+                        Err(GenericError::from_msg(format!("TLV type {t} is out of range (0-255)")))
+                    } else {
+                        Ok(TlvType::from(t as u8))
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Self { match_type, tlv_types })
+        }
+    }
+
+    impl TryFrom<EnvoyTlvEntry> for TlvEntry {
+        type Error = GenericError;
+        #[allow(clippy::cast_possible_truncation)]
+        fn try_from(envoy: EnvoyTlvEntry) -> Result<Self, Self::Error> {
+            let EnvoyTlvEntry { r#type, value } = envoy;
+            if r#type > 255 {
+                return Err(GenericError::from_msg(format!("TLV type {type} is out of range (0-255)")));
+            }
+            Ok(Self { tlv_type: TlvType::from(r#type as u8), value })
         }
     }
 }
