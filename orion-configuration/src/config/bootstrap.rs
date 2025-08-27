@@ -18,7 +18,11 @@
 //
 //
 
-use crate::config::{cluster::Cluster, common::is_default, listener::Listener, secret::Secret};
+use std::time::Duration;
+
+use crate::config::{
+    cluster::Cluster, common::is_default, core::Address, listener::Listener, metrics::StatsSink, secret::Secret,
+};
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +34,12 @@ pub struct Bootstrap {
     pub dynamic_resources: Option<DynamicResources>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub node: Option<Node>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub admin: Option<Admin>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub stats_flush_interval: Option<Duration>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
+    pub stats_sinks: Vec<StatsSink>,
 }
 
 impl Bootstrap {
@@ -38,14 +48,20 @@ impl Bootstrap {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Node {
     pub id: CompactString,
+    pub cluster_id: CompactString,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DynamicResources {
     pub grpc_cluster_specifiers: Vec<CompactString>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Admin {
+    pub address: Address,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -61,18 +77,20 @@ pub struct StaticResources {
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use super::{Bootstrap, DynamicResources, Node, StaticResources};
-    use crate::config::common::*;
+    use super::{Admin, Bootstrap, DynamicResources, Node, StaticResources};
+    use crate::config::{common::*, grpc::Duration, metrics::StatsSink};
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::{
         bootstrap::v3::{
             bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
-            Bootstrap as EnvoyBootstrap,
+            Admin as EnvoyAdmin, Bootstrap as EnvoyBootstrap,
         },
         core::v3::{
+            address,
             grpc_service::{EnvoyGrpc, TargetSpecifier as EnvoyGrpcTargetSpecifier},
             ApiConfigSource as EnvoyApiConfigSource, GrpcService as EnvoyGrpcService, Node as EnvoyNode,
         },
+        metrics::v3::stats_sink::ConfigType,
     };
 
     impl Bootstrap {
@@ -136,15 +154,15 @@ mod envoy_conversions {
                 cluster_manager,
                 hds_config,
                 flags_path,
-                stats_sinks,
+                // stats_sinks,
                 deferred_stat_options,
                 stats_config,
-                stats_flush_interval,
+                // stats_flush_interval,
                 watchdog,
                 watchdogs,
                 tracing,
                 layered_runtime,
-                admin,
+                //admin,
                 overload_manager,
                 enable_dispatcher_stats,
                 header_prefix,
@@ -173,7 +191,23 @@ mod envoy_conversions {
             let dynamic_resources =
                 dynamic_resources.map(DynamicResources::try_from).transpose().with_node("dynamic_resources")?;
             let node = node.map(Node::try_from).transpose().with_node("node")?;
-            Ok(Self { static_resources, node, dynamic_resources })
+            let admin = admin.map(Admin::try_from).transpose().with_node("admin")?;
+            let stats_flush_interval = stats_flush_interval
+                .map(|d| Duration::try_from(d).map(|d| d.0))
+                .transpose()
+                .with_node("stats_flush_interval")?;
+
+            let stats_sinks = stats_sinks
+                .into_iter()
+                .filter_map(|s| s.config_type)
+                .map(|c| {
+                    let ConfigType::TypedConfig(any_config) = c;
+                    StatsSink::try_from(any_config)
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .with_node("stats_sinks")?;
+
+            Ok(Self { static_resources, node, dynamic_resources, admin, stats_flush_interval, stats_sinks })
         }
     }
     impl TryFrom<EnvoyNode> for Node {
@@ -193,7 +227,7 @@ mod envoy_conversions {
             } = value;
             unsupported_field!(
                 // id,
-                cluster,
+                //cluster,
                 metadata,
                 dynamic_parameters,
                 locality,
@@ -204,7 +238,8 @@ mod envoy_conversions {
                 user_agent_version_type
             )?;
             let id = required!(id)?.into();
-            Ok(Self { id })
+            let cluster = required!(cluster)?.into();
+            Ok(Self { id, cluster_id: cluster })
         }
     }
     impl TryFrom<EnvoyDynamicResources> for DynamicResources {
@@ -244,25 +279,32 @@ mod envoy_conversions {
                 )?;
                 (|| -> Result<_, GenericError> {
                     let mut cluster_specifiers = Vec::new();
-                    for EnvoyGrpcService { timeout, initial_metadata, target_specifier, retry_policy: _ } in
+
+                    for EnvoyGrpcService { timeout, initial_metadata, target_specifier, retry_policy } in
                         required!(grpc_services)?
                     {
-                        unsupported_field!(timeout, initial_metadata)?;
+                        unsupported_field!(timeout, initial_metadata, retry_policy)?;
                         match required!(target_specifier)? {
                             EnvoyGrpcTargetSpecifier::EnvoyGrpc(EnvoyGrpc {
                                 cluster_name,
                                 authority,
                                 retry_policy,
-                                max_receive_message_length: _,
-                                skip_envoy_headers: _,
+                                max_receive_message_length,
+                                skip_envoy_headers,
                             }) => {
-                                unsupported_field!(authority, retry_policy).with_node("target_specifier")?;
+                                unsupported_field!(
+                                    authority,
+                                    retry_policy,
+                                    max_receive_message_length,
+                                    skip_envoy_headers
+                                )
+                                .with_node("target_specifier")?;
                                 let cluster_name = required!(cluster_name).with_node("target_specifier")?;
                                 cluster_specifiers.push(CompactString::from(cluster_name))
                             },
                             EnvoyGrpcTargetSpecifier::GoogleGrpc(_) => {
                                 return Err(GenericError::unsupported_variant("GoogleGrpc"))
-                                    .with_node("target_specifier")
+                                    .with_node("target_specifier");
                             },
                         }
                     }
@@ -282,6 +324,30 @@ mod envoy_conversions {
             let secrets = convert_vec!(secrets)?;
             let clusters = convert_vec!(clusters)?;
             Ok(Self { listeners, clusters, secrets })
+        }
+    }
+    impl TryFrom<EnvoyAdmin> for Admin {
+        type Error = GenericError;
+        fn try_from(envoy: EnvoyAdmin) -> Result<Self, Self::Error> {
+            let EnvoyAdmin {
+                access_log,
+                access_log_path,
+                profile_path,
+                address,
+                socket_options,
+                ignore_global_conn_limit,
+            } = envoy;
+            unsupported_field!(access_log, access_log_path, profile_path, socket_options, ignore_global_conn_limit)?;
+            let address = match required!(address)?
+                .address
+                .ok_or(GenericError::MissingField("address is mandatory to setup admin interface"))?
+            {
+                address::Address::SocketAddress(sa) => sa.try_into(),
+                _ => {
+                    Err(GenericError::UnsupportedVariant(std::borrow::Cow::Borrowed("Only SocketAddress is supported")))
+                },
+            }?;
+            Ok(Self { address })
         }
     }
 }
