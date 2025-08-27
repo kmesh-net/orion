@@ -20,7 +20,7 @@
 
 use std::str::FromStr;
 
-use envoy_data_plane_api::envoy::{
+use orion_data_plane_api::envoy_data_plane_api::envoy::{
     config::accesslog::v3::{access_log::ConfigType, AccessLog as EnvoyAccessLog},
     extensions::access_loggers::{
         file::v3::FileAccessLog as EnvoyFileAccessLog,
@@ -28,11 +28,11 @@ use envoy_data_plane_api::envoy::{
     },
 };
 
-use envoy_data_plane_api::envoy::config::core::v3::SubstitutionFormatString as EnvoySubstitutionFormatString;
+use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::SubstitutionFormatString as EnvoySubstitutionFormatString;
 
-use envoy_data_plane_api::envoy::config::core::v3::substitution_format_string::Format;
+use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::substitution_format_string::Format;
 
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::extensions::access_loggers::{
         file::v3::file_access_log::AccessLogFormat as FileAccessLogFormat,
         stream::v3::{

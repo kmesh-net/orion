@@ -36,7 +36,7 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::TcpProxy;
     use crate::config::{common::*, network_filters::access_log::AccessLog};
-    use envoy_data_plane_api::envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy as EnvoyTcpProxy;
+    use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy as EnvoyTcpProxy;
 
     impl TryFrom<EnvoyTcpProxy> for TcpProxy {
         type Error = GenericError;

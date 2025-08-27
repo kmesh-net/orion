@@ -18,7 +18,7 @@
 //
 //
 use crate::config::{common::envoy_conversions::IsUsed, grpc::GrpcService, unsupported_field, GenericError};
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::extensions::stat_sinks::open_telemetry::v3::SinkConfig as EnvoySinkConfig, google::protobuf::Any,
     prost::Message,
 };
@@ -78,7 +78,7 @@ mod envoy_conversions {
                 use_tag_extracted_name
             )?;
 
-            let envoy_data_plane_api::envoy::extensions::stat_sinks::open_telemetry::v3::sink_config::ProtocolSpecifier::GrpcService(grpc_srv) = protocol_specifier.ok_or_else(|| GenericError::from_msg("ProtocolSpecifier unspecified"))?;
+            let orion_data_plane_api::envoy_data_plane_api::envoy::extensions::stat_sinks::open_telemetry::v3::sink_config::ProtocolSpecifier::GrpcService(grpc_srv) = protocol_specifier.ok_or_else(|| GenericError::from_msg("ProtocolSpecifier unspecified"))?;
             let grpc_service = GrpcService::try_from(grpc_srv)?;
             Ok(Self { grpc_service, prefix })
         }

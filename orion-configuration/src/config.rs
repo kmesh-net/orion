@@ -95,7 +95,7 @@ mod envoy_conversions {
         options::Options,
         Result,
     };
-    pub use envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
+    pub use orion_data_plane_api::envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
     use orion_data_plane_api::decode::from_serde_deserializer;
     use orion_error::{Context, ErrorInfo};
     use serde::Deserialize;

@@ -682,7 +682,7 @@ mod envoy_conversions {
         r#type::matcher::v3::RegexMatchAndSubstitute as EnvoyRegexMatchAndSubstitute,
     };
 
-    use envoy_data_plane_api::google::protobuf::BoolValue;
+    use orion_data_plane_api::envoy_data_plane_api::google::protobuf::BoolValue;
     use std::{num::NonZeroU16, str::FromStr};
 
     impl TryFrom<EnvoyHashPolicy> for HashPolicy {
@@ -1060,7 +1060,7 @@ mod envoy_conversions {
     }
     #[cfg(test)]
     mod tests {
-        use envoy_data_plane_api::envoy::config::route::v3::route_match::PathSpecifier as EnvoyPathSpecifier;
+        use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::PathSpecifier as EnvoyPathSpecifier;
 
         use super::*;
 

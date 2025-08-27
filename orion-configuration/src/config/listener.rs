@@ -301,7 +301,7 @@ mod envoy_conversions {
         util::{envoy_u32_to_u16, u32_to_u16},
     };
     use compact_str::CompactString;
-    use envoy_data_plane_api::{
+    use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::{
                 core::v3::TransportSocket as EnvoyTransportSocket,
@@ -668,7 +668,7 @@ mod envoy_conversions {
         let EnvoyTransportSocket { name, config_type } = transport_socket;
         let name = required!(name)?;
         let maybe_tls_config = match required!(config_type)? {
-            envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
+            orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
                 let transport_socket = SupportedEnvoyTransportSocket::try_from(any)?;
                 match transport_socket {
                     SupportedEnvoyTransportSocket::DownstreamTlsContext(x) => Some(x.try_into()).transpose(),

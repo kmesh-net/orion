@@ -569,7 +569,7 @@ mod envoy_conversions {
             let inner_tls_config = if let Some(ts) = transport_socket {
                 let config_type = ts.config_type.ok_or(GenericError::MissingField("config_type"))?;
                 match config_type {
-                    envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
+                    orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
                         match SupportedEnvoyTransportSocket::try_from(any)? {
                             SupportedEnvoyTransportSocket::UpstreamTlsContext(tls) => {
                                 Some(cluster::TlsConfig::try_from(tls)?)

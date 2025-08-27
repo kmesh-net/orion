@@ -22,14 +22,14 @@ use bounded_integer::BoundedU16;
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 
-use envoy_data_plane_api::envoy::{
+use orion_data_plane_api::envoy_data_plane_api::envoy::{
     extensions::filters::network::http_connection_manager::v3::http_connection_manager::Tracing as EnvoyTracing,
     r#type::v3::Percent,
 };
 
-use envoy_data_plane_api::{envoy::config::trace::v3::tracing::http, google::protobuf::Any};
+use orion_data_plane_api::envoy_data_plane_api::{envoy::config::trace::v3::tracing::http, google::protobuf::Any};
 
-use envoy_data_plane_api::envoy::config::trace::v3::OpenTelemetryConfig as EnvoyOpenTelemetryConfig;
+use orion_data_plane_api::envoy_data_plane_api::envoy::config::trace::v3::OpenTelemetryConfig as EnvoyOpenTelemetryConfig;
 
 use crate::config::grpc::GrpcService;
 
@@ -67,7 +67,7 @@ pub struct Tracing {
 mod envoy_conversions {
     use crate::config::{common::envoy_conversions::IsUsed, unsupported_field, GenericError};
     use compact_str::ToCompactString;
-    use envoy_data_plane_api::prost::Message;
+    use orion_data_plane_api::envoy_data_plane_api::prost::Message;
 
     use super::*;
 

@@ -19,7 +19,7 @@
 //
 
 use crate::config::{common::envoy_conversions::IsUsed, unsupported_field, GenericError};
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::config::core::v3::{grpc_service::GoogleGrpc as EnvoyGoogleGrpc, GrpcService as EnvoyGrpcService},
     google::protobuf::Duration as EnvoyDuration,
 };
@@ -100,10 +100,10 @@ mod envoy_conversions {
 
             let google_grpc = match target_specifier {
                 Some(target) => match target {
-                    envoy_data_plane_api::envoy::config::core::v3::grpc_service::TargetSpecifier::EnvoyGrpc(
+                    orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::grpc_service::TargetSpecifier::EnvoyGrpc(
                         _envoy_grpc,
                     ) => None,
-                    envoy_data_plane_api::envoy::config::core::v3::grpc_service::TargetSpecifier::GoogleGrpc(
+                    orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::grpc_service::TargetSpecifier::GoogleGrpc(
                         google_grpc,
                     ) => Some(GoogleGrpc::try_from(google_grpc)?),
                 },

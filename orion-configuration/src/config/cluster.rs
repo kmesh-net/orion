@@ -263,7 +263,7 @@ mod envoy_conversions {
         util::duration_from_envoy,
     };
     use compact_str::CompactString;
-    use envoy_data_plane_api::{
+    use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::{
                 cluster::v3::{
