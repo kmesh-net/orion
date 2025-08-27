@@ -18,22 +18,35 @@
 //
 //
 
-pub mod header_modifer;
-use header_modifer::{HeaderModifier, HeaderValueOption};
 pub mod header_matcher;
-use header_matcher::{HeaderMatcher, HeaderNames};
-
-pub mod route;
-use route::{Action, Connect, DirectResponseAction, RouteAction, RouteMatch, UpgradeAction, UpgradeActionType};
+pub mod header_modifer;
 pub mod http_filters;
-use http_filters::{FilterOverride, HttpFilter};
+pub mod route;
 
-use crate::config::{common::*, core::StringMatcher};
 use compact_str::CompactString;
 use exponential_backoff::Backoff;
-use http::{header, HeaderName, HeaderValue, StatusCode};
+use header_matcher::HeaderMatcher;
+use header_modifer::{HeaderModifier, HeaderValueOption};
+use http::{HeaderName, HeaderValue, StatusCode};
+use http_filters::{FilterOverride, HttpFilter};
+use route::{Action, RouteMatch};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr, time::Duration};
+
+use crate::config::{
+    common::*,
+    network_filters::{access_log::AccessLog, tracing::Tracing},
+};
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub struct XffSettings {
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub use_remote_address: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub skip_xff_append: bool,
+    #[serde(default)]
+    pub xff_num_trusted_hops: u32,
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct HttpConnectionManager {
@@ -46,6 +59,17 @@ pub struct HttpConnectionManager {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub enabled_upgrades: Vec<UpgradeType>,
     pub route_specifier: RouteSpecifier,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
+    pub access_log: Vec<AccessLog>,
+    #[serde(flatten)]
+    pub xff_settings: XffSettings,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub generate_request_id: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub preserve_external_request_id: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub always_set_request_id_in_response: bool,
+    pub tracing: Option<Tracing>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -86,16 +110,6 @@ pub struct RouteConfiguration {
     #[serde(with = "http_serde_ext::header_name::vec")]
     pub request_headers_to_remove: Vec<HeaderName>,
     pub virtual_hosts: Vec<VirtualHost>,
-}
-
-impl RouteConfiguration {
-    pub fn expand_routes(&mut self, hcm_enabled_upgrades: &[UpgradeType]) {
-        for virtual_host in &mut self.virtual_hosts {
-            let expanded_routes =
-                virtual_host.routes.iter().flat_map(|route| route.unfold_upgrades(hcm_enabled_upgrades)).collect();
-            virtual_host.routes = expanded_routes;
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -235,7 +249,7 @@ impl MatchHost {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct VirtualHost {
     pub name: CompactString,
     pub domains: Vec<MatchHost>,
@@ -367,98 +381,10 @@ pub struct Route {
     pub action: Action,
 }
 
-impl Route {
-    fn connect_matcher() -> HeaderMatcher {
-        HeaderMatcher {
-            header_name: HeaderNames::Method,
-            invert_match: false,
-            treat_missing_header_as_empty: false,
-            header_matcher: StringMatcher {
-                ignore_case: true,
-                pattern: crate::config::core::StringMatcherPattern::Exact("CONNECT".into()),
-            },
-        }
-    }
-    fn connection_header_matcher() -> HeaderMatcher {
-        HeaderMatcher {
-            header_name: HeaderNames::NormalHeader(header::CONNECTION),
-            invert_match: false,
-            treat_missing_header_as_empty: false,
-            header_matcher: StringMatcher {
-                ignore_case: true,
-                pattern: crate::config::core::StringMatcherPattern::Contains("upgrade".into()),
-            },
-        }
-    }
-    fn upgrade_header_matcher_for(upgrade_type: CompactString) -> HeaderMatcher {
-        HeaderMatcher {
-            header_name: HeaderNames::NormalHeader(header::UPGRADE),
-            invert_match: false,
-            treat_missing_header_as_empty: false,
-            header_matcher: StringMatcher {
-                ignore_case: true,
-                pattern: crate::config::core::StringMatcherPattern::Exact(upgrade_type),
-            },
-        }
-    }
-    pub fn unfold_upgrades(&self, hcm_enabled_upgrades: &[UpgradeType]) -> Vec<Route> {
-        match &self.action {
-            Action::Route(RouteAction {
-                cluster_specifier,
-                cluster_not_found_response_code,
-                rewrite,
-                upgrade_config,
-                ..
-            }) => {
-                let mut routes = Vec::new();
-                let mut ws_route = self.clone();
-                ws_route.route_match.headers.extend(vec![
-                    Route::connection_header_matcher(),
-                    Route::upgrade_header_matcher_for("websocket".into()),
-                ]);
-                if upgrade_config.is_some_and(|cfg| cfg.is_websocket_enabled(hcm_enabled_upgrades)) {
-                    let handler = UpgradeAction {
-                        cluster_specifier: cluster_specifier.clone(),
-                        cluster_not_found_response_code: *cluster_not_found_response_code,
-                        rewrite: rewrite.clone(),
-                        upgrade_type: UpgradeActionType::Websocket,
-                    };
-                    ws_route.action = Action::Upgrade(handler);
-                } else {
-                    let handler = DirectResponseAction { status: StatusCode::UPGRADE_REQUIRED, body: None };
-                    ws_route.action = Action::DirectResponse(handler);
-                }
-                routes.push(ws_route);
-
-                let mut connect_route = self.clone();
-                connect_route.route_match.headers.insert(0, Route::connect_matcher());
-                if upgrade_config.is_some_and(|cfg| cfg.is_connect_enabled(hcm_enabled_upgrades)) {
-                    let connect_ctx = upgrade_config
-                        .and_then(|cfg| cfg.connect)
-                        .and_then(|connect| match connect {
-                            Connect::Enabled { allow_post } => Some(UpgradeActionType::Connect { allow_post }),
-                            Connect::Disabled => None,
-                        })
-                        .unwrap_or(UpgradeActionType::Connect { allow_post: false });
-                    let handler = UpgradeAction {
-                        cluster_specifier: cluster_specifier.clone(),
-                        cluster_not_found_response_code: *cluster_not_found_response_code,
-                        rewrite: rewrite.clone(),
-                        upgrade_type: connect_ctx,
-                    };
-                    connect_route.action = Action::Upgrade(handler);
-                } else {
-                    let handler = DirectResponseAction { status: StatusCode::FORBIDDEN, body: None };
-                    connect_route.action = Action::DirectResponse(handler);
-                }
-                routes.push(connect_route);
-
-                routes.push(self.clone());
-                routes
-            },
-            _ => vec![self.clone()],
-        }
-    }
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct UpgradeConfig {
+    upgrade_type: String,
+    enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -479,12 +405,8 @@ pub enum ConfigSourceSpecifier {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::cluster::ClusterSpecifier;
 
-    use super::{
-        route::{PathMatcher, UpgradeConfig},
-        *,
-    };
+    use super::*;
     use std::str::FromStr;
 
     #[inline]
@@ -645,104 +567,6 @@ mod tests {
         assert!(MatchHostScoreLPM::Wildcard < MatchHostScoreLPM::Suffix("foo.bar.test.com".len()));
         assert!(MatchHostScoreLPM::Wildcard == MatchHostScoreLPM::Wildcard);
     }
-
-    #[test]
-    fn test_unfold_upgrades() {
-        let route_a = Route {
-            name: "test_route".to_string(),
-            response_header_modifier: HeaderModifier::default(),
-            request_headers_to_add: vec![],
-            request_headers_to_remove: vec![],
-            route_match: RouteMatch {
-                path_matcher: Some(PathMatcher {
-                    specifier: route::PathSpecifier::Exact("/chat".into()),
-                    ignore_case: true,
-                }),
-                headers: vec![HeaderMatcher {
-                    header_name: HeaderNames::NormalHeader(HeaderName::from_static("my-header")),
-                    invert_match: false,
-                    treat_missing_header_as_empty: false,
-                    header_matcher: StringMatcher {
-                        ignore_case: true,
-                        pattern: crate::config::core::StringMatcherPattern::Exact("value".into()),
-                    },
-                }],
-            },
-            typed_per_filter_config: std::collections::HashMap::<CompactString, FilterOverride>::new(),
-            action: Action::Route(RouteAction {
-                cluster_specifier: ClusterSpecifier::Cluster("cluster-a".into()),
-                cluster_not_found_response_code: StatusCode::NOT_FOUND,
-                timeout: None,
-                rewrite: None,
-                retry_policy: None,
-                upgrade_config: Some(UpgradeConfig { websocket: Some(route::Websocket::Enabled), connect: None }),
-                hash_policy: vec![],
-            }),
-        };
-        let routes_a = route_a.unfold_upgrades(&[]);
-        assert_eq!(routes_a.len(), 3);
-        match routes_a.as_slice() {
-            [ws_upgrade_route, reject_connect_route, vanilla_http_route] => {
-                assert!(
-                    matches!(ws_upgrade_route.action, Action::Upgrade(_)),
-                    "expected first route to handle the ws upgrade"
-                );
-                assert_eq!(
-                    ws_upgrade_route.route_match.headers.len(),
-                    vanilla_http_route.route_match.headers.len() + 2,
-                    "expected additional header checks in ws upgrade route matcher"
-                );
-                assert!(
-                    matches!(reject_connect_route.action, Action::DirectResponse(_)),
-                    "expected second route to reject CONNECT requests"
-                );
-                assert_eq!(
-                    vanilla_http_route, &route_a,
-                    "expected to retain original http route when derving upgrade route matchers"
-                );
-            },
-            _ => unimplemented!("expected three dervied routes"),
-        }
-        let route_b = Route {
-            route_match: RouteMatch {
-                path_matcher: Some(PathMatcher {
-                    specifier: route::PathSpecifier::Exact("/interesting".into()),
-                    ignore_case: true,
-                }),
-                headers: vec![],
-            },
-            action: Action::Route(RouteAction {
-                cluster_specifier: ClusterSpecifier::Cluster("cluster-a".into()),
-                cluster_not_found_response_code: StatusCode::NOT_FOUND,
-                timeout: None,
-                rewrite: None,
-                retry_policy: None,
-                upgrade_config: None,
-                hash_policy: vec![],
-            }),
-            ..route_a.clone()
-        };
-        let routes_b = route_b.unfold_upgrades(&[UpgradeType::Connect]);
-        assert_eq!(routes_b.len(), 3);
-        match routes_b.as_slice() {
-            [ws_reject_route, connect_matcher, vanilla_http_route] => {
-                assert!(
-                    matches!(ws_reject_route.action, Action::DirectResponse(_)),
-                    "expected first route to reject WS upgrades"
-                );
-                assert_eq!(
-                    connect_matcher.route_match.headers.len(),
-                    vanilla_http_route.route_match.headers.len() + 1,
-                    "expected a special header matcher to detect connect method"
-                );
-                assert_eq!(
-                    vanilla_http_route, &route_b,
-                    "expected to retain original http route when derving the connec upgrade matcher"
-                );
-            },
-            _ => unimplemented!("expected three dervied routes"),
-        }
-    }
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -755,10 +579,11 @@ mod envoy_conversions {
             SupportedEnvoyHttpFilter,
         },
         CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn,
-        RetryPolicy, Route, RouteConfiguration, RouteSpecifier, UpgradeType, VirtualHost,
+        RetryPolicy, Route, RouteConfiguration, RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
     };
     use crate::config::{
         common::*,
+        network_filters::access_log::AccessLog,
         util::{duration_from_envoy, http_status_from},
     };
     use compact_str::CompactString;
@@ -782,7 +607,7 @@ mod envoy_conversions {
     use std::{collections::HashMap, str::FromStr, time::Duration};
 
     impl HttpConnectionManager {
-        fn ensure_corresponding_filter_exists(
+        pub(crate) fn ensure_corresponding_filter_exists(
             filter_override: (&CompactString, &FilterOverride),
             http_filters: &[HttpFilter],
         ) -> Result<(), GenericError> {
@@ -868,7 +693,7 @@ mod envoy_conversions {
                 // stat_prefix,
                 // http_filters,
                 add_user_agent,
-                tracing,
+                // tracing,
                 common_http_protocol_options,
                 http_protocol_options,
                 http2_protocol_options,
@@ -882,20 +707,20 @@ mod envoy_conversions {
                 request_headers_timeout,
                 drain_timeout,
                 delayed_close_timeout,
-                access_log,
+                // access_log,
                 access_log_flush_interval,
                 flush_access_log_on_new_request,
                 access_log_options,
-                use_remote_address,
-                xff_num_trusted_hops,
+                // use_remote_address,
+                // xff_num_trusted_hops,
                 original_ip_detection_extensions,
                 early_header_mutation_extensions,
                 internal_address_config,
-                skip_xff_append,
+                // skip_xff_append,
                 via,
-                generate_request_id,
-                preserve_external_request_id,
-                always_set_request_id_in_response,
+                // generate_request_id,
+                // preserve_external_request_id,
+                // always_set_request_id_in_response,
                 forward_client_cert_details,
                 set_current_client_cert_details,
                 proxy_100_continue,
@@ -925,7 +750,7 @@ mod envoy_conversions {
                 );
             }
             let codec_type = codec_type.try_into().with_node("codec")?;
-            let route_specifier = route_specifier.try_into()?;
+            let route_specifier = RouteSpecifier::try_from(route_specifier)?;
             let request_timeout = request_timeout
                 .map(duration_from_envoy)
                 .transpose()
@@ -933,6 +758,7 @@ mod envoy_conversions {
                 .with_node("request_timeout")?;
             let enabled_upgrades = upgrade_configs
                 .iter()
+                .filter(|upgrade_config| upgrade_config.enabled.map(|enabled| enabled.value).unwrap_or(true))
                 .map(|upgrade_config| upgrade_config.upgrade_type.clone().try_into())
                 .collect::<Result<Vec<UpgradeType>, _>>()?;
             let mut http_filters: Vec<SupportedEnvoyHttpFilter> = convert_non_empty_vec!(http_filters)?;
@@ -975,7 +801,34 @@ mod envoy_conversions {
                     }
                 }
             }
-            Ok(Self { codec_type, http_filters, enabled_upgrades, route_specifier, request_timeout })
+
+            let access_log =
+                access_log.iter().map(|al| AccessLog::try_from(al.clone())).collect::<Result<Vec<_>, _>>()?;
+
+            let xff_settings = XffSettings {
+                use_remote_address: use_remote_address.map(|v| v.value).unwrap_or(false),
+                skip_xff_append,
+                xff_num_trusted_hops,
+            };
+
+            let tracing = tracing
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|_| GenericError::from_msg("failed to convert tracing object"))?;
+
+            Ok(Self {
+                codec_type,
+                http_filters,
+                enabled_upgrades,
+                route_specifier,
+                request_timeout,
+                access_log,
+                xff_settings,
+                generate_request_id: generate_request_id.map(|v| v.value).unwrap_or(true),
+                preserve_external_request_id,
+                always_set_request_id_in_response,
+                tracing,
+            })
         }
     }
 
@@ -1020,8 +873,9 @@ mod envoy_conversions {
                     Self::RouteConfig(envoy.try_into().with_node("route_config")?)
                 },
                 Some(EnvoyRouteSpecifier::ScopedRoutes(_)) => {
-                    return Err(GenericError::unsupported_variant("ScopedRoutes"))
+                    return Err(GenericError::unsupported_variant("ScopedRoutes"));
                 },
+
                 None => return Err(GenericError::MissingField("rds or route_config")),
             })
         }
@@ -1308,6 +1162,7 @@ mod envoy_conversions {
                 action,
             } = envoy;
             unsupported_field!(
+                //name,
                 // r#match,
                 metadata,
                 decorator,
