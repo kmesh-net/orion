@@ -44,7 +44,8 @@ ci-parallel: init
 
 init:
 	@echo "Initializing git submodules..."
-	@git submodule update --init --recursive
+	@git submodule init
+	@git submodule update --recursive
 
 docker-build: init
 	@echo "Building Docker image: orion-proxy"
