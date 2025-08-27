@@ -30,6 +30,11 @@ pub struct LocalRateLimit {
         default = "default_statuscode_deser"
     )]
     pub status: StatusCode,
+    pub token_bucket: Option<TokenBucket>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TokenBucket {
     pub max_tokens: u32,
     pub tokens_per_fill: u32,
     #[serde(with = "humantime_serde")]
@@ -46,8 +51,7 @@ fn is_default_statuscode(code: &StatusCode) -> bool {
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
-    #![allow(deprecated)]
-    use super::LocalRateLimit;
+    use super::{LocalRateLimit, TokenBucket};
     use crate::config::{
         common::*,
         util::{duration_from_envoy, http_status_from_envoy},
@@ -108,17 +112,24 @@ mod envoy_conversions {
                 .transpose()
                 .with_node("status")?
                 .unwrap_or(StatusCode::TOO_MANY_REQUESTS);
-            let EnvoyTokenBucket { max_tokens, tokens_per_fill, fill_interval } = required!(token_bucket)?;
-            let max_tokens = required!(max_tokens).with_node("token_bucket")?;
-            let tokens_per_fill = tokens_per_fill.map(|t| t.value).unwrap_or(1);
-            if tokens_per_fill == 0 {
-                return Err(GenericError::from_msg("tokens per fill can't be zero")
-                    .with_node("tokens_per_fill")
-                    .with_node("token_bucket"));
+            if let Some(tb) = token_bucket {
+                let EnvoyTokenBucket { max_tokens, tokens_per_fill, fill_interval } = tb;
+                let max_tokens = required!(max_tokens).with_node("token_bucket")?;
+                let tokens_per_fill = tokens_per_fill.map(|t| t.value).unwrap_or(1);
+                if tokens_per_fill == 0 {
+                    return Err(GenericError::from_msg("tokens per fill can't be zero")
+                        .with_node("tokens_per_fill")
+                        .with_node("token_bucket"));
+                }
+                let fill_interval = duration_from_envoy(required!(fill_interval)?)
+                    .with_node("fill_interval")
+                    .with_node("token_bucket")?;
+                return Ok(Self {
+                    status,
+                    token_bucket: Some(TokenBucket { max_tokens, tokens_per_fill, fill_interval }),
+                });
             }
-            let fill_interval =
-                duration_from_envoy(required!(fill_interval)?).with_node("fill_interval").with_node("token_bucket")?;
-            Ok(Self { status, max_tokens, tokens_per_fill, fill_interval })
+            Ok(Self { status, token_bucket: None })
         }
     }
 }

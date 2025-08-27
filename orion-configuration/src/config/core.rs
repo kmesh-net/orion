@@ -26,6 +26,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
+    hash::{Hash, Hasher},
     io::{BufRead, BufReader, Read},
 };
 base64_serde_type!(Base64Standard, STANDARD);
@@ -123,7 +124,7 @@ impl BufRead for DataSourceReader<'_> {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct StringMatcher {
     // does not apply to regex
     // https://www.envoyproxy.io/docs/envoy/latest/api-v3/type/matcher/v3/string.proto#type-matcher-v3-stringmatcher
@@ -222,6 +223,15 @@ impl PartialEq for StringMatcherPattern {
 }
 
 impl Eq for StringMatcherPattern {}
+
+impl Hash for StringMatcherPattern {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Regex(r) => r.as_str().hash(state),
+            Self::Exact(s) | Self::Prefix(s) | Self::Suffix(s) | Self::Contains(s) => s.hash(state),
+        }
+    }
+}
 
 #[cfg(feature = "envoy-conversions")]
 pub(crate) use envoy_conversions::*;

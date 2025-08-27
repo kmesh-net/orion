@@ -24,7 +24,7 @@ use http::{HeaderMap, HeaderName, Method, Request, Response, Uri};
 use serde::{de::Visitor, Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HeaderNames {
     Method,
     Path,
@@ -94,7 +94,7 @@ impl FromStr for HeaderNames {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct HeaderMatcher {
     #[serde(rename = "name")]
     pub header_name: HeaderNames,
