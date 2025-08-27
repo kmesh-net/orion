@@ -20,7 +20,7 @@
 
 use core::result::Result::Err;
 
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{
         config::{
             cluster::v3::Cluster as EnvoyCluster, endpoint::v3::ClusterLoadAssignment as EnvoyClusterLoadAssignment,

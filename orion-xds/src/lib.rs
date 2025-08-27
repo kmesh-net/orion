@@ -25,7 +25,7 @@ use crate::xds::{
     bindings::AggregatedDiscoveryType,
     client::{DeltaDiscoveryClient, DiscoveryClientBuilder, RETRY_INTERVAL},
 };
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, tonic,
 };
 use http::{Request, Response};
@@ -40,7 +40,7 @@ use tracing::info;
 use xds::client::{DeltaClientBackgroundWorker, DeltaDiscoverySubscriptionManager};
 
 pub mod grpc_deps {
-    pub use envoy_data_plane_api::{
+    pub use orion_data_plane_api::envoy_data_plane_api::{
         tonic::{
             Response, Status,
             body::{BoxBody as GrpcBody, boxed as to_grpc_body},

@@ -20,7 +20,7 @@
 
 use super::model::{ResourceId, ResourceVersion, TypeUrl};
 
-use envoy_data_plane_api::{
+use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{config::core::v3::Node as EnvoyNode, service::discovery::v3::DeltaDiscoveryRequest},
     google::rpc::Status,
     tonic,

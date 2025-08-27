@@ -1,5 +1,5 @@
 #![allow(clippy::expect_used)]
-use envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::CodecType;
+use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::network::http_connection_manager::v3::http_connection_manager::CodecType;
 use orion_xds::xds::{
     resources,
     server::{ServerAction, start_aggregate_server},
