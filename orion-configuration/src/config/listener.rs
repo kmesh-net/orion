@@ -359,6 +359,7 @@ mod envoy_conversions {
                 ignore_global_conn_limit,
                 listener_specifier,
                 bypass_overload_manager,
+                fcds_config,
             } = envoy;
             unsupported_field!(
                 // name,
@@ -393,7 +394,8 @@ mod envoy_conversions {
                 enable_mptcp,
                 ignore_global_conn_limit,
                 listener_specifier,
-                bypass_overload_manager
+                bypass_overload_manager,
+                fcds_config
             )?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {

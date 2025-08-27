@@ -360,8 +360,8 @@ pub mod envoy_conversions {
     impl TryFrom<EnvoySocketAddress> for Address {
         type Error = GenericError;
         fn try_from(value: EnvoySocketAddress) -> Result<Self, Self::Error> {
-            let EnvoySocketAddress { protocol, address, resolver_name, ipv4_compat, port_specifier } = value;
-            unsupported_field!(protocol, resolver_name, ipv4_compat)?;
+            let EnvoySocketAddress { protocol, address, resolver_name, ipv4_compat, port_specifier, network_namespace_filepath } = value;
+            unsupported_field!(protocol, resolver_name, ipv4_compat, network_namespace_filepath)?;
             let address = required!(address)?;
             let port_specifier = match required!(port_specifier)? {
                 PortSpecifier::NamedPort(_) => Err(GenericError::unsupported_variant("NamedPort")),

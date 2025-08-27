@@ -131,10 +131,11 @@ mod envoy_conversions {
                 SupportedEnvoyListenerFilter::TlsInspector(EnvoyTlsInspector {
                     enable_ja3_fingerprinting,
                     initial_read_buffer_size,
+                    enable_ja4_fingerprinting,
                 }) => {
                     // both fields are optional, and unsupported, but serde_yaml requires that at least one field is populated
                     // so allow for enable_ja3_fingerprinting: false
-                    unsupported_field!(initial_read_buffer_size)?;
+                    unsupported_field!(initial_read_buffer_size, enable_ja4_fingerprinting)?;
                     if enable_ja3_fingerprinting.is_some_and(|b| b.value) {
                         return Err(GenericError::UnsupportedField("enable_ja3_fingerprinting"));
                     }

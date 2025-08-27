@@ -58,6 +58,7 @@ mod envoy_conversions {
                 access_log_options,
                 cluster_specifier,
                 backoff_options,
+                proxy_protocol_tlvs
             } = value;
             unsupported_field!(
                 // stat_prefix,
@@ -74,7 +75,8 @@ mod envoy_conversions {
                 access_log_flush_interval,
                 flush_access_log_on_connected,
                 access_log_options,
-                backoff_options // cluster_specifier
+                backoff_options, // cluster_specifier
+                proxy_protocol_tlvs
             )?;
             if stat_prefix.is_used() {
                 tracing::warn!("unsupported field stat_prefix used in tcp_proxy. This field will be ignored.");

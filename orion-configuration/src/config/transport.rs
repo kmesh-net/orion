@@ -359,13 +359,15 @@ mod envoy_conversions {
                 cipher_suites,
                 ecdh_curves,
                 signature_algorithms,
+                compliance_policies,
             } = value;
             unsupported_field!(
                 // tls_minimum_protocol_version,
                 // tls_maximum_protocol_version,
                 cipher_suites,
                 ecdh_curves,
-                signature_algorithms
+                signature_algorithms,
+                compliance_policies
             )?;
 
             let tls_minimum_protocol_version = EnvoyTlsProtocol::from_i32(tls_minimum_protocol_version)

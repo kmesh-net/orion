@@ -1017,6 +1017,7 @@ mod envoy_conversions {
                 tls_context,
                 dynamic_metadata,
                 path_specifier,
+                filter_state,
             } = value;
             unsupported_field!(
                 // case_sensitive,
@@ -1025,7 +1026,8 @@ mod envoy_conversions {
                 // query_parameters,
                 grpc,
                 tls_context,
-                dynamic_metadata // path_specifier
+                dynamic_metadata, // path_specifier
+                filter_state
             )?;
             let ignore_case = !case_sensitive.map(|v| v.value).unwrap_or(true);
             let path_specifier = path_specifier.map(PathSpecifier::try_from).transpose().with_node("path_specifier")?;
