@@ -23,7 +23,7 @@ pub(crate) use envoy_conversions::*;
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
-    use crate::{config::common::GenericError, config::WithNodeOnResult};
+    use crate::config::{common::GenericError, WithNodeOnResult};
     use http::StatusCode;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::r#type::v3::HttpStatus as EnvoyHttpStatus,
@@ -38,6 +38,18 @@ mod envoy_conversions {
     #[allow(clippy::needless_pass_by_value)]
     pub fn envoy_u32_to_u16(value: UInt32Value) -> Result<u16, GenericError> {
         u32_to_u16(value.value)
+    }
+
+    pub fn parse_cluster_not_found_response_code<T: TryInto<u16> + Display + Copy>(
+        status: T,
+    ) -> Result<StatusCode, GenericError> {
+        let status = status.try_into().map_err(|_| GenericError::from_msg(format!("invalid status code {status}")))?;
+        match status {
+            0 => http_status_from(503),
+            1 => http_status_from(404),
+            2 => http_status_from(500),
+            _ => Err(GenericError::from_msg(format!("invalid status code {status}"))),
+        }
     }
 
     pub fn http_status_from<T: TryInto<u16> + Display + Copy>(status: T) -> Result<StatusCode, GenericError> {

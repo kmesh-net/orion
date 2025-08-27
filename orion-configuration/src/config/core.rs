@@ -237,16 +237,17 @@ impl Hash for StringMatcherPattern {
 pub(crate) use envoy_conversions::*;
 
 #[cfg(feature = "envoy-conversions")]
-mod envoy_conversions {
+pub mod envoy_conversions {
     #![allow(deprecated)]
     use super::{DataSource, StringMatcher, StringMatcherPattern};
     use crate::config::common::*;
+    use http::uri::Authority;
     use ipnet::IpNet;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::core::v3::{
             address::Address as EnvoyAddress, data_source::Specifier as EnvoySpecifier, socket_address::PortSpecifier,
             Address as EnvoyOuterAddress, CidrRange as EnvoyCidrRange, DataSource as EnvoyDataSource,
-            SocketAddress as EnvoySocketAddress,
+            Pipe as EnvoyPipe, SocketAddress as EnvoySocketAddress,
         },
         r#type::matcher::v3::{
             string_matcher::MatchPattern as EnvoyStringMatcherPattern, RegexMatcher as EnvoyRegexMatcher,
@@ -254,6 +255,7 @@ mod envoy_conversions {
         },
     };
     use regex::{Regex, RegexBuilder};
+    use serde::{Deserialize, Serialize};
     use std::net::SocketAddr;
 
     pub struct CidrRange(IpNet);
@@ -264,10 +266,32 @@ mod envoy_conversions {
         }
     }
 
-    pub struct Address(SocketAddr);
+    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Clone)]
+    pub enum Address {
+        Socket(String, u16),
+        Pipe(String, u32),
+    }
+
     impl Address {
-        pub fn into_socket_addr(self) -> SocketAddr {
-            self.0
+        pub fn into_addr(self) -> Result<SocketAddr, GenericError> {
+            match self {
+                Self::Socket(address, port) => format!("{address}:{port}")
+                    .parse()
+                    .map_err(|e| {
+                        GenericError::from_msg_with_cause(format!("failed to parse \"{address}\" as an ip adress"), e)
+                    })
+                    .with_node(address),
+                _ => Err(GenericError::from_msg(format!("only socket addresses are supported at the moment "))),
+            }
+        }
+    }
+
+    impl std::fmt::Display for Address {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Socket(address, port) => f.write_str(&format!("{address}:{port}")),
+                Self::Pipe(path, _) => f.write_str(&format!("{path}")),
+            }
         }
     }
 
@@ -310,23 +334,33 @@ mod envoy_conversions {
         fn try_from(value: EnvoyAddress) -> Result<Self, Self::Error> {
             match value {
                 EnvoyAddress::SocketAddress(sock) => sock.try_into(),
-                EnvoyAddress::Pipe(_) => Err(GenericError::unsupported_variant("Pipe")),
+                EnvoyAddress::Pipe(pipe) => pipe.try_into(),
                 EnvoyAddress::EnvoyInternalAddress(_) => Err(GenericError::unsupported_variant("EnvoyInternalAddress")),
             }
+        }
+    }
+
+    impl TryFrom<EnvoyPipe> for Address {
+        type Error = GenericError;
+        fn try_from(value: EnvoyPipe) -> Result<Self, Self::Error> {
+            let EnvoyPipe { path, mode } = value;
+            Ok(Address::Pipe(path, mode))
+        }
+    }
+
+    impl TryFrom<&Authority> for Address {
+        type Error = GenericError;
+        fn try_from(value: &Authority) -> Result<Self, Self::Error> {
+            let port =
+                value.port_u16().ok_or(GenericError::from_msg(format!("Authority doesn't have port {value}")))?;
+            Ok(Address::Socket(value.host().to_owned(), port))
         }
     }
 
     impl TryFrom<EnvoySocketAddress> for Address {
         type Error = GenericError;
         fn try_from(value: EnvoySocketAddress) -> Result<Self, Self::Error> {
-            let EnvoySocketAddress {
-                protocol,
-                address,
-                resolver_name,
-                ipv4_compat,
-                port_specifier,
-                network_namespace_filepath: _,
-            } = value;
+            let EnvoySocketAddress { protocol, address, resolver_name, ipv4_compat, port_specifier } = value;
             unsupported_field!(protocol, resolver_name, ipv4_compat)?;
             let address = required!(address)?;
             let port_specifier = match required!(port_specifier)? {
@@ -337,17 +371,15 @@ mod envoy_conversions {
                 GenericError::from_msg(format!("failed to convert {port_specifier} to a port number"))
                     .with_node("port_specifier")
             })?;
-            let ip = address.parse::<std::net::IpAddr>().map_err(|e| {
-                GenericError::from_msg_with_cause(format!("failed to parse \"{address}\" as an ip adress"), e)
-                    .with_node("address")
-            })?;
-            Ok(Address(SocketAddr::new(ip, port)))
+
+            Ok(Address::Socket(address, port))
         }
     }
     impl TryFrom<EnvoyDataSource> for DataSource {
         type Error = GenericError;
         fn try_from(envoy: EnvoyDataSource) -> Result<Self, Self::Error> {
-            let EnvoyDataSource { specifier, watched_directory: _ } = envoy;
+            let EnvoyDataSource { specifier, watched_directory } = envoy;
+            unsupported_field!(watched_directory)?;
             let specifier = required!(specifier)?;
             Ok(match specifier {
                 EnvoySpecifier::InlineBytes(b) => Self::InlineBytes(b),

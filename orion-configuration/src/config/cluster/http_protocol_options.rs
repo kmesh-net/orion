@@ -298,7 +298,6 @@ mod envoy_conversions {
                 send_fully_qualified_url,
                 use_balsa_parser,
                 allow_custom_methods,
-                ignore_http_11_upgrade,
             } = value;
             unsupported_field!(
                 allow_absolute_url,
@@ -310,8 +309,7 @@ mod envoy_conversions {
                 override_stream_error_on_invalid_http_message,
                 send_fully_qualified_url,
                 use_balsa_parser,
-                allow_custom_methods,
-                ignore_http_11_upgrade
+                allow_custom_methods
             )?;
 
             Ok(Self {})
