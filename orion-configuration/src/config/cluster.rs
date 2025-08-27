@@ -25,23 +25,25 @@ pub use http_protocol_options::HttpProtocolOptions;
 pub mod cluster_specifier;
 pub use cluster_specifier::ClusterSpecifier;
 
+use crate::config::core::Address;
+
 use super::{
-    common::is_default,
+    common::{is_default, MetadataKey},
     secret::TlsCertificate,
-    transport::{BindDevice, CommonTlsValidationContext, TlsParameters},
+    transport::{BindDevice, CommonTlsValidationContext, TlsParameters, UpstreamTransportSocketConfig},
 };
 
 use compact_str::CompactString;
+use http::HeaderName;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt::Display, net::SocketAddr, num::NonZeroU32, time::Duration};
-
+use std::{fmt::Display, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Cluster {
     pub name: CompactString,
     #[serde(flatten)]
     pub discovery_settings: ClusterDiscoveryType,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub tls_config: Option<TlsConfig>,
+    pub transport_socket: Option<UpstreamTransportSocketConfig>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub bind_device: Option<BindDevice>,
     #[serde(skip_serializing_if = "is_default", default)]
@@ -53,6 +55,9 @@ pub struct Cluster {
     #[serde(with = "humantime_serde")]
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub connect_timeout: Option<Duration>,
+    #[serde(with = "humantime_serde")]
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub cleanup_interval: Option<Duration>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,7 +107,7 @@ pub struct LocalityLbEndpoints {
 
 fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) -> Result<S::Ok, S::Error> {
     if value.iter().all(|s| is_default(&s.health_status) && s.load_balancing_weight == NonZeroU32::MIN) {
-        value.iter().map(|endpoint| endpoint.address).collect::<Vec<_>>().serialize(serializer)
+        value.iter().map(|endpoint| endpoint.address.clone()).collect::<Vec<_>>().serialize(serializer)
     } else {
         value.serialize(serializer)
     }
@@ -112,7 +117,7 @@ fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) 
 #[serde(untagged)]
 enum LbEndpointVecDeser {
     LbEndpoints(Vec<LbEndpoint>),
-    Address(Vec<SocketAddr>),
+    Address(Vec<Address>),
 }
 
 impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
@@ -139,7 +144,7 @@ fn deser_through<'de, In: Deserialize<'de>, Out: From<In>, D: Deserializer<'de>>
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LbEndpoint {
-    pub address: SocketAddr,
+    pub address: Address,
     #[serde(skip_serializing_if = "is_default", default)]
     pub health_status: HealthStatus,
     pub load_balancing_weight: NonZeroU32,
@@ -170,8 +175,38 @@ impl Display for HealthStatus {
 pub enum ClusterDiscoveryType {
     #[serde(rename = "static")]
     Static(ClusterLoadAssignment),
+    #[serde(rename = "stict_dns")]
+    StrictDns(ClusterLoadAssignment),
+    // The ClusterLoadAssignment is optional for EDS clusters since it cannot be
+    // configured statically in the bootstrap, but we need to assign it to the
+    // serializable type when returning the EDS cluster running configuration
+    // through admin config_dump API
     #[serde(rename = "EDS")]
-    Eds,
+    Eds(Option<ClusterLoadAssignment>),
+    #[serde(rename = "ORIGINAL_DST")]
+    OriginalDst(OriginalDstConfig),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OriginalDstRoutingMethod {
+    #[serde(rename = "use_http_header")]
+    HttpHeader {
+        #[serde(with = "http_serde_ext::header_name::option", skip_serializing_if = "Option::is_none", default)]
+        http_header_name: Option<HeaderName>,
+    },
+    #[serde(rename = "metadata_key")]
+    MetadataKey(MetadataKey),
+    #[default]
+    Default,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct OriginalDstConfig {
+    #[serde(flatten)]
+    pub routing_method: OriginalDstRoutingMethod,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub upstream_port_override: Option<u16>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -208,24 +243,27 @@ pub enum LbPolicy {
     LeastRequest,
     RingHash,
     Maglev,
+    ClusterProvided,
 }
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use super::health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol};
     use super::{
+        health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
         Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint, LbPolicy,
-        LocalityLbEndpoints, TlsConfig, TlsSecret,
+        LocalityLbEndpoints, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret,
     };
-    use crate::config::common::*;
     use crate::config::{
+        common::*,
         core::Address,
-        transport::{BindDevice, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket},
+        transport::{
+            BindDevice, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket, UpstreamTransportSocketConfig,
+        },
         util::duration_from_envoy,
     };
     use compact_str::CompactString;
-    use orion_data_plane_api::envoy_data_plane_api::{
+    use envoy_data_plane_api::{
         envoy::{
             config::{
                 cluster::v3::{
@@ -246,10 +284,13 @@ mod envoy_conversions {
                 },
             },
             extensions::transport_sockets::tls::v3::UpstreamTlsContext,
+            r#type::metadata::v3::metadata_key::path_segment::Segment,
         },
         google::protobuf::Any,
     };
-    use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroU32};
+
+    use http::HeaderName;
+    use std::{collections::BTreeSet, num::NonZeroU32};
 
     impl TryFrom<EnvoyCluster> for Cluster {
         type Error = GenericError;
@@ -333,7 +374,7 @@ mod envoy_conversions {
                     typed_dns_resolver_config,
                     wait_for_warm_on_init,
                     outlier_detection,
-                    cleanup_interval,
+                    // cleanup_interval,
                     // upstream_bind_config,
                     lb_subset_config,
                     common_lb_config,
@@ -353,35 +394,94 @@ mod envoy_conversions {
                     connection_pool_per_downstream_connection,
                     dns_jitter, // cluster_discovery_type,
                     lrs_report_endpoint_metrics
-                                                              // lb_config
+                    // lb_config
 
                 )?;
 
-                if let Some(lb_config_type) = &lb_config {
+                let original_dst_config = if let Some(lb_config_type) = &lb_config {
                     // `lb_config` is a synthetic enum created when parsing the configuration,
                     // we can't report it as the actual offending field
-                    let err = match lb_config_type {
-                        EnvoyLbConfig::RingHashLbConfig(_) => GenericError::UnsupportedField("ring_hash_lb_config"),
-                        EnvoyLbConfig::MaglevLbConfig(_) => GenericError::UnsupportedField("maglev_lb_config"),
-                        EnvoyLbConfig::OriginalDstLbConfig(_) => {
-                            GenericError::UnsupportedField("original_dst_lb_config")
+                    match lb_config_type {
+                        EnvoyLbConfig::RingHashLbConfig(_) => Err(GenericError::UnsupportedField("ring_hash_lb_config")),
+                        EnvoyLbConfig::MaglevLbConfig(_) => Err(GenericError::UnsupportedField("maglev_lb_config")),
+                        EnvoyLbConfig::OriginalDstLbConfig(config) => {
+                            let routing_method = if config.use_http_header {
+                                if config.metadata_key.is_some() {
+                                    return Err(GenericError::from_msg(
+                                        "use_http_header and metadata_key cannot both be specified - they are mutually exclusive"
+                                    ).with_node("original_dst_lb_config"));
+                                }
+                                OriginalDstRoutingMethod::HttpHeader {
+                                    http_header_name: if config.http_header_name.is_empty() {
+                                        None
+                                    } else {
+                                        Some(HeaderName::try_from(&config.http_header_name)
+                                            .map_err(|e| GenericError::from_msg_with_cause(
+                                                format!("Invalid header name: '{}'", config.http_header_name),
+                                                e
+                                            ).with_node("http_header_name"))?)
+                                    },
+                                }
+                            } else if let Some(metadata_key) = &config.metadata_key {
+                                let key = CompactString::from(&metadata_key.key);
+                                let path = metadata_key.path.iter()
+                                    .filter_map(|path_segment| {
+                                        if let Some(segment) = &path_segment.segment {
+                                            match segment {
+                                                Segment::Key(key_str) => {
+                                                    Some(CompactString::from(key_str))
+                                                }
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect::<Vec<CompactString>>();
+                                OriginalDstRoutingMethod::MetadataKey(MetadataKey { key, path })
+                            } else {
+                                OriginalDstRoutingMethod::Default
+                            };
+                            let upstream_port_override = if let Some(port_value) = &config.upstream_port_override {
+                                let port = u16::try_from(port_value.value).map_err(|_| {
+                                    GenericError::from_msg(format!("failed to convert {} to a port number", port_value.value))
+                                        .with_node("upstream_port_override")
+                                })?;
+                                Some(port)
+                            } else {
+                                None
+                            };
+                            Ok(Some(OriginalDstConfig {
+                                routing_method,
+                                upstream_port_override,
+                            }))
                         },
                         EnvoyLbConfig::LeastRequestLbConfig(_) => {
-                            GenericError::UnsupportedField("least_request_lb_config")
+                            Err(GenericError::UnsupportedField("least_request_lb_config"))
                         },
-                        EnvoyLbConfig::RoundRobinLbConfig(_) => GenericError::UnsupportedField("round_robin_lb_config"),
-                    };
-                    Err(err)?
+                        EnvoyLbConfig::RoundRobinLbConfig(_) => Err(GenericError::UnsupportedField("round_robin_lb_config")),
+                    }
+                } else {
+                    Ok(None)
+                }?;
+                let name = CompactString::from(&name);
+                let discovery_type = extract_discovery_type(&required!(cluster_discovery_type)?)
+                    .with_node("cluster_discovery_type")?;
+                if discovery_type == EnvoyDiscoveryType::OriginalDst {
+                    let envoy_lb_policy = EnvoyLbPolicy::from_i32(lb_policy)
+                        .ok_or_else(|| GenericError::unsupported_variant(format!("[unknown LbPolicy {lb_policy}]")))
+                        .with_node("lb_policy")?;
+                    if envoy_lb_policy != EnvoyLbPolicy::ClusterProvided {
+                        return Err(GenericError::from_msg("ORIGINAL_DST clusters must use CLUSTER_PROVIDED load balancing policy")
+                            .with_node("lb_policy"));
+                    }
                 }
 
-                let name = CompactString::from(&name);
-                // let cluster_discovery_type = convert_opt!(cluster_discovery_type)?;
-                let discovery_settings = (
-                    required!(cluster_discovery_type)?,
+                let discovery_settings = ClusterDiscoveryType::try_from((
+                    discovery_type,
                     load_assignment.map(ClusterLoadAssignment::try_from).transpose().with_node("load_assignment")?,
-                )
-                    .try_into()
-                    .with_node("cluster_discovery_type")?;
+                    original_dst_config,
+                ))
+                .with_node("cluster_discovery_type")?;
                 //fixme(hayley): the envoy protobuf documentation says:
                 // > If the address and port are empty, no bind will be performed.
                 // but its unclear what adress this is refering to. For now we will always bind.
@@ -390,7 +490,10 @@ mod envoy_conversions {
                     .transpose()
                     .with_node("upstream_bind_config")?
                     .flatten();
-                let tls_config = transport_socket.map(TlsConfig::try_from).transpose().with_node("transport_socket")?;
+                let transport_socket = transport_socket
+                    .map(UpstreamTransportSocketConfig::try_from)
+                    .transpose()
+                    .with_node("transport_socket")?;
                 let load_balancing_policy = lb_policy.try_into().with_node("lb_policy")?;
                 let http_protocol_options = typed_extension_protocol_options
                     .into_values()
@@ -462,15 +565,21 @@ mod envoy_conversions {
                     .transpose()
                     .map_err(|_| GenericError::from_msg("Failed to convert connect_timeout into Duration"))
                     .with_node("connect_timeout")?;
+                let cleanup_interval = cleanup_interval
+                    .map(duration_from_envoy)
+                    .transpose()
+                    .map_err(|_| GenericError::from_msg("Failed to convert cleanup_interval into Duration"))
+                    .with_node("cleanup_interval")?;
                 Ok(Self {
                     name,
                     discovery_settings,
                     bind_device,
-                    tls_config,
+                    transport_socket,
                     load_balancing_policy,
                     http_protocol_options,
                     health_check,
                     connect_timeout,
+                    cleanup_interval,
                 })
             })()
             .with_name(name)
@@ -515,9 +624,9 @@ mod envoy_conversions {
                 priority,
                 proximity,
                 lb_config,
-                metadata: _,
+                metadata,
             } = value;
-            unsupported_field!(locality, load_balancing_weight, proximity, lb_config)?;
+            unsupported_field!(locality, load_balancing_weight, proximity, lb_config, metadata)?;
             let lb_endpoints: Vec<LbEndpoint> = convert_non_empty_vec!(lb_endpoints)?;
             let mut sum = 0u32;
             for lb_endpoint in &lb_endpoints {
@@ -561,10 +670,9 @@ mod envoy_conversions {
                     health_check_config,
                     hostname,
                     additional_addresses,
-                }) => (|| -> Result<SocketAddr, GenericError> {
+                }) => (|| -> Result<Address, GenericError> {
                     unsupported_field!(health_check_config, hostname, additional_addresses)?;
-                    let address: Address = convert_opt!(address)?;
-                    Ok(address.into_socket_addr())
+                    Address::try_from(address.ok_or(GenericError::from_msg(format!("Address is not set")))?)
                 })(),
                 EnvoyHostIdentifier::EndpointName(_) => Err(GenericError::unsupported_variant("EndpointName")),
             }
@@ -578,45 +686,50 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<(EnvoyClusterDiscoveryType, Option<ClusterLoadAssignment>)> for ClusterDiscoveryType {
+    impl TryFrom<(EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>)> for ClusterDiscoveryType {
         type Error = GenericError;
         fn try_from(
-            (discovery, cla): (EnvoyClusterDiscoveryType, Option<ClusterLoadAssignment>),
-        ) -> Result<Self, Self::Error> {
-            match discovery {
-                EnvoyClusterDiscoveryType::ClusterType(_) => Err(GenericError::unsupported_variant("ClusterType")),
-                EnvoyClusterDiscoveryType::Type(x) => (x, cla).try_into(),
-            }
-        }
-    }
-
-    impl TryFrom<(i32, Option<ClusterLoadAssignment>)> for ClusterDiscoveryType {
-        type Error = GenericError;
-        fn try_from((discovery, cla): (i32, Option<ClusterLoadAssignment>)) -> Result<Self, Self::Error> {
-            let discovery = EnvoyDiscoveryType::from_i32(discovery)
-                .ok_or_else(|| GenericError::unsupported_variant(format!("[unknown DiscoveryType {discovery}]")))?;
-            (discovery, cla).try_into()
-        }
-    }
-
-    impl TryFrom<(EnvoyDiscoveryType, Option<ClusterLoadAssignment>)> for ClusterDiscoveryType {
-        type Error = GenericError;
-        fn try_from(
-            (discovery, cla): (EnvoyDiscoveryType, Option<ClusterLoadAssignment>),
+            (discovery, cla, odc): (EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>),
         ) -> Result<Self, Self::Error> {
             match (discovery, cla) {
-                (EnvoyDiscoveryType::Static, Some(cla)) => Ok(Self::Static(cla)),
+                (EnvoyDiscoveryType::Static, Some(cla)) => {
+                    if cla
+                        .endpoints
+                        .iter()
+                        .flat_map(|e| e.lb_endpoints.iter().map(|e| e.address.clone().into_addr()).collect::<Vec<_>>())
+                        .filter(|e| e.is_err())
+                        .collect::<Vec<_>>()
+                        .is_empty()
+                    {
+                        Ok(ClusterDiscoveryType::Static(cla))
+                    } else {
+                        Err(GenericError::from_msg(
+                            "Static clusters are required to have a cluster load assignment configured and all endpoints must be valid IP addresses",
+                        ))
+                    }
+                },
                 (EnvoyDiscoveryType::Static, None) => Err(GenericError::from_msg(
                     "Static clusters are required to have a cluster load assignment configured",
                 )),
-                (EnvoyDiscoveryType::Eds, None) => Ok(Self::Eds),
+                (EnvoyDiscoveryType::Eds, None) => Ok(Self::Eds(None)),
                 (EnvoyDiscoveryType::Eds, Some(_)) => {
                     Err(GenericError::from_msg("EDS clusters can't have a static cluster load assignment configured"))
                 },
                 (EnvoyDiscoveryType::LogicalDns, _) => Err(GenericError::unsupported_variant("LogicalDns")),
-                (EnvoyDiscoveryType::StrictDns, _) => Err(GenericError::unsupported_variant("StrictDns")),
-                (EnvoyDiscoveryType::OriginalDst, _) => Err(GenericError::unsupported_variant("OriginalDst")),
+                (EnvoyDiscoveryType::StrictDns, Some(cla)) => Ok(ClusterDiscoveryType::StrictDns(cla)),
+                (EnvoyDiscoveryType::StrictDns, None) => Err(GenericError::from_msg(
+                    "Strict DNS clusters are required to have a cluster load assignment configured",
+                )),
+                (EnvoyDiscoveryType::OriginalDst, _) => Ok(Self::OriginalDst(odc.unwrap_or_default())),
             }
+        }
+    }
+
+    fn extract_discovery_type(discovery: &EnvoyClusterDiscoveryType) -> Result<EnvoyDiscoveryType, GenericError> {
+        match discovery {
+            EnvoyClusterDiscoveryType::ClusterType(_) => Err(GenericError::unsupported_variant("ClusterType")),
+            EnvoyClusterDiscoveryType::Type(x) => EnvoyDiscoveryType::from_i32(*x)
+                .ok_or_else(|| GenericError::unsupported_variant(format!("[unknown DiscoveryType {x}]"))),
         }
     }
 
@@ -645,14 +758,14 @@ mod envoy_conversions {
         Ok(bind_device.into_iter().next())
     }
 
-    impl TryFrom<Any> for TlsConfig {
+    impl TryFrom<Any> for UpstreamTransportSocketConfig {
         type Error = GenericError;
         fn try_from(envoy: Any) -> Result<Self, Self::Error> {
             SupportedEnvoyTransportSocket::try_from(envoy)?.try_into()
         }
     }
 
-    impl TryFrom<EnvoyTransportSocket> for TlsConfig {
+    impl TryFrom<EnvoyTransportSocket> for UpstreamTransportSocketConfig {
         type Error = GenericError;
         fn try_from(envoy: EnvoyTransportSocket) -> Result<Self, Self::Error> {
             let EnvoyTransportSocket { name, config_type } = envoy;
@@ -671,14 +784,20 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<SupportedEnvoyTransportSocket> for TlsConfig {
+    impl TryFrom<SupportedEnvoyTransportSocket> for UpstreamTransportSocketConfig {
         type Error = GenericError;
         fn try_from(value: SupportedEnvoyTransportSocket) -> Result<Self, Self::Error> {
             match value {
-                SupportedEnvoyTransportSocket::DownstreamTlsContext(_) => {
-                    Err(GenericError::unsupported_variant("DownstreamTlsContext"))
+                SupportedEnvoyTransportSocket::DownstreamTlsContext(_) => Err(GenericError::unsupported_variant(
+                    "DownstreamTlsContext is not supported in TransportSocket configured on a cluster",
+                )),
+                SupportedEnvoyTransportSocket::UpstreamTlsContext(x) => {
+                    Ok(UpstreamTransportSocketConfig::Tls(TlsConfig::try_from(x)?))
                 },
-                SupportedEnvoyTransportSocket::UpstreamTlsContext(x) => x.try_into(),
+                SupportedEnvoyTransportSocket::ProxyProtocolUpstreamTransport(x) => {
+                    Ok(UpstreamTransportSocketConfig::ProxyProtocol(x.try_into()?))
+                },
+                SupportedEnvoyTransportSocket::RawBuffer(_) => Ok(UpstreamTransportSocketConfig::RawBuffer),
             }
         }
     }
@@ -692,15 +811,17 @@ mod envoy_conversions {
                 allow_renegotiation,
                 max_session_keys,
                 enforce_rsa_key_usage,
-                auto_host_sni: _,
-                auto_sni_san_validation: _,
+                auto_host_sni,
+                auto_sni_san_validation,
             } = value;
             unsupported_field!(
                 // common_tls_context,
                 // sni,
                 allow_renegotiation,
                 max_session_keys,
-                enforce_rsa_key_usage
+                enforce_rsa_key_usage,
+                auto_host_sni,
+                auto_sni_san_validation
             )?;
             let CommonTlsContext { parameters, secrets, validation_context } = convert_opt!(common_tls_context)?;
             let secret = match secrets {
@@ -735,9 +856,9 @@ mod envoy_conversions {
                 EnvoyLbPolicy::LeastRequest => Self::LeastRequest,
                 EnvoyLbPolicy::RingHash => Self::RingHash,
                 EnvoyLbPolicy::Maglev => Self::Maglev,
-                EnvoyLbPolicy::ClusterProvided => return Err(GenericError::unsupported_variant("ClusterProvided")),
+                EnvoyLbPolicy::ClusterProvided => Self::ClusterProvided,
                 EnvoyLbPolicy::LoadBalancingPolicyConfig => {
-                    return Err(GenericError::unsupported_variant("LoadBalancingPolicyConfig"))
+                    return Err(GenericError::unsupported_variant("LoadBalancingPolicyConfig"));
                 },
             })
         }
