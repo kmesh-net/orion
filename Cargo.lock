@@ -1241,7 +1241,7 @@ dependencies = [
  "idna",
  "ipnet",
  "once_cell",
- "rand",
+ "rand 0.8.5",
  "thiserror 1.0.69",
  "tinyvec",
  "tokio",
@@ -2177,9 +2177,27 @@ dependencies = [
  "ptrie",
  "serde",
  "smol_str",
- "strum",
- "strum_macros",
  "thiserror 1.0.69",
+ "thread_local",
+ "traceparent",
+ "uuid",
+]
+
+[[package]]
+name = "orion-http-header"
+version = "0.1.0"
+dependencies = [
+ "http",
+]
+
+[[package]]
+name = "orion-interner"
+version = "0.1.0"
+dependencies = [
+ "compact_str",
+ "http",
+ "lasso",
+ "serde",
 ]
 
 [[package]]
@@ -2234,7 +2252,9 @@ dependencies = [
  "scopeguard",
  "serde",
  "serde_yaml",
+ "smol_str",
  "thiserror 1.0.69",
+ "thread-id",
  "thread_local",
  "tokio",
  "tokio-rustls",
@@ -2354,7 +2374,7 @@ dependencies = [
  "orion-error",
  "serde",
  "serde_yaml",
- "thiserror 1.0.69",
+ "thiserror 2.0.16",
  "tokio",
  "tokio-stream",
  "tower 0.5.2",
@@ -3767,6 +3787,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
 dependencies = [
  "crossbeam-channel",
+ "parking_lot",
  "thiserror 1.0.69",
  "time",
  "tracing-subscriber",
