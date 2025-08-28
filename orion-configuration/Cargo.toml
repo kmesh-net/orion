@@ -15,7 +15,6 @@ bounded-integer = { version = "0.5.8", features = ["serde", "types"] }
 bytes.workspace = true
 clap = { version = "4.5.46", features = ["derive"] }
 compact_str.workspace = true
-envoy-data-plane-api = { workspace = true, optional = true }
 exponential-backoff.workspace = true
 http.workspace = true
 http-serde-ext = "1.0.2"

@@ -4,8 +4,11 @@ members = [
   "orion-configuration",
   "orion-data-plane-api",
   "orion-error",
+  "orion-http-header",
+  "orion-interner",
   "orion-format",
   "orion-lib",
+  "orion-metrics",
   "orion-proxy",
   "orion-xds",
 ]
@@ -30,7 +33,9 @@ orion-data-plane-api = { path = "orion-data-plane-api" }
 orion-error          = { path = "orion-error" }
 orion-format         = { path = "orion-format" }
 orion-http-header    = { path = "orion-http-header" }
+orion-interner       = { path = "orion-interner" }
 orion-lib            = { path = "orion-lib" }
+orion-metrics        = { path = "orion-metrics" }
 orion-xds            = { path = "orion-xds" }
 
 abort-on-drop       = "0.2"
