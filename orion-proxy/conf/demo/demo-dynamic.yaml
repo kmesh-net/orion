@@ -1,6 +1,7 @@
 
 node:
   id: "test-id"
+  cluster: "test-id"
 
 dynamic_resources:
   ads_config:
