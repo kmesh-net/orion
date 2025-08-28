@@ -96,7 +96,7 @@ mod tests {
         // same as the envoy HttpConnectionManager server_name
         // (api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto)
         const PAYLOAD: &[u8] = b"R\x04name";
-        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec().into() };
+        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec() };
         let m: HttpConnectionManager = decode_any_type(&v, "---").unwrap();
         assert_eq!(m, expected_conn_manager());
 
@@ -123,7 +123,7 @@ filterChains:
             type_url:
                 "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
                     .to_string(),
-            value: http_man.encode_to_vec().into(),
+            value: http_man.encode_to_vec(),
         };
 
         let filter = Filter {

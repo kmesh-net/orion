@@ -174,6 +174,7 @@ fn default_min_tls_version() -> TlsVersion {
     TlsVersion::TLSv1_2
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_min_tls_version(value: &TlsVersion) -> bool {
     *value == default_min_tls_version()
 }

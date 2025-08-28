@@ -60,10 +60,7 @@ impl HttpTracer {
     /// Analyzes request headers to decide if and how to trace.
     ///
     pub fn try_build_trace_context<B>(&self, req: &Request<B>, request_id: Option<RequestId>) -> Option<TraceContext> {
-        let Some(tracing) = self.tracing.as_ref() else {
-            return None;
-        };
-
+        let tracing = self.tracing.as_ref()?;
         let headers = req.headers();
         let x_client_trace_id = headers.get(X_CLIENT_TRACE_ID);
 
@@ -160,13 +157,8 @@ impl HttpTracer {
         span_name: SpanName<'_, B>,
     ) -> Option<BoxedSpan> {
         // if trace_context is None, don't create a span
-        let Some(trace_context) = trace_context else {
-            return None;
-        };
-
-        let Some(ref tracing_conf) = self.tracing else {
-            return None;
-        };
+        let trace_context = trace_context?;
+        let tracing_conf = self.tracing.as_ref()?;
 
         // if trace_context should not sample, don't create a span
         if !trace_context.should_sample() {
@@ -359,7 +351,7 @@ mod tests {
 
         let span = tracer.try_create_span(
             context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );
@@ -399,7 +391,7 @@ mod tests {
 
         let span = tracer.try_create_span(
             context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );
@@ -439,7 +431,7 @@ mod tests {
 
         let span = tracer.try_create_span(
             context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );
@@ -478,7 +470,7 @@ mod tests {
 
         let span = tracer.try_create_span(
             context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );
@@ -502,7 +494,7 @@ mod tests {
         assert!(trace_context.is_none());
         let span = no_tracer.try_create_span(
             trace_context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );
@@ -533,7 +525,7 @@ mod tests {
 
         let span = tracer.try_create_span(
             trace_context.as_ref(),
-            &TracingKey("test".into(), 0),
+            &TracingKey("test", 0),
             SpanKind::Server,
             SpanName::Str::<()>("test"),
         );

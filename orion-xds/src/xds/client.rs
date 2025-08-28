@@ -323,7 +323,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let mut pending_update_versions = Self::extract_update_versions(&decoded_updates);
                 let mut removal_notifications = for_removal
                     .iter()
-                    .map(|resource_id| XdsResourceUpdate::Remove(resource_id.to_string(), type_url))
+                    .map(|resource_id| XdsResourceUpdate::Remove(resource_id.clone(), type_url))
                     .collect::<Vec<XdsResourceUpdate>>();
 
                 let mut batched_updates = Vec::<XdsResourceUpdate>::new();
@@ -481,7 +481,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         let mut update_versions = HashMap::<ResourceId, ResourceVersion>::new();
         for update in updates {
             if let XdsResourceUpdate::Update(resource_id, _, resource_version) = update {
-                update_versions.insert(resource_id.to_string(), resource_version.to_string());
+                update_versions.insert(resource_id.clone(), resource_version.clone());
             }
         }
         update_versions

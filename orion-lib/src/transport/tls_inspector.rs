@@ -59,7 +59,7 @@ mod tests {
         let config = Arc::new(
             ClientConfig::builder().with_root_certificates(rustls::RootCertStore::empty()).with_no_client_auth(),
         );
-        let server_name = ServerName::try_from(sni.to_string()).unwrap();
+        let server_name = ServerName::try_from(sni.to_owned()).unwrap();
         let mut client = ClientConnection::new(config, server_name).unwrap();
         let mut tls_data = Vec::new();
         let mut cursor = Cursor::new(&mut tls_data);

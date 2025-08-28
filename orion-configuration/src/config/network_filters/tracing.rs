@@ -84,6 +84,7 @@ mod envoy_conversions {
 
             let parse_percentage = |v: Option<Percent>| -> Result<Option<BoundedU16<0, 100>>, GenericError> {
                 v.map(|v| -> Result<BoundedU16<0, 100>, GenericError> {
+                    #[allow(clippy::cast_possible_truncation)]
                     BoundedU16::<0, 100>::new(v.value as u16).ok_or(GenericError::from_msg(
                         "Invalid sampling percentage: expected a value between 0 and 100 (inclusive)",
                     ))
@@ -102,7 +103,7 @@ mod envoy_conversions {
                 .map(|config| {
                     let http::ConfigType::TypedConfig(config) = config;
                     SupportedTracingProvider::try_from(config.clone())
-                            .map_err(|e| GenericError::from_msg(format!("Failed to parse tracing provider: {e}")))
+                        .map_err(|e| GenericError::from_msg(format!("Failed to parse tracing provider: {e}")))
                 })
                 .transpose()?;
 

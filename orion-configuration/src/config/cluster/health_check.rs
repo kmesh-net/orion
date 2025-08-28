@@ -79,6 +79,7 @@ pub struct ClusterHealthCheck {
     pub healthy_edge_interval: Option<Duration>,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn f32_is_zero(x: &f32) -> bool {
     *x == 0.0
 }

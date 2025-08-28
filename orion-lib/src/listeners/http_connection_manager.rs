@@ -389,6 +389,7 @@ impl HttpConnectionManager {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum FilterDecision {
     Continue,
     Reroute,
@@ -1021,7 +1022,8 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
 
 fn eval_http_init_context<R>(request: &Request<R>, trans_handler: &TransactionHandler) {
     if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-        let trace_id = trans_handler.trace_ctx.as_ref().and_then(|t| t.map_child(orion_tracing::trace_info::TraceInfo::trace_id));
+        let trace_id =
+            trans_handler.trace_ctx.as_ref().and_then(|t| t.map_child(orion_tracing::trace_info::TraceInfo::trace_id));
         let request_head_size = request_head_size(request);
         ctx.access_loggers.lock().with_context_fn(|| InitHttpContext {
             start_time: std::time::SystemTime::now(),

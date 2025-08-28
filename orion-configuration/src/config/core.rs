@@ -274,6 +274,7 @@ pub mod envoy_conversions {
 
     impl Address {
         pub fn into_addr(self) -> Result<SocketAddr, GenericError> {
+            #[allow(clippy::match_wildcard_for_single_variants)]
             match self {
                 Self::Socket(address, port) => format!("{address}:{port}")
                     .parse()

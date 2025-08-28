@@ -187,7 +187,7 @@ async fn test_client_operations() {
         version: "0.1".to_owned(),
         resource: Some(Any {
             type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
-            value: cluster.encode_to_vec().into(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -221,7 +221,7 @@ async fn test_client_operations() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }))
@@ -266,7 +266,7 @@ async fn test_client_resilience() {
         version: "0.1".to_owned(),
         resource: Some(Any {
             type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
-            value: cluster.encode_to_vec().into(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -301,7 +301,7 @@ async fn test_client_resilience() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }));
@@ -378,7 +378,7 @@ async fn test_aggregated_discovery() {
         version: "0.1".to_owned(),
         resource: Some(Any {
             type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
-            value: cluster.encode_to_vec().into(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -412,7 +412,7 @@ async fn test_aggregated_discovery() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }))

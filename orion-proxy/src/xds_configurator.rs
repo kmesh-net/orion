@@ -318,13 +318,13 @@ impl XdsConfigurationHandler {
     }
 
     #[cfg(feature = "tracing")]
-    fn tracer_listener_update(&mut self, id: &str, listener: &Listener) {
+    fn tracer_listener_update(&self, id: &str, listener: &Listener) {
         orion_tracing::otel_update_tracers(listener.get_tracing_configurations())
             .unwrap_or_else(|err| warn!("Failed to update tracer for listener {id}: {err}"));
     }
 
     #[cfg(feature = "tracing")]
-    fn tracer_listener_remove(&mut self, id: &str) {
+    fn tracer_listener_remove(&self, id: &str) {
         orion_tracing::otel_remove_tracers_by_listeners(&[id.to_compact_string()])
             .unwrap_or_else(|err| warn!("Failed to remove tracer for listener {id}: {err}"));
     }

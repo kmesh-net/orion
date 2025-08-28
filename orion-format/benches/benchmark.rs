@@ -288,13 +288,13 @@ fn benchmark_request_parts(c: &mut Criterion) {
 
 #[allow(clippy::unit_arg)]
 fn benchmark_log_headers(c: &mut Criterion) {
-    #[cfg(feature = "dhat-heap")]
-    let _profiler = dhat::Profiler::new_heap();
-
     const ENVOY_FORMAT: &str = "%REQ(X-Header-0)% %REQ(X-Header-1)% %REQ(X-Header-2)% %REQ(X-Header-3)% %REQ(X-Header-4)% %REQ(X-Header-5)% %REQ(X-Header-6)% %REQ(X-Header-7)% %REQ(X-Header-8)% %REQ(X-Header-9)% \
         %REQ(X-Header-10)% %REQ(X-Header-11)% %REQ(X-Header-12)% %REQ(X-Header-13)% %REQ(X-Header-14)% %REQ(X-Header-15)% %REQ(X-Header-16)% %REQ(X-Header-17)% %REQ(X-Header-18)% %REQ(X-Header-19)% %REQ(X-Header-20)% \
         %REQ(X-Header-21)% %REQ(X-Header-22)% %REQ(X-Header-23)% %REQ(X-Header-24)% %REQ(X-Header-25)% %REQ(X-Header-26)% %REQ(X-Header-27)% %REQ(X-Header-28)% %REQ(X-Header-29)% %REQ(X-Header-30)% %REQ(X-Header-31)% \
         %REQ(X-Header-32)%";
+
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
 
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")

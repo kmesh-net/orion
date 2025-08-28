@@ -246,6 +246,8 @@ const DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE: StatusCode = StatusCode::SERVICE_UNA
 const fn default_statuscode_deser() -> StatusCode {
     DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_statuscode(code: &StatusCode) -> bool {
     *code == DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
@@ -1072,10 +1074,10 @@ mod envoy_conversions {
                 PathSpecifier::try_from(EnvoyPathSpecifier::PathSeparatedPrefix("/some/string".to_owned())).unwrap();
 
             assert_eq!(path_specifier, PathSpecifier::PathSeparatedPrefix("/some/string/".into()));
-
-            if PathSpecifier::try_from(EnvoyPathSpecifier::PathSeparatedPrefix("/".to_owned())).is_ok() {
-                panic!("This should fail")
-            }
+            assert!(
+                PathSpecifier::try_from(EnvoyPathSpecifier::PathSeparatedPrefix("/".to_owned())).is_err(),
+                "This should fail"
+            );
 
             let pm =
                 PathMatcher { specifier: PathSpecifier::PathSeparatedPrefix("/api/dev/".into()), ignore_case: true };

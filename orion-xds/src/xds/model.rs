@@ -57,7 +57,7 @@ pub enum XdsResourceUpdate {
 impl XdsResourceUpdate {
     pub fn id(&self) -> ResourceId {
         match self {
-            XdsResourceUpdate::Update(id, _, _) | XdsResourceUpdate::Remove(id, _) => id.to_string(),
+            XdsResourceUpdate::Update(id, _, _) | XdsResourceUpdate::Remove(id, _) => id.clone(),
         }
     }
 }

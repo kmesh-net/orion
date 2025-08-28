@@ -77,10 +77,11 @@ impl Listener {
                 filter_chain_match.hash(&mut filter_chain_match_hash);
 
                 match &filter_chain.terminal_filter {
-                    MainFilter::Http(http_connection_manager) => http_connection_manager.tracing.as_ref().map(|tracing| (
-                            TracingKey(self.name.to_static_str(), filter_chain_match_hash.finish()),
-                            tracing.clone(),
-                        )),
+                    MainFilter::Http(http_connection_manager) => {
+                        http_connection_manager.tracing.as_ref().map(|tracing| {
+                            (TracingKey(self.name.to_static_str(), filter_chain_match_hash.finish()), tracing.clone())
+                        })
+                    },
                     MainFilter::Tcp(_) => None,
                 }
             })
@@ -98,6 +99,7 @@ mod serde_filterchains {
         value: &HashMap<FilterChainMatch, FilterChain>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
+        #[allow(clippy::trivially_copy_pass_by_ref)]
         fn is_default_ref(fcm: &&FilterChainMatch) -> bool {
             is_default(*fcm)
         }
