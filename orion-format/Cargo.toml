@@ -15,7 +15,7 @@ ptrie = "0.7.2"
 smol_str = { version = "0.3.2", features = ["serde"] }
 chrono = "0.4.40"
 dhat = "0.3.3"
-bitflags = "2.9.0"
+bitflags = "2.9.3"
 itoa = "1.0.15"
 serde = { workspace = true, features = ["rc"] }
 http-serde-ext = "1.0.2"
