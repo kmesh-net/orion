@@ -179,7 +179,7 @@ pub fn is_access_log_enabled() -> bool {
 /// Returns a reference to an available logger sender, if any.
 ///
 /// Accesses the global sender pool unsafely and retrieves one sender.
-/// Returns `None` if no senders are available (if initialized with init_logger_once)
+/// Returns `None` if no senders are available (if initialized with `init_logger_once`)
 #[inline]
 pub fn get_sender() -> Option<&'static Sender<AccessLogMessage>> {
     SENDER_POOL.get().and_then(|pool| pool.get())

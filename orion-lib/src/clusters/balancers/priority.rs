@@ -37,7 +37,7 @@ impl Priority {
 
     ///
     /// Implementation and test cases taken from Envoy's documentation
-    /// https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority
+    /// <https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority>
     ///
     /// health(P_X) = min(100, 1.4 * 100 * healthy_P_X_backends / total_P_X_backends)
     /// normalized_total_health = min(100, Σ(health(P_0)...health(P_X)))

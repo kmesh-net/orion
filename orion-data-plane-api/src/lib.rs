@@ -1,4 +1,3 @@
-#![warn(clippy::unwrap_used)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -20,6 +19,7 @@
 //
 #![warn(clippy::expect_used)]
 #![warn(clippy::panic)]
+#![warn(clippy::unwrap_used)]
 pub mod bootstrap_loader;
 pub mod decode;
 pub mod envoy_validation;

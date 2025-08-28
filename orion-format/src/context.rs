@@ -31,6 +31,7 @@ use crate::{
 use ahash::AHasher;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use http::{uri::Authority, Request, Response};
+#[allow(clippy::wildcard_imports)] // allow importing all headers for ease of use
 use orion_http_header::*;
 use orion_interner::StringInterner;
 use smol_str::{format_smolstr, SmolStr, SmolStrBuilder, ToSmolStr};

@@ -252,7 +252,7 @@ impl<E: Into<BoxedErr>> From<E> for Error {
     }
 }
 
-/// Allows to convert an ErrorCtx into an Error, using a generic inner error.
+/// Allows to convert an `ErrorCtx` into an Error, using a generic inner error.
 impl From<ErrorInfo> for Error {
     fn from(ctx: ErrorInfo) -> Self {
         let ErrorInfo { message, any } = &ctx;

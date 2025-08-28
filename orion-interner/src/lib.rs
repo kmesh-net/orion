@@ -51,13 +51,13 @@ impl StringInterner for &str {
 
 impl StringInterner for String {
     fn to_static_str(&self) -> &'static str {
-        intern_str(&self)
+        intern_str(self)
     }
 }
 
 impl StringInterner for CompactString {
     fn to_static_str(&self) -> &'static str {
-        intern_str(&self)
+        intern_str(self)
     }
 }
 

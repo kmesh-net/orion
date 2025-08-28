@@ -56,7 +56,7 @@ impl<'a, B> HashState<'a, B> {
     }
 }
 
-/// Similar to [std::hash::BuildHasher] but with a deterministic seed.
+/// Similar to [`std::hash::BuildHasher`] but with a deterministic seed.
 #[derive(Default)]
 pub(crate) struct DeterministicBuildHasher;
 
