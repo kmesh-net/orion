@@ -18,12 +18,13 @@
 //
 //
 
-use std::hash::Hash;
-use std::sync::atomic::Ordering;
+use std::{hash::Hash, sync::atomic::Ordering};
 
 use atomic_time::AtomicInstant;
-use std::fmt::Debug;
-use std::time::{Duration, Instant};
+use std::{
+    fmt::Debug,
+    time::{Duration, Instant},
+};
 
 /// This TokenBucket implementation takes inspiration from `<https://github.com/rigtorp/TokenBucket/tree/master>`
 pub struct TokenBucket {
@@ -53,8 +54,6 @@ impl TokenBucket {
     /// Try consuming a number of tokens and returns a boolean
     /// that represents the outcome.
     /// * `tokens`: The number of tokens to consume.
-    // TODO: Implement token bucket consumption logic for rate limiting
-    // This is the core method for rate limiting - determines if request should be allowed
     pub fn consume(&self, tokens: u32) -> bool {
         let req_fill_period = self.time_per_token * tokens;
         let now = Instant::now();
@@ -80,13 +79,13 @@ impl TokenBucket {
     }
 
     /// Return the capacity of the bucket, in term of tokens.
-    // TODO: Implement capacity reporting for rate limiter monitoring and configuration
+    #[allow(dead_code)]
     pub fn capacity(&self) -> usize {
         self.max_tokens
     }
 
     /// Return the actual bucket size.
-    // TODO: Implement current bucket size calculation for rate limiter monitoring
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         let now = Instant::now();
         let t = self.time.load(Ordering::Relaxed);
@@ -96,11 +95,7 @@ impl TokenBucket {
 
         let n = ((now - t).as_nanos() / self.time_per_token.as_nanos()) as usize;
 
-        if n > self.max_tokens {
-            self.max_tokens
-        } else {
-            n
-        }
+        if n > self.max_tokens { self.max_tokens } else { n }
     }
 }
 

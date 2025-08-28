@@ -25,15 +25,17 @@
  * connections are done. It's a bit more code, but worth in the long run.
  */
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use futures::future::BoxFuture;
 use orion_xds::grpc_deps::Response;
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
-use crate::clusters::health::checkers::tests::{deref, TestFixture};
-use crate::clusters::health::HealthStatus;
+use crate::clusters::health::{
+    HealthStatus,
+    checkers::tests::{TestFixture, deref},
+};
 
 use super::*;
 
@@ -57,10 +59,13 @@ impl MockGrpcChannel {
 }
 
 impl GrpcHealthChannel for MockGrpcChannel {
-    fn check(&mut self, request: HealthCheckRequest) -> BoxFuture<Result<Response<HealthCheckResponse>, TonicStatus>> {
+    fn check(
+        &'_ mut self,
+        request: HealthCheckRequest,
+    ) -> BoxFuture<'_, Result<Response<HealthCheckResponse>, TonicStatus>> {
         let state = Arc::clone(&self.0);
         Box::pin(async move {
-            let state = &mut state.lock().unwrap();
+            let state = &mut state.lock();
             // Log this request
             state.requests.send(request).unwrap();
             // Return the predefined response, if any

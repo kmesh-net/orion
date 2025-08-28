@@ -21,20 +21,18 @@
 use std::{sync::Arc, time::Duration};
 
 use http::uri::Authority;
-use orion_configuration::config::cluster::{health_check::ClusterHealthCheck, HealthStatus};
+use orion_configuration::config::cluster::{HealthStatus, health_check::ClusterHealthCheck};
 use pingora_timeout::fast_timeout::fast_timeout;
 use tokio::{
     sync::{
-        mpsc::{self, Sender, UnboundedReceiver, UnboundedSender},
         Notify,
+        mpsc::{self, Sender, UnboundedReceiver, UnboundedSender},
     },
     task::JoinHandle,
 };
 
-use super::{checker::WaitInterval, CurrentHealthStatus};
-use crate::clusters::health::EndpointId;
-use crate::EndpointHealthUpdate;
-use crate::Error;
+use super::{CurrentHealthStatus, checker::WaitInterval};
+use crate::{EndpointHealthUpdate, Error, clusters::health::EndpointId};
 
 macro_rules! deref {
     ($subclass:ty => $field:ident as $base:ty) => {

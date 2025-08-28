@@ -25,16 +25,16 @@
  * connections are done. It's a bit more code, but worth in the long run.
  */
 
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
-use std::task::Poll;
-use std::time::Duration;
+use std::{collections::VecDeque, sync::Arc, task::Poll, time::Duration};
 
 use futures::future::BoxFuture;
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
-use crate::clusters::health::checkers::tests::{deref, TestFixture};
-use crate::clusters::health::HealthStatus;
+use crate::clusters::health::{
+    HealthStatus,
+    checkers::tests::{TestFixture, deref},
+};
 
 use super::*;
 
@@ -71,12 +71,8 @@ struct MockTcpStream {
 impl MockTcpStream {
     pub fn new(actions: Arc<Mutex<TcpActionTrace>>) -> Self {
         let responses = {
-            let state = &mut actions.lock().unwrap();
-            if let Ok(responses) = state.responses.try_recv() {
-                responses.into()
-            } else {
-                VecDeque::new()
-            }
+            let state = &mut actions.lock();
+            if let Ok(responses) = state.responses.try_recv() { responses.into() } else { VecDeque::new() }
         };
         MockTcpStream { actions, responses, buffer: Vec::new() }
     }
@@ -119,7 +115,7 @@ impl AsyncWrite for MockTcpStream {
         _cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, std::io::Error>> {
-        let state = &mut self.actions.lock().unwrap();
+        let state = &mut self.actions.lock();
         state.requests.send(buf.into()).unwrap();
         Poll::Ready(Ok(buf.len()))
     }
@@ -144,7 +140,7 @@ impl TcpClient for MockTcpClient {
 
     fn connect(&self) -> BoxFuture<'static, std::result::Result<Self::Stream, Error>> {
         {
-            let state = self.0.lock().unwrap();
+            let state = self.0.lock();
             state.connections.send(state.connections_allowed).unwrap();
             if !state.connections_allowed {
                 return Box::pin(futures::future::err("connections not allowed in this test".into()));

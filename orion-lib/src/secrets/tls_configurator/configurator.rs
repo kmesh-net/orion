@@ -20,12 +20,12 @@
 
 use super::tls_configurator_builder::{WantsToBuildClient, WantsToBuildServer};
 use crate::{
+    Result, SecretManager,
     secrets::{
+        CertificateSecret, TransportSecret,
         secrets_manager::CertStore,
         tls_configurator::tls_configurator_builder::{SecretHolder, TlsContextBuilder},
-        CertificateSecret, TransportSecret,
     },
-    Result, SecretManager,
 };
 use compact_str::CompactString;
 use orion_configuration::config::{
@@ -35,11 +35,11 @@ use orion_configuration::config::{
     transport::{CommonTlsValidationContext, Secrets, TlsVersion},
 };
 use rustls::{
+    ClientConfig, RootCertStore, ServerConfig,
     client::danger::ServerCertVerifier,
     crypto::KeyProvider,
     pki_types::{CertificateDer, PrivateKeyDer},
     version::{TLS12, TLS13},
-    ClientConfig, RootCertStore, ServerConfig,
 };
 use rustls_platform_verifier::Verifier;
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
@@ -99,7 +99,7 @@ pub struct ClientCert {
 
 impl From<CertificateSecret> for ClientCert {
     fn from(secret: CertificateSecret) -> Self {
-        let CertificateSecret { name: _, key, certs } = secret;
+        let CertificateSecret { name: _, key, certs, config: _ } = secret;
         ClientCert { key, certs }
     }
 }
@@ -152,7 +152,7 @@ impl TryFrom<TransportSecret> for ClientCert {
 impl TryFrom<CertificateSecret> for ServerCert {
     type Error = crate::Error;
     fn try_from(secret: CertificateSecret) -> Result<Self> {
-        let CertificateSecret { name, key, certs } = secret;
+        let CertificateSecret { name, key, certs, config: _ } = secret;
         if let Some(name) = name {
             Ok(ServerCert { name, key: Arc::new(key.clone_key()), certs })
         } else {

@@ -25,23 +25,27 @@
  * connections are done. It's a bit more code, but worth in the long run.
  */
 
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use http::{Response, Version};
+use http::{Request, Response, Version};
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
-use crate::clusters::health::checkers::tests::{deref, TestFixture};
-use crate::clusters::health::HealthStatus;
-use crate::{PolyBody, Result};
-
 use super::*;
+use crate::{
+    PolyBody, Result,
+    clusters::health::{
+        HealthStatus,
+        checkers::tests::{TestFixture, deref},
+    },
+    listeners::http_connection_manager::TransactionContext,
+};
 
 /// Channels to report every time an HTTP request is made, `requests`,
 /// and will respond with the items in `responses`.
 struct HttpActionTrace {
-    requests: mpsc::UnboundedSender<http::Request<HttpBody>>,
-    responses: mpsc::UnboundedReceiver<http::Response<HttpBody>>,
+    requests: mpsc::UnboundedSender<http::Request<BodyWithMetrics<PolyBody>>>,
+    responses: mpsc::UnboundedReceiver<http::Response<PolyBody>>,
 }
 
 #[derive(Clone)]
@@ -49,16 +53,20 @@ struct MockHttpStack(Arc<Mutex<HttpActionTrace>>);
 
 impl MockHttpStack {
     pub fn new(
-        requests: mpsc::UnboundedSender<http::Request<HttpBody>>,
-        responses: mpsc::UnboundedReceiver<http::Response<HttpBody>>,
+        requests: mpsc::UnboundedSender<http::Request<BodyWithMetrics<PolyBody>>>,
+        responses: mpsc::UnboundedReceiver<http::Response<PolyBody>>,
     ) -> Self {
         MockHttpStack(Arc::new(Mutex::new(HttpActionTrace { requests, responses })))
     }
 }
 
-impl<'a> RequestHandler<RequestWithContext<'a, HttpBody>> for &MockHttpStack {
-    async fn to_response(self, request: RequestWithContext<'a, HttpBody>) -> Result<Response<PolyBody>> {
-        let state = &mut self.0.lock().unwrap();
+impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for &MockHttpStack {
+    async fn to_response(
+        self,
+        _trans_ctx: &TransactionContext,
+        request: RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>,
+    ) -> Result<Response<PolyBody>> {
+        let state = &mut self.0.lock();
         // Log this request
         state.requests.send(request.req).unwrap();
         // Return the predefined response, if any
@@ -68,7 +76,8 @@ impl<'a> RequestHandler<RequestWithContext<'a, HttpBody>> for &MockHttpStack {
 }
 
 struct HttpTestFixture {
-    inner: TestFixture<HttpHealthCheck, MockHttpStack, http::Request<HttpBody>, http::Response<HttpBody>>,
+    inner:
+        TestFixture<HttpHealthCheck, MockHttpStack, http::Request<BodyWithMetrics<PolyBody>>, http::Response<PolyBody>>,
 }
 
 #[allow(clippy::panic)]
@@ -94,12 +103,12 @@ impl HttpTestFixture {
                 Codec::Http2 => Version::HTTP_2,
             })
             .status(code)
-            .body(HttpBody::default())
+            .body(PolyBody::default())
             .unwrap();
         self.inner.enqueue_response(response);
     }
 
-    pub async fn request_expected(&mut self, timeout_value: Duration) -> http::Request<HttpBody> {
+    pub async fn request_expected(&mut self, timeout_value: Duration) -> http::Request<BodyWithMetrics<PolyBody>> {
         let req = self.inner.request_expected(timeout_value).await;
 
         assert_eq!(
@@ -131,7 +140,7 @@ impl HttpTestFixture {
     }
 }
 
-deref!(HttpTestFixture => inner as TestFixture<HttpHealthCheck, MockHttpStack, http::Request<HttpBody>, http::Response<HttpBody>>);
+deref!(HttpTestFixture => inner as TestFixture<HttpHealthCheck, MockHttpStack, http::Request<BodyWithMetrics<PolyBody>>, http::Response<PolyBody>>);
 
 const HEALTHY_THRESHOLD: u16 = 5;
 const UNHEALTHY_THRESHOLD: u16 = 10;
