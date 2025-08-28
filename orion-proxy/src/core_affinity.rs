@@ -20,8 +20,7 @@
 
 use orion_configuration::config::runtime::{Affinity, CoreId};
 use orion_lib::Result;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::runtime::RuntimeId;
 
@@ -70,11 +69,7 @@ fn group_by_numa(cores: Vec<CoreId>, cpuinfo: &str) -> Result<Vec<Vec<CoreId>>> 
             .filter(|l| l.starts_with(needle))
             .filter_map(|s| {
                 let xs = s.split(':').collect::<Vec<_>>();
-                if xs.len() == 2 {
-                    xs[1].trim().parse::<usize>().ok()
-                } else {
-                    None
-                }
+                if xs.len() == 2 { xs[1].trim().parse::<usize>().ok() } else { None }
             })
             .collect::<Vec<_>>()
     };
