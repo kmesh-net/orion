@@ -21,13 +21,13 @@
 use crate::Result;
 use compact_str::{CompactString, ToCompactString};
 use orion_configuration::{
-    config::secret::{Secret, TlsCertificate, Type, ValidationContext},
     VerifySingleIter,
+    config::secret::{Secret, TlsCertificate, Type, ValidationContext},
 };
 use rustc_hash::FxHashMap as HashMap;
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
     RootCertStore,
+    pki_types::{CertificateDer, PrivateKeyDer},
 };
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::sync::Arc;
@@ -36,11 +36,14 @@ use webpki::types::ServerName;
 use x509_parser::{self, extensions::GeneralName};
 
 #[derive(Clone, Debug)]
-pub struct CertStore(Arc<RootCertStore>);
+pub struct CertStore {
+    pub store: Arc<RootCertStore>,
+    pub config: ValidationContext,
+}
 
 impl From<CertStore> for Arc<RootCertStore> {
     fn from(value: CertStore) -> Self {
-        value.0
+        value.store
     }
 }
 
@@ -63,12 +66,12 @@ impl TryFrom<&ValidationContext> for CertStore {
         if bad > 0 {
             Err("Some certs in the trust store were invalid".into())
         } else {
-            Ok(CertStore(Arc::new(root_store)))
+            Ok(CertStore { store: Arc::new(root_store), config: validation_context.clone() })
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct SecretManager {
     certificate_secrets: HashMap<String, Arc<CertificateSecret>>,
     validation_contexts: HashMap<String, Arc<CertStore>>,
@@ -79,6 +82,7 @@ pub struct CertificateSecret {
     pub name: Option<CompactString>,
     pub key: Arc<PrivateKeyDer<'static>>,
     pub certs: Arc<Vec<CertificateDer<'static>>>,
+    pub config: TlsCertificate,
 }
 
 #[derive(Debug, Clone)]
@@ -101,7 +105,6 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
             .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
             .collect::<Result<Vec<_>>>()?;
 
-        let certificates: Vec<_> = certificates.into_iter().collect();
         let Some(cert) = certificates.first() else {
             return Err("No certificates have been configured".into());
         };
@@ -129,7 +132,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
         debug!("Certificate Subject's common name {common_name:?}");
 
         let key = Arc::new(PrivateKeyDer::Pkcs8(key));
-        Ok(CertificateSecret { name: server_name, key, certs: Arc::new(certificates) })
+        Ok(CertificateSecret { name: server_name, key, certs: Arc::new(certificates), config: certificate.clone() })
     }
 }
 
@@ -176,5 +179,20 @@ impl SecretManager {
     pub fn get_validation_context(&self, secret_id: &str) -> Result<Option<TransportSecret>> {
         let value = self.validation_contexts.get(secret_id);
         Ok(value.map(|s| TransportSecret::ValidationContext(Arc::clone(s))))
+    }
+    pub fn get_all_secrets(&self) -> Vec<Secret> {
+        let mut secrets = Vec::new();
+        secrets.extend(
+            self.certificate_secrets
+                .iter()
+                .map(|(name, secret)| Secret { name: name.into(), kind: Type::TlsCertificate(secret.config.clone()) }),
+        );
+        secrets.extend(
+            self.validation_contexts.iter().map(|(name, secret)| Secret {
+                name: name.into(),
+                kind: Type::ValidationContext(secret.config.clone()),
+            }),
+        );
+        secrets
     }
 }
