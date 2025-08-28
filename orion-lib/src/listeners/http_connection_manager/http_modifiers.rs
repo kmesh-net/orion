@@ -19,8 +19,8 @@
 //
 
 use super::upgrade_utils;
-use crate::{PolyBody, listeners::synthetic_http_response::SyntheticHttpResponse};
-use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Response, header};
+use crate::{listeners::synthetic_http_response::SyntheticHttpResponse, PolyBody};
+use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::XffSettings;
 use orion_http_header::*;
 use std::net::{IpAddr, SocketAddr};

@@ -30,7 +30,6 @@ use tracing::{debug, warn};
 use webpki::types::ServerName;
 
 use crate::{
-    Result,
     clusters::{
         clusters_manager::{RoutingContext, RoutingRequirement},
         health::HealthStatus,
@@ -39,8 +38,9 @@ use crate::{
     transport::{
         GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
     },
+    Result,
 };
-use http::{HeaderName, HeaderValue, uri::Authority};
+use http::{uri::Authority, HeaderName, HeaderValue};
 use orion_configuration::config::cluster::HttpProtocolOptions;
 
 use super::{ClusterOps, ClusterType};
@@ -673,7 +673,7 @@ mod tests {
     use super::*;
     use crate::secrets::SecretManager;
     use orion_configuration::config::cluster::{
-        Cluster as ClusterConfig, ClusterDiscoveryType, LbPolicy, OriginalDstConfig, http_protocol_options::Codec,
+        http_protocol_options::Codec, Cluster as ClusterConfig, ClusterDiscoveryType, LbPolicy, OriginalDstConfig,
     };
     use std::str::FromStr;
 

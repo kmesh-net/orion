@@ -19,11 +19,11 @@
 //
 use super::{RequestHandler, TransactionHandler};
 use crate::{
-    PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+    PolyBody, Result,
 };
 use http_body_util::Full;
-use hyper::{Request, Response, body::Incoming};
+use hyper::{body::Incoming, Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::route::DirectResponseAction;
 
 impl RequestHandler<Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>> for &DirectResponseAction {

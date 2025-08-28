@@ -1,8 +1,8 @@
 use std::future::IntoFuture;
 
 use orion_data_plane_api::envoy_data_plane_api::envoy::{
-    config::core::v3::{DataSource, data_source::Specifier},
-    extensions::transport_sockets::tls::v3::{CertificateValidationContext, secret},
+    config::core::v3::{data_source::Specifier, DataSource},
+    extensions::transport_sockets::tls::v3::{secret, CertificateValidationContext},
 };
 use orion_xds::xds::{resources, server::start_aggregate_server};
 use tracing::info;

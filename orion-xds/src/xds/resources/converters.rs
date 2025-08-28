@@ -21,7 +21,7 @@
 use std::net::SocketAddr;
 
 use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::{
-    SocketAddress, address, socket_address::PortSpecifier,
+    address, socket_address::PortSpecifier, SocketAddress,
 };
 
 pub struct SocketConverter;

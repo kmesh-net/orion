@@ -28,9 +28,9 @@ use orion_configuration::config::{
     secret::{Secret, Type},
 };
 use orion_lib::{
-    ConfigDump, ConfigurationSenders, ListenerConfigurationChange, clusters::clusters_manager::get_all_clusters,
+    clusters::clusters_manager::get_all_clusters, ConfigDump, ConfigurationSenders, ListenerConfigurationChange,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::xds_configurator::send_change_to_runtimes;
@@ -109,10 +109,10 @@ mod config_dump_tests {
     use axum_test::TestServer;
     use compact_str::CompactString;
     use orion_configuration::config::{
-        Bootstrap, Listener,
         core::DataSource,
         network_filters::http_connection_manager::header_modifer::HeaderModifier,
         secret::{Secret, TlsCertificate, Type, ValidationContext},
+        Bootstrap, Listener,
     };
     use orion_lib::{ConfigDump, ListenerConfigurationChange};
     use parking_lot::RwLock;
@@ -121,7 +121,7 @@ mod config_dump_tests {
     use tokio::sync::mpsc;
 
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
-        config::core::v3::{DataSource as EnvoyDataSource, data_source::Specifier::InlineString},
+        config::core::v3::{data_source::Specifier::InlineString, DataSource as EnvoyDataSource},
         extensions::transport_sockets::tls::v3::{
             CertificateValidationContext as EnvoyCertificateValidationContext, TlsCertificate as EnvoyTlsCertificate,
         },
@@ -198,8 +198,8 @@ mod config_dump_tests {
     #[tokio::test]
     async fn config_dump_bootstrap() {
         use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::{
-            Address as EnvoyOuterAddress, SocketAddress as EnvoySocketAddress, address::Address as EnvoyAddress,
-            socket_address::PortSpecifier,
+            address::Address as EnvoyAddress, socket_address::PortSpecifier, Address as EnvoyOuterAddress,
+            SocketAddress as EnvoySocketAddress,
         };
         use serde_json::json;
         let envoy_sock_addr = EnvoySocketAddress {
@@ -238,8 +238,8 @@ mod config_dump_tests {
         use orion_configuration::config::{
             listener::{FilterChain, FilterChainMatch, Listener, MainFilter},
             network_filters::http_connection_manager::{
-                CodecType, HttpConnectionManager, Route, RouteConfiguration, RouteSpecifier, VirtualHost, XffSettings,
                 route::{Action, RouteMatch},
+                CodecType, HttpConnectionManager, Route, RouteConfiguration, RouteSpecifier, VirtualHost, XffSettings,
             },
         };
         use std::{

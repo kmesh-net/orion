@@ -22,7 +22,7 @@ use bytes::Bytes;
 use http::{HeaderValue, Response, StatusCode, Version as HttpVersion};
 use http_body_util::Full;
 
-use crate::{PolyBody, body::response_flags::ResponseFlags};
+use crate::{body::response_flags::ResponseFlags, PolyBody};
 
 #[derive(Clone, Debug)]
 pub struct SyntheticHttpResponse {

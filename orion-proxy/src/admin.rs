@@ -23,13 +23,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{extract::State, routing::get, Json, Router};
 use orion_configuration::config::Bootstrap;
 use orion_error::{Error, Result};
 use orion_lib::{ConfigurationSenders, SecretManager};
 use parking_lot::RwLock;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[cfg(feature = "config-dump")]
 mod config_dump;

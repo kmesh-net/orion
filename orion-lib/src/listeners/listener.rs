@@ -23,10 +23,10 @@ use super::{
     listeners_manager::TlsContextChange,
 };
 use crate::{
-    ConversionContext, Error, Result, RouteConfigurationChange,
     listeners::filter_state::DownstreamConnectionMetadata,
     secrets::{TlsConfigurator, WantsToBuildServer},
-    transport::{AsyncStream, ProxyProtocolReader, bind_device::BindDevice, tls_inspector},
+    transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader},
+    ConversionContext, Error, Result, RouteConfigurationChange,
 };
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
@@ -45,8 +45,8 @@ use std::{
     fmt::Debug,
     net::SocketAddr,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
 use tokio::{
@@ -662,10 +662,9 @@ filter_chains:
         let conv = ConversionContext { envoy_object: listener, secret_manager: &secrets_man };
         let r = PartialListener::try_from(conv);
         let err = r.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("has server_names in filter_chain_match, but no TLS inspector so matches would always fail")
-        );
+        assert!(err
+            .to_string()
+            .contains("has server_names in filter_chain_match, but no TLS inspector so matches would always fail"));
     }
 
     #[traced_test]

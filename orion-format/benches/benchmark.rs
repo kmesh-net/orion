@@ -1,10 +1,10 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
-    DEFAULT_ACCESS_LOG_FORMAT, LogFormatter, LogFormatterLocal,
     context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
     types::{ResponseFlags, ResponseFlagsShort},
+    LogFormatter, LogFormatterLocal, DEFAULT_ACCESS_LOG_FORMAT,
 };
 use smol_str::ToSmolStr;
 use std::time::Duration;

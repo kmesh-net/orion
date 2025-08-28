@@ -20,14 +20,14 @@
 
 use super::{RequestHandler, TransactionHandler};
 use crate::{
-    PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
     listeners::synthetic_http_response::SyntheticHttpResponse,
-    transport::{HttpChannel, policy::RequestExt},
+    transport::{policy::RequestExt, HttpChannel},
+    PolyBody, Result,
 };
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 
-use http::{HeaderMap, HeaderValue, StatusCode, Version, header};
+use http::{header, HeaderMap, HeaderValue, StatusCode, Version};
 use hyper::{Request, Response};
 use orion_client::rt::TokioIo;
 use orion_configuration::config::network_filters::http_connection_manager::UpgradeType;

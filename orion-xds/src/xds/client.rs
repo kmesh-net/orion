@@ -25,11 +25,11 @@ use super::{
 };
 use core::result::Result::{Err, Ok};
 
+use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
     tonic,
 };
-use orion_configuration::config::bootstrap::Node;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
@@ -470,7 +470,11 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id, value, resource_version))
             })
             .collect();
-        if decoding_errors.is_empty() { Ok(decoded_updates) } else { Err(decoding_errors) }
+        if decoding_errors.is_empty() {
+            Ok(decoded_updates)
+        } else {
+            Err(decoding_errors)
+        }
     }
 
     fn extract_update_versions(updates: &[XdsResourceUpdate]) -> HashMap<ResourceId, ResourceVersion> {

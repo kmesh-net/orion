@@ -25,7 +25,7 @@ pub mod types;
 
 use crate::grammar::EnvoyGrammar;
 use context::Context;
-use operator::{Category, NUM_OPERATOR_CATEGORIES, Operator};
+use operator::{Category, Operator, NUM_OPERATOR_CATEGORIES};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::{

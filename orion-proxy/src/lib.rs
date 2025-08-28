@@ -19,7 +19,7 @@
 //
 
 use orion_configuration::{config::Config, options::Options};
-use orion_lib::{RUNTIME_CONFIG, Result};
+use orion_lib::{Result, RUNTIME_CONFIG};
 
 #[macro_use]
 mod admin;
@@ -49,11 +49,12 @@ pub fn run() -> Result<()> {
 mod proxy_tracing {
     use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
     use tracing_subscriber::{
-        EnvFilter, Registry, fmt,
+        fmt,
         fmt::format::{DefaultFields, Format},
         layer::Layered,
         reload,
         reload::Handle,
+        EnvFilter, Registry,
     };
 
     use orion_configuration::config::LogConfig as LogConf;

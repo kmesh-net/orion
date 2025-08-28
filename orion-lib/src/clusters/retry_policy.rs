@@ -26,7 +26,7 @@ use orion_format::types::ResponseFlags as FmtResponseFlags;
 
 use tokio::time::error::Elapsed;
 
-use crate::{Error as BoxError, body::response_flags::ResponseFlags};
+use crate::{body::response_flags::ResponseFlags, Error as BoxError};
 use std::{error::Error, io};
 
 use orion_http_header::{X_ENVOY_RATELIMITED, X_ORION_RATELIMITED};
@@ -181,7 +181,11 @@ impl<'a> TryInferFrom<&'a (dyn std::error::Error + 'static)> for EventError {
 
 impl<B: Body> RetryCondition<'_, B> {
     pub fn inner_response(&self) -> Option<&Response<B>> {
-        if let RetryCondition::Response(resp) = self { Some(resp) } else { None }
+        if let RetryCondition::Response(resp) = self {
+            Some(resp)
+        } else {
+            None
+        }
     }
 
     #[allow(dead_code)]

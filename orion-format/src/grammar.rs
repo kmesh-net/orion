@@ -21,8 +21,8 @@
 use std::sync::LazyLock;
 
 use crate::{
-    FormatError, Grammar, Template,
     operator::{Category, HeaderName, Operator, ReqArgument, RespArgument},
+    FormatError, Grammar, Template,
 };
 use ptrie::Trie;
 use smol_str::SmolStr;

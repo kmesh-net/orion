@@ -21,12 +21,12 @@
 use std::{fmt::Debug, sync::Arc};
 
 use rand::{
-    SeedableRng,
     distributions::{Distribution, WeightedIndex},
     rngs::SmallRng,
+    SeedableRng,
 };
 
-use super::{Balancer, WeightedEndpoint, default_balancer::LbItem};
+use super::{default_balancer::LbItem, Balancer, WeightedEndpoint};
 
 #[derive(Debug, Clone)]
 pub struct RandomBalancer<E> {
@@ -88,11 +88,11 @@ impl<E: WeightedEndpoint> FromIterator<Arc<E>> for RandomBalancer<E> {
 mod test {
     use std::sync::Arc;
 
-    use rand::{SeedableRng, rngs::SmallRng};
+    use rand::{rngs::SmallRng, SeedableRng};
 
     use crate::clusters::balancers::{
-        Balancer,
         random::{LbItem, RandomBalancer},
+        Balancer,
     };
 
     #[test]

@@ -31,19 +31,19 @@ use webpki::types::ServerName;
 
 use super::{
     balancers::{
-        Balancer, DefaultBalancer, EndpointWithAuthority, EndpointWithLoad, WeightedEndpoint, hash_policy::HashState,
-        least::WeightedLeastRequestBalancer, maglev::MaglevBalancer, random::RandomBalancer, ring::RingHashBalancer,
-        wrr::WeightedRoundRobinBalancer,
+        hash_policy::HashState, least::WeightedLeastRequestBalancer, maglev::MaglevBalancer, random::RandomBalancer,
+        ring::RingHashBalancer, wrr::WeightedRoundRobinBalancer, Balancer, DefaultBalancer, EndpointWithAuthority,
+        EndpointWithLoad, WeightedEndpoint,
     },
     // cluster::HyperService,
     health::{EndpointHealth, ValueUpdated},
 };
 use crate::{
-    Result,
     transport::{
-        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
-        bind_device::BindDevice,
+        bind_device::BindDevice, GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
+        UpstreamTransportSocketConfigurator,
     },
+    Result,
 };
 
 #[derive(Debug, Clone)]
@@ -491,7 +491,7 @@ mod test {
     use crate::{
         clusters::health::HealthStatus,
         transport::{
-            HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator, bind_device::BindDevice,
+            bind_device::BindDevice, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
         },
     };
 

@@ -22,12 +22,12 @@ use std::sync::Arc;
 
 use compact_str::CompactString;
 use rustls::{
-    ClientConfig, RootCertStore, ServerConfig, SupportedProtocolVersion, client::WebPkiServerVerifier,
-    server::WebPkiClientVerifier, sign::CertifiedKey,
+    client::WebPkiServerVerifier, server::WebPkiClientVerifier, sign::CertifiedKey, ClientConfig, RootCertStore,
+    ServerConfig, SupportedProtocolVersion,
 };
 use tracing::{debug, warn};
 
-use super::configurator::{ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert, get_crypto_key_provider};
+use super::configurator::{get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert};
 
 #[derive(Debug, Clone)]
 pub struct WantsCertStore {

@@ -20,13 +20,13 @@
 
 use std::collections::HashMap;
 
-use orion_configuration::config::cluster::{HealthCheck, health_check::HealthCheckProtocol};
+use orion_configuration::config::cluster::{health_check::HealthCheckProtocol, HealthCheck};
 use tokio::sync::mpsc;
 
 use crate::clusters::{
     cluster::{ClusterOps, ClusterType},
     clusters_manager,
-    health::{EndpointHealthUpdate, checkers::EndpointHealthChecker},
+    health::{checkers::EndpointHealthChecker, EndpointHealthUpdate},
 };
 
 use super::EndpointId;

@@ -19,11 +19,11 @@
 //
 
 use crate::{
-    Error, Result, SecretManager,
     listeners::filter_state::DownstreamConnectionMetadata,
     secrets::{TlsConfigurator, WantsToBuildClient},
     transport::AsyncReadWrite,
     utils::rewindable_stream::RewindableHeadAsyncStream,
+    Error, Result, SecretManager,
 };
 use orion_configuration::config::{
     common::{ProxyProtocolVersion, TlvType},
@@ -31,7 +31,7 @@ use orion_configuration::config::{
     transport::{PassTlvMatchType, ProxyProtocolPassThroughTlvs, TlvEntry, UpstreamProxyProtocolConfig},
 };
 use orion_error::Context;
-use ppp::{HeaderResult, v1, v2};
+use ppp::{v1, v2, HeaderResult};
 use rustls::ClientConfig;
 use std::{
     collections::HashMap,

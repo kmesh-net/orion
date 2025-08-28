@@ -21,15 +21,15 @@
 use super::{RequestHandler, TransactionHandler};
 
 use crate::{
-    Error, PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+    Error, PolyBody, Result,
 };
 use http::{
-    HeaderValue, StatusCode, Uri,
     header::LOCATION,
     uri::{Authority, Parts as UriParts, PathAndQuery, Scheme},
+    HeaderValue, StatusCode, Uri,
 };
-use hyper::{Request, Response, body::Incoming};
+use hyper::{body::Incoming, Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::route::{
     AuthorityRedirect, RedirectAction, RouteMatchResult,
 };

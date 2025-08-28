@@ -37,7 +37,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
 use tracing::debug;
 
-use crate::clusters::retry_policy::{EventError, elapsed};
+use crate::clusters::retry_policy::{elapsed, EventError};
 
 use super::{bind_device::BindDevice, resolve};
 

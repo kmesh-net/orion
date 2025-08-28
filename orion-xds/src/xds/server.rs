@@ -23,13 +23,13 @@ use std::{net::SocketAddr, pin::Pin};
 use atomic_take::AtomicTake;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::{
-        DeltaDiscoveryRequest, DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse, Resource, ResourceName,
         aggregated_discovery_service_server::{AggregatedDiscoveryService, AggregatedDiscoveryServiceServer},
+        DeltaDiscoveryRequest, DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse, Resource, ResourceName,
     },
-    tonic::{self, IntoStreamingRequest, Response, Status, transport::Server},
+    tonic::{self, transport::Server, IntoStreamingRequest, Response, Status},
 };
 use tokio::sync::mpsc::{self, Receiver};
-use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
+use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tracing::info;
 
 use crate::xds::{self, model::XdsError};

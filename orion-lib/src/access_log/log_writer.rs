@@ -24,7 +24,7 @@ use tracing_appender::{
     rolling::{RollingFileAppender, Rotation},
 };
 
-use super::{LoggerError, deferred_init};
+use super::{deferred_init, LoggerError};
 use deferred_init::DeferredInit;
 
 pub(crate) struct LogWriter {

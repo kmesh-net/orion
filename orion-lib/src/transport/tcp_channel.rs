@@ -21,7 +21,7 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use super::{
-    AsyncStream, UpstreamTransportSocketConfigurator, bind_device::BindDevice, connector::LocalConnectorWithDNSResolver,
+    bind_device::BindDevice, connector::LocalConnectorWithDNSResolver, AsyncStream, UpstreamTransportSocketConfigurator,
 };
 use crate::{
     listeners::filter_state::DownstreamConnectionMetadata,

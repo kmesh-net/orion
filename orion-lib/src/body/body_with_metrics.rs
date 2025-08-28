@@ -25,8 +25,8 @@ use pin_project::pin_project;
 use std::{
     pin::Pin,
     sync::{
-        Arc,
         atomic::{AtomicU64, Ordering},
+        Arc,
     },
     task::{Context, Poll},
 };

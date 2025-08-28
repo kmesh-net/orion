@@ -24,16 +24,16 @@ use std::{
 };
 
 use crate::{
-    StringType,
     operator::{Category, Operator},
     types::{ResponseFlags, ResponseFlagsLong, ResponseFlagsShort},
+    StringType,
 };
 use ahash::AHasher;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use http::{Request, Response, uri::Authority};
+use http::{uri::Authority, Request, Response};
 use orion_http_header::*;
 use orion_interner::StringInterner;
-use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr, format_smolstr};
+use smol_str::{format_smolstr, SmolStr, SmolStrBuilder, ToSmolStr};
 use uuid::Uuid;
 
 pub trait Context {

@@ -3,7 +3,7 @@ use std::{future::IntoFuture, time::Duration};
 
 use orion_xds::xds::{
     resources,
-    server::{ServerAction, start_aggregate_server},
+    server::{start_aggregate_server, ServerAction},
 };
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

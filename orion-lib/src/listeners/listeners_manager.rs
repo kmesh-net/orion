@@ -24,11 +24,11 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 use orion_configuration::config::{
-    Listener as ListenerConfig, network_filters::http_connection_manager::RouteConfiguration,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::listener::{Listener, ListenerFactory};
-use crate::{ConfigDump, Result, secrets::TransportSecret};
+use crate::{secrets::TransportSecret, ConfigDump, Result};
 #[derive(Debug, Clone)]
 pub enum ListenerConfigurationChange {
     Added(Box<(ListenerFactory, ListenerConfig)>),

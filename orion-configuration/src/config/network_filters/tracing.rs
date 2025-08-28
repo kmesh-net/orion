@@ -141,8 +141,14 @@ mod envoy_conversions {
         type Error = GenericError;
 
         fn try_from(value: EnvoyOpenTelemetryConfig) -> Result<Self, Self::Error> {
-            let EnvoyOpenTelemetryConfig { grpc_service, http_service, service_name, resource_detectors, sampler, max_cache_size, } =
-                value;
+            let EnvoyOpenTelemetryConfig {
+                grpc_service,
+                http_service,
+                service_name,
+                resource_detectors,
+                sampler,
+                max_cache_size,
+            } = value;
             unsupported_field!(
                 // grpc_service,
                 http_service,

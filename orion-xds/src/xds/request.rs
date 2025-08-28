@@ -20,12 +20,12 @@
 
 use super::model::{ResourceId, ResourceVersion, TypeUrl};
 
+use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{config::core::v3::Node as EnvoyNode, service::discovery::v3::DeltaDiscoveryRequest},
     google::rpc::Status,
     tonic,
 };
-use orion_configuration::config::bootstrap::Node;
 use std::collections::HashMap;
 
 pub struct StatusBuilder {

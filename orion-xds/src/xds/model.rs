@@ -20,6 +20,10 @@
 
 use core::result::Result::Err;
 
+use orion_configuration::config::{
+    cluster::ClusterLoadAssignment, network_filters::http_connection_manager::RouteConfiguration, secret::Secret,
+    Cluster, GenericError, Listener,
+};
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{
         config::{
@@ -32,10 +36,6 @@ use orion_data_plane_api::envoy_data_plane_api::{
     prost,
     prost::Message,
     tonic,
-};
-use orion_configuration::config::{
-    Cluster, GenericError, Listener, cluster::ClusterLoadAssignment,
-    network_filters::http_connection_manager::RouteConfiguration, secret::Secret,
 };
 use serde::Deserialize;
 use std::{

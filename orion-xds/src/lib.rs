@@ -25,11 +25,11 @@ use crate::xds::{
     bindings::AggregatedDiscoveryType,
     client::{DeltaDiscoveryClient, DiscoveryClientBuilder, RETRY_INTERVAL},
 };
+use http::{Request, Response};
+use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, tonic,
 };
-use http::{Request, Response};
-use orion_configuration::config::bootstrap::Node;
 use tonic::{
     body::BoxBody,
     codegen::StdError as TonicError,
@@ -42,9 +42,9 @@ use xds::client::{DeltaClientBackgroundWorker, DeltaDiscoverySubscriptionManager
 pub mod grpc_deps {
     pub use orion_data_plane_api::envoy_data_plane_api::{
         tonic::{
-            Response, Status,
-            body::{BoxBody as GrpcBody, boxed as to_grpc_body},
+            body::{boxed as to_grpc_body, BoxBody as GrpcBody},
             codegen::StdError as Error,
+            Response, Status,
         },
         tonic_health,
     };

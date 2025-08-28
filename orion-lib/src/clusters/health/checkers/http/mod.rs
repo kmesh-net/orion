@@ -25,13 +25,13 @@ use std::{ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use http::{
-    Request, Response, Version,
     uri::{Authority, PathAndQuery, Scheme},
+    Request, Response, Version,
 };
 use http_body_util::Empty;
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, Codec, HttpHealthCheck};
 use tokio::{
-    sync::{Notify, mpsc},
+    sync::{mpsc, Notify},
     task::JoinHandle,
 };
 
@@ -39,13 +39,13 @@ use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
 use crate::body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind};
 // use crate::clusters::cluster::HyperService;
 use crate::{
-    Error, PolyBody,
     clusters::health::{
-        EndpointHealthUpdate, EndpointId, HealthStatus, checkers::checker::HealthCheckerLoop,
-        counter::HealthStatusCounter,
+        checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter, EndpointHealthUpdate, EndpointId,
+        HealthStatus,
     },
     listeners::http_connection_manager::{RequestHandler, TransactionHandler},
-    transport::{HttpChannel, policy::RequestExt},
+    transport::{policy::RequestExt, HttpChannel},
+    Error, PolyBody,
 };
 
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.

@@ -58,7 +58,7 @@ mod envoy_conversions {
                 access_log_options,
                 cluster_specifier,
                 backoff_options,
-                proxy_protocol_tlvs
+                proxy_protocol_tlvs,
             } = value;
             unsupported_field!(
                 // stat_prefix,

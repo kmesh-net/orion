@@ -25,34 +25,34 @@ use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{
         config::{
             cluster::v3::{
-                Cluster,
                 cluster::{ClusterDiscoveryType, DiscoveryType, LbPolicy},
+                Cluster,
             },
             core::v3::{
-                Address, Http1ProtocolOptions, Http2ProtocolOptions, HttpProtocolOptions as ConfigHttpProtocolOptions,
-                Node, socket_address::PortSpecifier,
+                socket_address::PortSpecifier, Address, Http1ProtocolOptions, Http2ProtocolOptions,
+                HttpProtocolOptions as ConfigHttpProtocolOptions, Node,
             },
             endpoint::v3::{
-                ClusterLoadAssignment, Endpoint, LbEndpoint, LocalityLbEndpoints, lb_endpoint::HostIdentifier,
+                lb_endpoint::HostIdentifier, ClusterLoadAssignment, Endpoint, LbEndpoint, LocalityLbEndpoints,
             },
-            listener::v3::{Filter, FilterChain, Listener, filter::ConfigType},
+            listener::v3::{filter::ConfigType, Filter, FilterChain, Listener},
             route::v3::{
-                HeaderMatcher, Route, RouteAction, RouteConfiguration, RouteMatch, VirtualHost, WeightedCluster,
                 header_matcher::HeaderMatchSpecifier, route::Action, route_action::ClusterSpecifier,
-                route_match::PathSpecifier, weighted_cluster::ClusterWeight,
+                route_match::PathSpecifier, weighted_cluster::ClusterWeight, HeaderMatcher, Route, RouteAction,
+                RouteConfiguration, RouteMatch, VirtualHost, WeightedCluster,
             },
         },
         extensions::{
             filters::network::http_connection_manager::v3::{
-                HttpConnectionManager,
                 http_connection_manager::{CodecType, RouteSpecifier},
+                HttpConnectionManager,
             },
-            transport_sockets::tls::v3::{Secret, secret},
+            transport_sockets::tls::v3::{secret, Secret},
             upstreams::http::v3::{
-                HttpProtocolOptions,
                 http_protocol_options::{
-                    ExplicitHttpConfig, UpstreamProtocolOptions, explicit_http_config::ProtocolConfig,
+                    explicit_http_config::ProtocolConfig, ExplicitHttpConfig, UpstreamProtocolOptions,
                 },
+                HttpProtocolOptions,
             },
         },
         service::discovery::v3::{DeltaDiscoveryRequest, DiscoveryRequest, Resource},

@@ -32,8 +32,8 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
 use crate::clusters::health::{
+    checkers::tests::{deref, TestFixture},
     HealthStatus,
-    checkers::tests::{TestFixture, deref},
 };
 
 use super::*;
@@ -72,7 +72,11 @@ impl MockTcpStream {
     pub fn new(actions: Arc<Mutex<TcpActionTrace>>) -> Self {
         let responses = {
             let state = &mut actions.lock();
-            if let Ok(responses) = state.responses.try_recv() { responses.into() } else { VecDeque::new() }
+            if let Ok(responses) = state.responses.try_recv() {
+                responses.into()
+            } else {
+                VecDeque::new()
+            }
         };
         MockTcpStream { actions, responses, buffer: Vec::new() }
     }

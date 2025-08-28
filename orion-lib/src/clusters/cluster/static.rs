@@ -20,14 +20,14 @@
 
 use super::{ClusterOps, ClusterType};
 use crate::{
-    Result,
     clusters::{
-        GrpcService,
         clusters_manager::{RoutingContext, RoutingRequirement},
         load_assignment::{ClusterLoadAssignment, ClusterLoadAssignmentBuilder},
+        GrpcService,
     },
     secrets::TransportSecret,
     transport::{HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
+    Result,
 };
 use http::uri::Authority;
 use orion_configuration::config::cluster::{HealthCheck, HealthStatus, LbPolicy};

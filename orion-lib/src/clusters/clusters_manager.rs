@@ -26,20 +26,20 @@ use super::{
     load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
 };
 use crate::{
-    Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
     clusters::cluster::{ClusterOps, PartialClusterType},
     secrets::TransportSecret,
     transport::{GrpcService, HttpChannel, TcpChannelConnector},
+    Result,
 };
-use http::{HeaderName, HeaderValue, Request, uri::Authority};
+use http::{uri::Authority, HeaderName, HeaderValue, Request};
 use hyper::body::Incoming;
 use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
-use rand::{prelude::SliceRandom, thread_rng};
 use orion_interner::StringInterner;
+use rand::{prelude::SliceRandom, thread_rng};
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, btree_map::Entry as BTreeEntry},
+    collections::{btree_map::Entry as BTreeEntry, BTreeMap},
 };
 use tracing::warn;
 
