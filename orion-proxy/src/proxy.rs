@@ -116,7 +116,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         .static_resources
         .listeners
         .iter()
-        .flat_map(|l| l.get_tracing_configurations())
+        .flat_map(orion_configuration::config::Listener::get_tracing_configurations)
         .collect::<HashMap<_, _>>();
 
     // The xDS runtime always runs - this is necessary for initialization even if we do not

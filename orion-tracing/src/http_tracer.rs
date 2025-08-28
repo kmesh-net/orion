@@ -21,7 +21,7 @@ use crate::{
 
 pub use opentelemetry::trace::SpanKind as OtelSpanKind;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct HttpTracer {
     tracing: Option<TracingConfig>,
 }
@@ -145,7 +145,7 @@ impl HttpTracer {
 
     pub fn update_tracing_headers<B>(&self, context: &TraceContext, request: &mut Request<B>) {
         let headers = request.headers_mut();
-        context.map_child(|ref child| {
+        context.map_child(|child| {
             _ = child.update_headers(headers);
         });
     }

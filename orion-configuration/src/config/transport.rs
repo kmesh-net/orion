@@ -34,7 +34,7 @@ use std::{
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BindDevice {
-    /// A interface name as defined by linux SO_BINDTODEVICE
+    /// A interface name as defined by linux `SO_BINDTODEVICE`
     interface: CString,
 }
 

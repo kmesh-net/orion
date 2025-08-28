@@ -39,7 +39,7 @@ pub async fn inspect_client_hello(stream: Box<dyn AsyncReadWrite>) -> (Inspector
     let acceptor = tokio_rustls::LazyConfigAcceptor::new(Acceptor::default(), &mut inspector);
     let result = match acceptor.await {
         Ok(handshake) => match handshake.client_hello().server_name() {
-            Some(server_name) => InspectorResult::Success(server_name.to_string()),
+            Some(server_name) => InspectorResult::Success(server_name.to_owned()),
             None => InspectorResult::SuccessNoSni,
         },
         Err(e) => InspectorResult::TlsError(e),

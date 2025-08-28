@@ -265,7 +265,7 @@ impl TraceInfo {
                 let parent_id = incoming_parent_id_header
                     .map(|incoming_parent_id| -> Result<u64, TraceError> {
                         let id = incoming_parent_id.to_str().map_err(|_| TraceError::InvalidFormat)?;
-                        Ok(u64::from_str_radix(id, 16).map_err(|_| TraceError::InvalidFormat)?)
+                        u64::from_str_radix(id, 16).map_err(|_| TraceError::InvalidFormat)
                     })
                     .transpose()?;
 

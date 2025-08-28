@@ -68,7 +68,7 @@ impl TraceContext {
         *guard = match &self.parent {
             TraceParent::Full(trace_info) => Some(trace_info.clone().into_child()),
             TraceParent::TraceId(trace_id) => Some(
-                TraceInfo::new(true, crate::trace_info::TraceProvider::W3CTraceContext, trace_id.clone()).into_child(),
+                TraceInfo::new(true, crate::trace_info::TraceProvider::W3CTraceContext, *trace_id).into_child(),
             ),
         };
     }

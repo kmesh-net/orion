@@ -77,13 +77,10 @@ impl Listener {
                 filter_chain_match.hash(&mut filter_chain_match_hash);
 
                 match &filter_chain.terminal_filter {
-                    MainFilter::Http(http_connection_manager) => match http_connection_manager.tracing {
-                        Some(ref tracing) => Some((
+                    MainFilter::Http(http_connection_manager) => http_connection_manager.tracing.as_ref().map(|tracing| (
                             TracingKey(self.name.to_static_str(), filter_chain_match_hash.finish()),
                             tracing.clone(),
                         )),
-                        None => None,
-                    },
                     MainFilter::Tcp(_) => None,
                 }
             })
@@ -217,7 +214,7 @@ impl FilterChainMatch {
         }
     }
 
-    ///For criteria that allow ranges or wildcards, the most specific value in any of the configured filter chains that matches the incoming connection is going to be used (e.g. for SNI www.example.com the most specific match would be www.example.com, then *.example.com, then *.com, then any filter chain without server_names requirements).
+    ///For criteria that allow ranges or wildcards, the most specific value in any of the configured filter chains that matches the incoming connection is going to be used (e.g. for SNI www.example.com the most specific match would be www.example.com, then *.example.com, then *.com, then any filter chain without `server_names` requirements).
     pub fn matches_destination_ip(&self, ip: IpAddr) -> MatchResult {
         self.destination_prefix_ranges
             .iter()
@@ -277,7 +274,7 @@ impl FilterChainMatch {
         }
     }
 
-    ///For criteria that allow ranges or wildcards, the most specific value in any of the configured filter chains that matches the incoming connection is going to be used (e.g. for SNI www.example.com the most specific match would be www.example.com, then *.example.com, then *.com, then any filter chain without server_names requirements).
+    ///For criteria that allow ranges or wildcards, the most specific value in any of the configured filter chains that matches the incoming connection is going to be used (e.g. for SNI www.example.com the most specific match would be www.example.com, then *.example.com, then *.com, then any filter chain without `server_names` requirements).
     pub fn matches_source_ip(&self, ip: IpAddr) -> MatchResult {
         self.source_prefix_ranges
             .iter()

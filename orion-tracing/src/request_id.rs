@@ -104,10 +104,8 @@ impl RequestIdManager {
             if generated {
                 parts.headers.insert(X_REQUEST_ID, authoritative_id.clone());
             } // if not generated, we keep the existing ID
-        } else {
-            if existing_id.is_some() {
-                parts.headers.remove(X_REQUEST_ID);
-            }
+        } else if existing_id.is_some() {
+            parts.headers.remove(X_REQUEST_ID);
         }
 
         // 4. Create the RequestId...

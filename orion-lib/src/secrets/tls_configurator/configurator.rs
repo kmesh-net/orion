@@ -313,7 +313,7 @@ impl TryFrom<(TlsServerConfig, &SecretManager)> for TlsConfigurator<ServerConfig
         let supported_versions = common_context
             .parameters
             .supported_version()
-            .into_iter()
+            .iter()
             .map(|version| match version {
                 TlsVersion::TLSv1_2 => &TLS12,
                 TlsVersion::TLSv1_3 => &TLS13,
@@ -381,7 +381,7 @@ impl TryFrom<(TlsClientConfig, &SecretManager)> for TlsConfigurator<ClientConfig
         let supported_versions = context
             .parameters
             .supported_version()
-            .into_iter()
+            .iter()
             .map(|version| match version {
                 TlsVersion::TLSv1_2 => &TLS12,
                 TlsVersion::TLSv1_3 => &TLS13,
@@ -464,8 +464,8 @@ impl TlsConfigurator<ClientConfig, WantsToBuildClient> {
     }
 }
 
-/// More relaxed version of ResolvesServerCertUsingSni
-/// Allowing ServerName instead of DNSNames
+/// More relaxed version of `ResolvesServerCertUsingSni`
+/// Allowing `ServerName` instead of `DNSNames`
 
 #[derive(Debug)]
 pub struct RelaxedResolvesServerCertUsingSni {

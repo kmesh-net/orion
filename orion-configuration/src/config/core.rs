@@ -281,7 +281,7 @@ pub mod envoy_conversions {
                         GenericError::from_msg_with_cause(format!("failed to parse \"{address}\" as an ip adress"), e)
                     })
                     .with_node(address),
-                _ => Err(GenericError::from_msg(format!("only socket addresses are supported at the moment "))),
+                _ => Err(GenericError::from_msg("only socket addresses are supported at the moment")),
             }
         }
     }
@@ -290,7 +290,7 @@ pub mod envoy_conversions {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
                 Self::Socket(address, port) => f.write_str(&format!("{address}:{port}")),
-                Self::Pipe(path, _) => f.write_str(&format!("{path}")),
+                Self::Pipe(path, _) => f.write_str(path),
             }
         }
     }

@@ -99,12 +99,10 @@ mod envoy_conversions {
                 .provider
                 .as_ref()
                 .and_then(|p| p.config_type.as_ref())
-                .and_then(|config| {
+                .map(|config| {
                     let http::ConfigType::TypedConfig(config) = config;
-                    Some(
-                        SupportedTracingProvider::try_from(config.clone())
-                            .map_err(|e| GenericError::from_msg(format!("Failed to parse tracing provider: {e}"))),
-                    )
+                    SupportedTracingProvider::try_from(config.clone())
+                            .map_err(|e| GenericError::from_msg(format!("Failed to parse tracing provider: {e}")))
                 })
                 .transpose()?;
 

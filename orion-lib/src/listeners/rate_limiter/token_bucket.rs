@@ -26,7 +26,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// This TokenBucket implementation takes inspiration from `<https://github.com/rigtorp/TokenBucket/tree/master>`
+/// This `TokenBucket` implementation takes inspiration from `<https://github.com/rigtorp/TokenBucket/tree/master>`
 pub struct TokenBucket {
     time: AtomicInstant,
     time_per_token: Duration,
@@ -35,11 +35,11 @@ pub struct TokenBucket {
 }
 
 impl TokenBucket {
-    /// Construct a TokenBucket
+    /// Construct a `TokenBucket`
     //
     /// * `max_token`: The maximum tokens that the bucket can hold.
     /// * `tokens_per_fill`: The number of tokens added to the bucket during each fill interval.
-    /// * `fill_interval`: The fill interval that tokens are added to the bucket. During each fill interval tokens_per_fill are added to the bucket.
+    /// * `fill_interval`: The fill interval that tokens are added to the bucket. During each fill interval `tokens_per_fill` are added to the bucket.
     pub fn new(max_tokens: u32, tokens_per_fill: u32, fill_interval: Duration) -> TokenBucket {
         let time_per_bucket = max_tokens * fill_interval / tokens_per_fill;
         let now = Instant::now();

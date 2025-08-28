@@ -240,7 +240,7 @@ pub(crate) mod envoy_conversions {
     /// Trait that checks if an envoy field was explicitly set by the user.
     /// Used to check that the user isn't using unsupported fields
     ///
-    /// for options this is straightforwardly "is_some" but for other fields it
+    /// for options this is straightforwardly "`is_some`" but for other fields it
     /// gets a bit more complicated.
     ///
     /// integers,and enums reprsented by integers, are not `Option<i32>` bur plain `i32`

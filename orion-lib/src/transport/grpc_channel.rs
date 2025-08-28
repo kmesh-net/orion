@@ -98,8 +98,8 @@ impl Service<Request<GrpcBody>> for GrpcService {
     }
 }
 
-/// Simple GrpcService that does round-robin load balancing
-/// over a static group of GrpcService instances
+/// Simple `GrpcService` that does round-robin load balancing
+/// over a static group of `GrpcService` instances
 pub struct SimpleRoundRobinGrpcServiceLB {
     services: Cycle<IntoIter<GrpcService>>,
 }

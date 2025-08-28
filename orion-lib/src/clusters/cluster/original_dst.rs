@@ -51,7 +51,7 @@ use super::{ClusterOps, ClusterType};
 /// the number of connections.
 const MAXIMUM_ENDPOINTS: usize = 10_000;
 
-/// Default cleanup interval for ORIGINAL_DST clusters.
+/// Default cleanup interval for `ORIGINAL_DST` clusters.
 /// See <https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto#envoy-v3-api-field-config-cluster-v3-cluster-cleanup-interval>
 const DEFAULT_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 

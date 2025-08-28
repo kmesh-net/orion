@@ -43,7 +43,7 @@ use opentelemetry::trace::{Span, Status};
 use opentelemetry::KeyValue;
 use orion_configuration::config::GenericError;
 use orion_tracing::span_state::SpanState;
-use orion_tracing::{attributes::*, with_client_span, with_server_span};
+use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::{
     FilterConfigOverride, FilterOverride,
@@ -461,7 +461,7 @@ impl TransactionHandler {
     ) -> Self {
         TransactionHandler {
             start_instant: std::time::Instant::now(),
-            access_log_ctx: if is_access_log_enabled() { Some(AccessLoggersContext::new(access_log)) } else { None },
+            access_log_ctx: is_access_log_enabled().then(|| AccessLoggersContext::new(access_log)),
             trace_ctx,
             request_id,
             completed_phases: AtomicU8::new(0),
@@ -564,88 +564,85 @@ impl TransactionHandler {
         res: Result<Response<BodyWithMetrics<PolyBody>>>,
         listener_name: &'static str,
     ) -> Result<Response<BodyWithMetrics<PolyBody>>> {
-        match &res {
-            Ok(response) => {
-                let status_code = response.status().as_u16();
+        if let Ok(response) = &res {
+            let status_code = response.status().as_u16();
 
-                with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| srv_span
-                    .set_attribute(KeyValue::new(HTTP_RESPONSE_STATUS_CODE, status_code as i64)));
+            with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| srv_span
+                .set_attribute(KeyValue::new(HTTP_RESPONSE_STATUS_CODE, i64::from(status_code))));
 
-                match status_code {
-                    100..200 => {
-                        with_metric!(
-                            http::DOWNSTREAM_RQ_1XX,
-                            add,
-                            1,
-                            self.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
-                        );
-                    },
-                    200..300 => {
-                        with_metric!(
-                            http::DOWNSTREAM_RQ_2XX,
-                            add,
-                            1,
-                            self.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
-                        );
-                    },
-                    300..400 => {
-                        with_metric!(
-                            http::DOWNSTREAM_RQ_3XX,
-                            add,
-                            1,
-                            self.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
-                        );
-                    },
-                    400..500 => {
-                        with_metric!(
-                            http::DOWNSTREAM_RQ_4XX,
-                            add,
-                            1,
-                            self.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
-                        );
-                    },
-                    500..600 => {
-                        with_metric!(
-                            http::DOWNSTREAM_RQ_5XX,
-                            add,
-                            1,
-                            self.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
-                        );
+            match status_code {
+                100..200 => {
+                    with_metric!(
+                        http::DOWNSTREAM_RQ_1XX,
+                        add,
+                        1,
+                        self.thread_id(),
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                },
+                200..300 => {
+                    with_metric!(
+                        http::DOWNSTREAM_RQ_2XX,
+                        add,
+                        1,
+                        self.thread_id(),
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                },
+                300..400 => {
+                    with_metric!(
+                        http::DOWNSTREAM_RQ_3XX,
+                        add,
+                        1,
+                        self.thread_id(),
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                },
+                400..500 => {
+                    with_metric!(
+                        http::DOWNSTREAM_RQ_4XX,
+                        add,
+                        1,
+                        self.thread_id(),
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                },
+                500..600 => {
+                    with_metric!(
+                        http::DOWNSTREAM_RQ_5XX,
+                        add,
+                        1,
+                        self.thread_id(),
+                        &[KeyValue::new("listener", listener_name)]
+                    );
 
-                        with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| {
-                            srv_span.set_status(Status::error("5xx"));
-                        });
+                    with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| {
+                        srv_span.set_status(Status::error("5xx"));
+                    });
 
-                        with_client_span!(self.span_state, |clt_span: &mut BoxedSpan| {
-                            clt_span.set_status(Status::error("5xx"));
-                        });
-                    },
-                    _ => {},
-                }
-            },
-            Err(_) => {
-                with_metric!(
-                    http::DOWNSTREAM_RQ_5XX,
-                    add,
-                    1,
-                    self.thread_id(),
-                    &[KeyValue::new("listener", listener_name)]
-                );
+                    with_client_span!(self.span_state, |clt_span: &mut BoxedSpan| {
+                        clt_span.set_status(Status::error("5xx"));
+                    });
+                },
+                _ => {},
+            }
+        } else {
+            with_metric!(
+                http::DOWNSTREAM_RQ_5XX,
+                add,
+                1,
+                self.thread_id(),
+                &[KeyValue::new("listener", listener_name)]
+            );
 
-                with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| {
-                    srv_span.set_attribute(KeyValue::new(HTTP_RESPONSE_STATUS_CODE, 500));
-                    srv_span.set_status(Status::error("5xx"));
-                });
+            with_server_span!(self.span_state, |srv_span: &mut BoxedSpan| {
+                srv_span.set_attribute(KeyValue::new(HTTP_RESPONSE_STATUS_CODE, 500));
+                srv_span.set_status(Status::error("5xx"));
+            });
 
-                with_client_span!(self.span_state, |clt_span: &mut BoxedSpan| {
-                    clt_span.set_status(Status::error("5xx"));
-                });
-            },
+            with_client_span!(self.span_state, |clt_span: &mut BoxedSpan| {
+                clt_span.set_status(Status::error("5xx"));
+            });
         }
         res
     }
@@ -1024,7 +1021,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
 
 fn eval_http_init_context<R>(request: &Request<R>, trans_handler: &TransactionHandler) {
     if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-        let trace_id = trans_handler.trace_ctx.as_ref().and_then(|t| t.map_child(|child| child.trace_id()));
+        let trace_id = trans_handler.trace_ctx.as_ref().and_then(|t| t.map_child(orion_tracing::trace_info::TraceInfo::trace_id));
         let request_head_size = request_head_size(request);
         ctx.access_loggers.lock().with_context_fn(|| InitHttpContext {
             start_time: std::time::SystemTime::now(),

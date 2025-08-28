@@ -672,7 +672,7 @@ mod envoy_conversions {
                     additional_addresses,
                 }) => (|| -> Result<Address, GenericError> {
                     unsupported_field!(health_check_config, hostname, additional_addresses)?;
-                    Address::try_from(address.ok_or(GenericError::from_msg(format!("Address is not set")))?)
+                    Address::try_from(address.ok_or(GenericError::from_msg("Address is not set"))?)
                 })(),
                 EnvoyHostIdentifier::EndpointName(_) => Err(GenericError::unsupported_variant("EndpointName")),
             }
@@ -697,7 +697,7 @@ mod envoy_conversions {
                         .endpoints
                         .iter()
                         .flat_map(|e| e.lb_endpoints.iter().map(|e| e.address.clone().into_addr()).collect::<Vec<_>>())
-                        .filter(|e| e.is_err())
+                        .filter(std::result::Result::is_err)
                         .collect::<Vec<_>>()
                         .is_empty()
                     {

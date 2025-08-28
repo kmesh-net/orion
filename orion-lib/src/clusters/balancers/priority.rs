@@ -39,11 +39,11 @@ impl Priority {
     /// Implementation and test cases taken from Envoy's documentation
     /// <https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/priority>
     ///
-    /// health(P_X) = min(100, 1.4 * 100 * healthy_P_X_backends / total_P_X_backends)
-    /// normalized_total_health = min(100, Σ(health(P_0)...health(P_X)))
-    /// priority_load(P_0) = health(P_0) * 100 / normalized_total_health
-    /// priority_load(P_X) = min(100 - Σ(priority_load(P_0)..priority_load(P_X-1)),
-    /// health(P_X) * 100 / normalized_total_health)
+    /// `health(P_X)` = min(100, 1.4 * 100 * `healthy_P_X_backends` / `total_P_X_backends`)
+    /// `normalized_total_health` = min(100, `Σ(health(P_0)...health(P_X))`)
+    /// `priority_load(P_0)` = `health(P_0)` * 100 / `normalized_total_health`
+    /// `priority_load(P_X)` = min(100 - Σ(priority_load(P_0)..priority_load(P_X-1)),
+    /// `health(P_X)` * 100 / `normalized_total_health`)
     ///
     ///
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::similar_names)]

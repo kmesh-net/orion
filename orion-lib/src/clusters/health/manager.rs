@@ -54,7 +54,7 @@ impl HealthCheckManager {
         if let Some(health_check_config) = cluster_config.into_health_check() {
             let HealthCheck { cluster: cluster_config, protocol } = health_check_config;
 
-            let checkers = self.checkers.entry(cluster_name.to_string()).or_default();
+            let checkers = self.checkers.entry(cluster_name.to_owned()).or_default();
 
             match protocol {
                 HealthCheckProtocol::Http(http_config) => {
@@ -63,7 +63,7 @@ impl HealthCheckManager {
                     };
 
                     for (authority, channel) in endpoints {
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint: authority };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint: authority };
 
                         let new_checker = EndpointHealthChecker::try_new_http(
                             endpoint_id.clone(),
@@ -92,7 +92,7 @@ impl HealthCheckManager {
                     };
 
                     for (authority, channel) in endpoints {
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint: authority };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint: authority };
 
                         checkers.push(EndpointHealthChecker::new_tcp(
                             endpoint_id.clone(),
@@ -117,7 +117,7 @@ impl HealthCheckManager {
                             },
                         };
 
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint };
 
                         checkers.push(EndpointHealthChecker::new_grpc(
                             endpoint_id.clone(),
