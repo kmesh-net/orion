@@ -23,14 +23,31 @@ use super::{
     listeners_manager::TlsContextChange,
 };
 use crate::{
-    secrets::{TlsConfigurator, WantsToBuildServer},
-    transport::{bind_device::BindDevice, tls_inspector::TlsInspector},
     ConversionContext, Error, Result, RouteConfigurationChange,
+    listeners::filter_state::DownstreamConnectionMetadata,
+    secrets::{TlsConfigurator, WantsToBuildServer},
+    transport::{AsyncStream, ProxyProtocolReader, bind_device::BindDevice, tls_inspector},
 };
-use compact_str::{CompactString, ToCompactString};
-use orion_configuration::config::listener::{FilterChainMatch, Listener as ListenerConfig, MatchResult};
+use opentelemetry::KeyValue;
+use orion_configuration::config::{
+    listener::{FilterChainMatch, Listener as ListenerConfig, MatchResult},
+    listener_filters::DownstreamProxyProtocolConfig,
+};
+use orion_metrics::{
+    metrics::{http, listeners},
+    with_histogram, with_metric,
+};
 use rustls::ServerConfig;
-use std::{collections::HashMap, fmt::Debug, net::SocketAddr, sync::Arc};
+use scopeguard::defer;
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tokio::{
     net::{TcpListener, TcpSocket},
     sync::broadcast::{self},
@@ -39,11 +56,12 @@ use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 struct PartialListener {
-    name: CompactString,
+    name: &'static str,
     socket_address: std::net::SocketAddr,
     bind_device: Option<BindDevice>,
     filter_chains: HashMap<FilterChainMatch, FilterchainBuilder>,
     with_tls_inspector: bool,
+    proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
 }
 #[derive(Debug, Clone)]
 pub struct ListenerFactory {
@@ -54,10 +72,12 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
     type Error = Error;
     fn try_from(ctx: ConversionContext<'_, ListenerConfig>) -> std::result::Result<Self, Self::Error> {
         let ConversionContext { envoy_object: listener, secret_manager } = ctx;
-        let name = listener.name.to_compact_string();
+        let name = orion_interner::to_static_str(&listener.name);
         let addr = listener.address;
         let with_tls_inspector = listener.with_tls_inspector;
+        let proxy_protocol_config = listener.proxy_protocol_config;
         debug!("Listener {name} :TLS Inspector is {with_tls_inspector}");
+
         let filter_chains: HashMap<FilterChainMatch, _> = listener
             .filter_chains
             .into_iter()
@@ -74,7 +94,14 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
             }
         }
 
-        Ok(PartialListener { name, socket_address: addr, bind_device, filter_chains, with_tls_inspector })
+        Ok(PartialListener {
+            name,
+            socket_address: addr,
+            bind_device,
+            filter_chains,
+            with_tls_inspector,
+            proxy_protocol_config,
+        })
     }
 }
 
@@ -84,11 +111,18 @@ impl ListenerFactory {
         route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Result<Listener> {
-        let PartialListener { name, socket_address, bind_device, filter_chains, with_tls_inspector } = self.listener;
+        let PartialListener {
+            name,
+            socket_address,
+            bind_device,
+            filter_chains,
+            with_tls_inspector,
+            proxy_protocol_config,
+        } = self.listener;
 
         let filter_chains = filter_chains
             .into_iter()
-            .map(|fc| fc.1.with_listener_name(name.clone()).build().map(|x| (fc.0, x)))
+            .map(|fc| fc.1.with_listener_name(name).build().map(|x| (fc.0, x)))
             .collect::<Result<HashMap<_, _>>>()?;
 
         Ok(Listener {
@@ -97,6 +131,7 @@ impl ListenerFactory {
             bind_device,
             filter_chains,
             with_tls_inspector,
+            proxy_protocol_config,
             route_updates_receiver,
             secret_updates_receiver,
         })
@@ -113,11 +148,12 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for ListenerFactory {
 
 #[derive(Debug)]
 pub struct Listener {
-    name: CompactString,
+    name: &'static str,
     socket_address: std::net::SocketAddr,
     bind_device: Option<BindDevice>,
     pub filter_chains: HashMap<FilterChainMatch, FilterchainType>,
     with_tls_inspector: bool,
+    proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
     route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
     secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
 }
@@ -125,24 +161,25 @@ pub struct Listener {
 impl Listener {
     #[cfg(test)]
     pub(crate) fn test_listener(
-        name: &str,
+        name: &'static str,
         route_rx: broadcast::Receiver<RouteConfigurationChange>,
         secret_rx: broadcast::Receiver<TlsContextChange>,
     ) -> Self {
         use std::net::{IpAddr, Ipv4Addr};
         Listener {
-            name: name.into(),
+            name,
             socket_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
             bind_device: None,
             filter_chains: HashMap::new(),
             with_tls_inspector: false,
+            proxy_protocol_config: None,
             route_updates_receiver: route_rx,
             secret_updates_receiver: secret_rx,
         }
     }
 
-    pub fn get_name(&self) -> &CompactString {
-        &self.name
+    pub fn get_name(&self) -> &'static str {
+        self.name
     }
     pub fn get_socket(&self) -> (&std::net::SocketAddr, Option<&BindDevice>) {
         (&self.socket_address, self.bind_device.as_ref())
@@ -155,6 +192,7 @@ impl Listener {
             bind_device,
             filter_chains,
             with_tls_inspector,
+            proxy_protocol_config,
             mut route_updates_receiver,
             mut secret_updates_receiver,
         } = self;
@@ -162,25 +200,36 @@ impl Listener {
             Ok(x) => x,
             Err(e) => return e,
         };
+
         info!("listener '{name}' started: {local_address}");
         let mut filter_chains = Arc::new(filter_chains);
+        let proxy_protocol_config = proxy_protocol_config.map(Arc::new);
+        let listener_name = name;
+
         loop {
             tokio::select! {
-                // here we accept a connection, and then start proccesing it.
+                // here we accept a connection, and then start processing it.
                 //  we spawn early so that we don't block other connections from being accepted due to a slow client
                 maybe_stream = listener.accept() => {
                     match maybe_stream {
                         Ok((stream, peer_addr)) => {
+                            let start = std::time::Instant::now();
+
+                            // This is a new downstream connection...
+                            let shard_id = std::thread::current().id();
+                            with_metric!(listeners::DOWNSTREAM_CX_TOTAL, add, 1, shard_id,&[KeyValue::new("listener", listener_name)]);
+                            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id,&[KeyValue::new("listener", listener_name)]);
+
                             let filter_chains = Arc::clone(&filter_chains);
-                            let name = name.clone();
-                            // spawn a seperate task for handling this client<->proxy connection
+                            let proxy_protocol_config = proxy_protocol_config.clone();
+                            // spawn a separate task for handling this client<->proxy connection
                             // we spawn before we know if we want to process this route because we might need to run the tls_inspector which could
                             // stall if the client is slow to send the ClientHello and end up blocking the acceptance of new connections
                             //
                             //  we could optimize a little here by either splitting up the filter_chain selection and rbac into the parts that can run
                             // before we have the ClientHello and the ones after. since we might already have enough info to decide to drop the connection
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
-                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, local_address, peer_addr, stream));
+                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, Box::new(stream), start));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -188,7 +237,7 @@ impl Listener {
                 maybe_route_update = route_updates_receiver.recv() => {
                     //todo: add context to the error here once orion-error lands
                     match maybe_route_update {
-                        Ok(route_update) => {Self::process_route_update(&name, &filter_chains, route_update);}
+                        Ok(route_update) => {Self::process_route_update(name, &filter_chains, route_update)},
                         Err(e) => {return e.into();}
                     }
                 },
@@ -197,7 +246,7 @@ impl Listener {
                         Ok(secret_update) => {
                             // todo: possibly expensive clone - may need to rethink this structure
                             let mut filter_chains_clone = filter_chains.as_ref().clone();
-                            Self::process_secret_update(&name, &mut filter_chains_clone, secret_update);
+                            Self::process_secret_update(name, &mut filter_chains_clone, secret_update);
                             filter_chains = Arc::new(filter_chains_clone);
                         }
                         Err(e) => {return e.into();}
@@ -209,10 +258,11 @@ impl Listener {
 
     fn select_filterchain<'a, T>(
         filter_chains: &'a HashMap<FilterChainMatch, T>,
-        source_addr: SocketAddr,
-        destination_addr: SocketAddr,
+        downstream_metadata: &DownstreamConnectionMetadata,
         server_name: Option<&str>,
     ) -> Result<Option<&'a T>> {
+        let source_addr = downstream_metadata.peer_address();
+        let destination_addr = downstream_metadata.local_address();
         fn match_subitem<'a, F: Fn(&FilterChainMatch, T) -> MatchResult, T: Copy>(
             function: F,
             comparand: T,
@@ -296,37 +346,111 @@ impl Listener {
     }
 
     async fn process_listener_update(
-        listener_name: CompactString,
+        listener_name: &'static str,
         filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
         with_tls_inspector: bool,
+        proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
         local_address: SocketAddr,
         peer_addr: SocketAddr,
-        mut stream: tokio::net::TcpStream,
+        mut stream: AsyncStream,
+        start_instant: std::time::Instant,
     ) -> Result<()> {
-        let server_name = if with_tls_inspector {
-            let sni = TlsInspector::peek_sni(&mut stream).await;
-            if let Some(sni) = sni.as_ref() {
-                debug!("{listener_name} : Detected TLS server name: {sni}");
-            } else {
-                debug!("{listener_name} : No TLS server name detected");
+        let shard_id = std::thread::current().id();
+
+        let ssl = AtomicBool::new(false);
+        defer! {
+            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+            if ssl.load(Ordering::Relaxed) {
+                with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
             }
-            sni
+            let ms = u64::try_from(start_instant.elapsed().as_millis())
+                .unwrap_or(u64::MAX);
+            with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+        }
+
+        let downstream_metadata = if let Some(config) = proxy_protocol_config.as_ref() {
+            let reader = ProxyProtocolReader::new(Arc::clone(config));
+            let (metadata, new_stream) = reader.try_read_proxy_header(stream, local_address, peer_addr).await?;
+            stream = new_stream;
+            metadata
+        } else {
+            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address }
+        };
+        let downstream_metadata = Arc::new(downstream_metadata);
+
+        let server_name = if with_tls_inspector {
+            let (tls_result, rewound_stream) = tls_inspector::inspect_client_hello(stream).await;
+            stream = rewound_stream;
+            match tls_result {
+                crate::transport::tls_inspector::InspectorResult::Success(sni) => {
+                    debug!("{listener_name} : Detected TLS server name: {sni}");
+                    with_metric!(
+                        http::DOWNSTREAM_CX_SSL_TOTAL,
+                        add,
+                        1,
+                        shard_id,
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                    with_metric!(
+                        http::DOWNSTREAM_CX_SSL_ACTIVE,
+                        add,
+                        1,
+                        shard_id,
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                    ssl.store(true, Ordering::Relaxed);
+                    Some(sni)
+                },
+                crate::transport::tls_inspector::InspectorResult::SuccessNoSni => {
+                    debug!("{listener_name} : No TLS server name indication present");
+                    with_metric!(
+                        http::DOWNSTREAM_CX_SSL_TOTAL,
+                        add,
+                        1,
+                        shard_id,
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                    with_metric!(
+                        http::DOWNSTREAM_CX_SSL_ACTIVE,
+                        add,
+                        1,
+                        shard_id,
+                        &[KeyValue::new("listener", listener_name)]
+                    );
+                    ssl.store(true, Ordering::Relaxed);
+                    None
+                },
+                crate::transport::tls_inspector::InspectorResult::TlsError(e) => {
+                    debug!("{listener_name} : No TLS handshake: Error: {e}");
+                    None
+                },
+            }
         } else {
             None
         };
 
         let selected_filterchain =
-            Self::select_filterchain(&filter_chains, peer_addr, local_address, server_name.as_deref())?;
+            Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref())?;
         if let Some(filterchain) = selected_filterchain {
             debug!(
                 "{listener_name} : mapping connection from {peer_addr} to filter chain {}",
                 filterchain.filter_chain().name
             );
-            if let Some(stream) = filterchain.apply_rbac(stream, local_address, peer_addr, server_name.as_deref()) {
-                return filterchain.start_filterchain(stream).await;
+            if let Some(stream) = filterchain.apply_rbac(stream, &downstream_metadata, server_name.as_deref()) {
+                return filterchain
+                    .start_filterchain(stream, downstream_metadata, shard_id, listener_name, start_instant)
+                    .await;
             }
             debug!("{listener_name} : dropped connection from {peer_addr} due to rbac");
         } else {
+            with_metric!(
+                listeners::NO_FILTER_CHAIN_MATCH,
+                add,
+                1,
+                shard_id,
+                &[KeyValue::new("listener", listener_name)]
+            );
             warn!("{listener_name} : No match for {peer_addr} {local_address}");
         }
         Ok(())
@@ -420,16 +544,16 @@ fn configure_and_start_tcp_listener(addr: SocketAddr, device: Option<&BindDevice
 #[cfg(test)]
 mod tests {
     use orion_configuration::config::listener::{FilterChainMatch as FilterChainMatchConfig, ServerNameMatch};
-    use orion_data_plane_api::decode::from_yaml;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::config::listener::v3::FilterChainMatch as EnvoyFilterChainMatch;
+    use orion_data_plane_api::{
+        decode::from_yaml, envoy_data_plane_api::envoy::config::listener::v3::FilterChainMatch as EnvoyFilterChainMatch,
+    };
 
     use crate::SecretManager;
 
     use super::*;
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::listener::v3::Listener as EnvoyListener;
 
-    use std::net::Ipv4Addr;
-    use std::str::FromStr;
+    use std::{net::Ipv4Addr, str::FromStr};
     use tracing_test::traced_test;
 
     #[test]
@@ -493,9 +617,11 @@ socket_options:
             (FilterChainMatch::default(), 1),
         ];
         let hashmap: HashMap<_, _> = fcm.iter().cloned().collect();
-        let srcaddr = (Ipv4Addr::new(127, 0, 0, 1), 33000).into();
-        let selected =
-            Listener::select_filterchain(&hashmap, srcaddr, (Ipv4Addr::LOCALHOST, 8443).into(), None).unwrap();
+        let metadata = DownstreamConnectionMetadata::FromSocket {
+            peer_address: (Ipv4Addr::new(127, 0, 0, 1), 33000).into(),
+            local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
+        };
+        let selected = Listener::select_filterchain(&hashmap, &metadata, None).unwrap();
         assert_eq!(selected.copied(), Some(1));
     }
 
@@ -535,9 +661,10 @@ filter_chains:
         let conv = ConversionContext { envoy_object: listener, secret_manager: &secrets_man };
         let r = PartialListener::try_from(conv);
         let err = r.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("has server_names in filter_chain_match, but no TLS inspector so matches would always fail"));
+        assert!(
+            err.to_string()
+                .contains("has server_names in filter_chain_match, but no TLS inspector so matches would always fail")
+        );
     }
 
     #[traced_test]
@@ -553,19 +680,14 @@ filter_chains:
         )
         .unwrap();
         let m = std::iter::once((m.try_into().unwrap(), ())).collect();
-        let good_source = (Ipv4Addr::LOCALHOST, 3300).into();
-        let good_destination = (Ipv4Addr::LOCALHOST, 443).into();
+        let metadata = DownstreamConnectionMetadata::FromSocket {
+            peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
+            local_address: (Ipv4Addr::LOCALHOST, 443).into(),
+        };
         let good_host = Some("host.test");
-        assert!(matches!(Listener::select_filterchain(&m, good_source, good_destination, good_host), Ok(Some(()))));
-        assert!(matches!(
-            Listener::select_filterchain(&m, good_source, good_destination, Some("a.wildcard")),
-            Ok(Some(()))
-        ));
-        assert!(matches!(Listener::select_filterchain(&m, good_source, good_destination, None), Ok(None)));
-        assert!(matches!(
-            Listener::select_filterchain(&m, good_source, (Ipv4Addr::LOCALHOST, 444).into(), good_host),
-            Ok(None)
-        ));
+        assert!(matches!(Listener::select_filterchain(&m, &metadata, good_host), Ok(Some(()))));
+        assert!(matches!(Listener::select_filterchain(&m, &metadata, Some("a.wildcard")), Ok(Some(()))));
+        assert!(matches!(Listener::select_filterchain(&m, &metadata, None), Ok(None)));
     }
 
     #[test]
@@ -598,25 +720,27 @@ filter_chains:
             })
             .collect::<std::result::Result<HashMap<_, _>, _>>()
             .unwrap();
-        let srcaddr = (Ipv4Addr::new(127, 0, 0, 1), 33000).into();
-        let dst = (Ipv4Addr::LOCALHOST, 8443).into();
-        assert_eq!(Listener::select_filterchain(&m, srcaddr, dst, None).unwrap().copied(), Some(3));
+        let metadata = DownstreamConnectionMetadata::FromSocket {
+            peer_address: (Ipv4Addr::new(127, 0, 0, 1), 33000).into(),
+            local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
+        };
+        assert_eq!(Listener::select_filterchain(&m, &metadata, None).unwrap().copied(), Some(3));
         assert_eq!(
-            Listener::select_filterchain(&m, srcaddr, dst, Some("this.is.more.specific")).unwrap().copied(),
+            Listener::select_filterchain(&m, &metadata, Some("this.is.more.specific")).unwrap().copied(),
             Some(0)
         );
         assert_eq!(
-            Listener::select_filterchain(&m, srcaddr, dst, Some("not.this.is.more.specific")).unwrap().copied(),
+            Listener::select_filterchain(&m, &metadata, Some("not.this.is.more.specific")).unwrap().copied(),
             Some(1)
         );
-        assert_eq!(Listener::select_filterchain(&m, srcaddr, dst, Some("is.more.specific")).unwrap().copied(), Some(1));
+        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("is.more.specific")).unwrap().copied(), Some(1));
 
-        assert_eq!(Listener::select_filterchain(&m, srcaddr, dst, Some("more.specific")).unwrap().copied(), Some(2));
+        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("more.specific")).unwrap().copied(), Some(2));
         assert_eq!(
-            Listener::select_filterchain(&m, srcaddr, dst, Some("this.is.less.specific")).unwrap().copied(),
+            Listener::select_filterchain(&m, &metadata, Some("this.is.less.specific")).unwrap().copied(),
             Some(2)
         );
 
-        assert_eq!(Listener::select_filterchain(&m, srcaddr, dst, Some("hello.world")).unwrap().copied(), Some(3));
+        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("hello.world")).unwrap().copied(), Some(3));
     }
 }

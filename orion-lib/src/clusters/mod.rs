@@ -20,15 +20,16 @@
 
 pub(crate) mod balancers;
 pub(crate) mod cached_watch;
-pub(crate) mod cluster;
-pub(crate) mod clusters_manager;
+pub mod cluster;
+pub mod clusters_manager;
 pub(crate) mod health;
 pub(crate) mod load_assignment;
 pub(crate) mod retry_policy;
-pub use crate::transport::GrpcService;
+pub use crate::transport::{GrpcService, SimpleRoundRobinGrpcServiceLB};
 pub use load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment};
 
 pub use clusters_manager::{
-    add_cluster, change_cluster_load_assignment, get_grpc_connection, remove_cluster, remove_cluster_load_assignment,
-    update_endpoint_health, update_tls_context,
+    RoutingContext, RoutingRequirement, add_cluster, all_grpc_connections, change_cluster_load_assignment,
+    get_all_clusters, get_cluster_routing_requirements, get_grpc_connection, get_http_connection, get_tcp_connection,
+    remove_cluster, remove_cluster_load_assignment, resolve_cluster, update_endpoint_health, update_tls_context,
 };
