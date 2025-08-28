@@ -589,16 +589,18 @@ mod lrumap {
                 value
             }
 
-            fn assert_ordered_values(&self, keys: &[usize]) {
+            fn assert_ordered_values(&self, keys: &[usize], error_message: &str) {
                 assert_eq!(self.map.len(), keys.len(), "expected same map size");
 
                 let mut values_iter = self.map.into_iter();
                 let mut expected_iter = keys.iter();
                 loop {
                     match (values_iter.next(), expected_iter.next()) {
-                        (Some(value), Some(expected)) => assert_eq!(value, expected, "expected same map order"),
+                        (Some(value), Some(expected)) => {
+                            assert_eq!(value, expected, "expected same map order: {}", error_message)
+                        },
                         (None, None) => break,
-                        _ => panic!("expected same map values"),
+                        _ => panic!("expected same map values: {}", error_message),
                     }
                 }
             }
@@ -609,61 +611,61 @@ mod lrumap {
             let mut map = LruMapFixture::new();
 
             // Map is empty
-            map.assert_ordered_values(&[]);
+            map.assert_ordered_values(&[], "initially empty");
 
             // Insert one element
             let t0 = Instant::now();
 
             assert!(map.insert(0, "0", t0));
-            map.assert_ordered_values(&[0]);
+            map.assert_ordered_values(&[0], "after inserting first element");
             assert!(!map.insert(0, "0", t0));
-            map.assert_ordered_values(&[0]);
+            map.assert_ordered_values(&[0], "after reinserting first element");
 
             // Touch one element
-            let t1 = t0 + Duration::from_secs(1);
+            let t1 = t0 + Duration::from_secs(2);
 
             assert_eq!(map.touch(0, t1), Some("0"));
-            map.assert_ordered_values(&[0]);
+            map.assert_ordered_values(&[0], "after touching the only element");
 
             // Remove the only element
             assert!(map.remove(0));
-            map.assert_ordered_values(&[]);
+            map.assert_ordered_values(&[], "after removing the only element");
             assert!(!map.remove(0));
 
             // Insert again
             assert!(map.insert(0, "0", t0));
-            map.assert_ordered_values(&[0]);
+            map.assert_ordered_values(&[0], "after reinserting first element");
 
             // Insert another
             assert!(map.insert(1, "1", t1));
-            map.assert_ordered_values(&[0, 1]);
+            map.assert_ordered_values(&[0, 1], "after inserting second element");
 
             // Touch oldest element
-            let t2 = t1 + Duration::from_secs(1);
+            let t2 = t1 + Duration::from_secs(2);
 
             assert_eq!(map.touch(0, t2), Some("0"));
-            map.assert_ordered_values(&[1, 0]);
+            map.assert_ordered_values(&[1, 0], "after touching oldest element");
 
             // Add another
-            let t3 = t2 + Duration::from_secs(1);
+            let t3 = t2 + Duration::from_secs(2);
             assert!(map.insert(2, "2", t3));
-            map.assert_ordered_values(&[1, 0, 2]);
+            map.assert_ordered_values(&[1, 0, 2], "after inserting third element");
 
             // Touch oldest element
-            let t4 = t3 + Duration::from_secs(1);
+            let t4 = t3 + Duration::from_secs(2);
 
             assert_eq!(map.touch(1, t4), Some("1"));
-            map.assert_ordered_values(&[0, 2, 1]);
+            map.assert_ordered_values(&[0, 2, 1], "after touching oldest element");
 
             // Remove elements
             assert!(map.remove(2));
-            map.assert_ordered_values(&[0, 1]);
+            map.assert_ordered_values(&[0, 1], "after removing middle element");
 
             assert!(map.remove(1));
-            map.assert_ordered_values(&[0]);
+            map.assert_ordered_values(&[0], "after removing another element");
 
             assert!(map.remove(0));
-            map.assert_ordered_values(&[]);
+            map.assert_ordered_values(&[], "after removing last element");
         }
     }
 }
