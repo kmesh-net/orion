@@ -20,21 +20,24 @@
 
 use abort_on_drop::ChildTask;
 use futures::future::join_all;
-use orion_configuration::config::{bootstrap::Node, cluster::ClusterSpecifier};
+use orion_configuration::config::{Listener, bootstrap::Node, cluster::ClusterSpecifier};
 use orion_lib::{
     ConfigurationSenders, ConversionContext, EndpointHealthUpdate, HealthCheckManager, ListenerConfigurationChange,
     ListenerFactory, PartialClusterLoadAssignment, PartialClusterType, Result, RouteConfigurationChange, SecretManager,
+    access_log::{Target, update_configuration},
 };
 use orion_xds::{
     start_aggregate_client_no_retry_loop,
     xds::{
         bindings::AggregatedDiscoveryType,
-        client::XdsUpdateEvent,
-        client::{DeltaClientBackgroundWorker, DeltaDiscoveryClient, DeltaDiscoverySubscriptionManager},
+        client::{
+            DeltaClientBackgroundWorker, DeltaDiscoveryClient, DeltaDiscoverySubscriptionManager, XdsUpdateEvent,
+        },
         model::{RejectedConfig, TypeUrl, XdsResourcePayload, XdsResourceUpdate},
     },
 };
-use std::time::Duration;
+use parking_lot::RwLock;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     select,
     sync::mpsc::{self, Receiver, Sender},
@@ -44,7 +47,7 @@ use tracing::{debug, info, warn};
 const RETRY_INTERVAL: Duration = Duration::from_secs(10);
 
 pub struct XdsConfigurationHandler {
-    secret_manager: SecretManager,
+    secret_manager: Arc<RwLock<SecretManager>>,
     health_manager: HealthCheckManager,
     listeners_senders: Vec<Sender<ListenerConfigurationChange>>,
     route_senders: Vec<Sender<RouteConfigurationChange>>,
@@ -52,7 +55,7 @@ pub struct XdsConfigurationHandler {
 }
 
 impl XdsConfigurationHandler {
-    pub fn new(secret_manager: SecretManager, configuration_senders: Vec<ConfigurationSenders>) -> Self {
+    pub fn new(secret_manager: Arc<RwLock<SecretManager>>, configuration_senders: Vec<ConfigurationSenders>) -> Self {
         let mut listeners_senders = Vec::with_capacity(configuration_senders.len());
         let mut route_senders = Vec::with_capacity(configuration_senders.len());
         for ConfigurationSenders { listener_configuration_sender, route_configuration_sender } in configuration_senders
@@ -65,29 +68,48 @@ impl XdsConfigurationHandler {
         Self { secret_manager, health_manager, listeners_senders, route_senders, health_updates_receiver }
     }
 
-    // Resolve cluster name into working endpoint, return working client
-    fn resolve_endpoint(
+    // Resolve cluster name into working endpoint(s), return working client
+    fn resolve_endpoints(
         cluster_name: &str,
         node: &Node,
     ) -> Result<(
-        DeltaClientBackgroundWorker<AggregatedDiscoveryType<orion_lib::clusters::GrpcService>>,
+        DeltaClientBackgroundWorker<AggregatedDiscoveryType<orion_lib::clusters::SimpleRoundRobinGrpcServiceLB>>,
         DeltaDiscoveryClient,
         DeltaDiscoverySubscriptionManager,
     )> {
         let selector = ClusterSpecifier::Cluster(cluster_name.into());
-
-        let grpc_service = match orion_lib::clusters::get_grpc_connection(&selector) {
-            Ok(grpc_service) => grpc_service,
+        let cluster_id = orion_lib::clusters::resolve_cluster(&selector)
+            .ok_or_else(|| format!("Failed to resolve cluster {cluster_name} from specifier"))?;
+        let grpc_connections = match orion_lib::clusters::all_grpc_connections(cluster_id) {
+            Ok(connections) => connections,
             Err(err) => {
-                let msg = format!("Failed to get gRPC channel from cluster ({cluster_name}): {err}");
+                let msg = format!("Failed to get gRPC connections from cluster ({cluster_name}): {err}");
                 warn!(msg);
                 return Err(msg.into());
             },
         };
+        let grpc_services: Vec<orion_lib::clusters::GrpcService> = grpc_connections
+            .into_iter()
+            .filter_map(|result| match result {
+                Ok((_, grpc_service)) => Some(grpc_service),
+                Err(err) => {
+                    let msg = format!("Skipping (failed) gRPC endpoint for cluster ({cluster_name}): {err}");
+                    warn!(msg);
+                    None
+                },
+            })
+            .collect();
 
-        start_aggregate_client_no_retry_loop(node.clone(), grpc_service)
-            .inspect_err(|e| warn!("Failed to connect to xDS server ({cluster_name}): {e}"))
-            .map_err(Into::into)
+        if grpc_services.is_empty() {
+            let msg = format!("Failed to locate any gRPC connections for cluster ({cluster_name})");
+            warn!(msg);
+            Err(msg.into())
+        } else {
+            let grpc_service_lb = orion_lib::clusters::SimpleRoundRobinGrpcServiceLB::new(grpc_services);
+            start_aggregate_client_no_retry_loop(node.clone(), grpc_service_lb)
+                .inspect_err(|e| warn!("Failed to connect to xDS server ({cluster_name}): {e}"))
+                .map_err(Into::into)
+        }
     }
 
     pub async fn xds_run(
@@ -97,7 +119,7 @@ impl XdsConfigurationHandler {
         ads_cluster_names: Vec<String>,
     ) -> Result<Self> {
         select! {
-            _ = tokio::signal::ctrl_c() => info!("CTRL+C catch (XDS runtime)!"),
+            _ = tokio::signal::ctrl_c() => info!("CTRL+C catch (service runtime)!"),
             result = self.xds_run_loop(node, initial_clusters, ads_cluster_names) => result?,
         }
         Ok(self)
@@ -123,7 +145,7 @@ impl XdsConfigurationHandler {
                 return Ok(());
             };
 
-            if let Ok(val) = Self::resolve_endpoint(&cluster_name, &node) {
+            if let Ok(val) = Self::resolve_endpoints(&cluster_name, &node) {
                 break val;
             }
 
@@ -185,6 +207,7 @@ impl XdsConfigurationHandler {
             orion_xds::xds::model::TypeUrl::Listener => {
                 let change = ListenerConfigurationChange::Removed(id.to_owned());
                 let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
+                self.access_log_listener_remove(id).await;
                 Ok(())
             },
             orion_xds::xds::model::TypeUrl::ClusterLoadAssignment => {
@@ -210,12 +233,15 @@ impl XdsConfigurationHandler {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
                 debug!("Got update for listener {id} {:?}", listener);
-                let factory = ListenerFactory::try_from(ConversionContext::new((listener, &self.secret_manager)));
+                let factory =
+                    ListenerFactory::try_from(ConversionContext::new((listener.clone(), &*self.secret_manager.read())));
 
                 match factory {
                     Ok(factory) => {
-                        let change = ListenerConfigurationChange::Added(factory);
+                        let change = ListenerConfigurationChange::Added(Box::new((factory, listener.clone())));
                         let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
+                        // update access logs configuration...
+                        self.access_log_listener_update(&id, &listener).await;
                         Ok(())
                     },
                     Err(err) => {
@@ -226,7 +252,7 @@ impl XdsConfigurationHandler {
             },
             XdsResourcePayload::Cluster(id, cluster) => {
                 debug!("Got update for cluster: {id}: {:#?}", cluster);
-                let cluster_builder = PartialClusterType::try_from((cluster, &self.secret_manager));
+                let cluster_builder = PartialClusterType::try_from((cluster, &*self.secret_manager.read()));
                 match cluster_builder {
                     Ok(cluster) => self.add_cluster(cluster).await,
                     Err(err) => {
@@ -260,7 +286,7 @@ impl XdsConfigurationHandler {
             },
             XdsResourcePayload::Secret(id, secret) => {
                 debug!("Got update for secret {id}: {:#?}", secret);
-                let res = self.secret_manager.add(&secret);
+                let res = self.secret_manager.write().add(&secret);
 
                 match res {
                     Ok(secret) => {
@@ -281,6 +307,19 @@ impl XdsConfigurationHandler {
         }
     }
 
+    async fn access_log_listener_update(&mut self, id: &str, listener: &Listener) {
+        let access_logs = listener.get_access_log_configurations();
+        if let Err(err) = update_configuration(Target::Listener(id.into()), access_logs).await {
+            warn!("Failed to update access log configuration for listener {id}: {err}");
+        }
+    }
+
+    async fn access_log_listener_remove(&mut self, id: &str) {
+        if let Err(err) = update_configuration(Target::Listener(id.into()), vec![]).await {
+            warn!("Failed to remove access log configuration for listener {id}: {err}");
+        }
+    }
+
     async fn add_cluster(&mut self, cluster: PartialClusterType) -> Result<()> {
         let cluster_config = orion_lib::clusters::add_cluster(cluster)?;
         self.health_manager.restart_cluster(cluster_config).await;
@@ -296,7 +335,7 @@ impl XdsConfigurationHandler {
     }
 }
 
-async fn send_change_to_runtimes<Change: Clone>(channels: &[Sender<Change>], change: Change) -> Result<()> {
+pub async fn send_change_to_runtimes<Change: Clone>(channels: &[Sender<Change>], change: Change) -> Result<()> {
     let futures: Vec<_> = channels
         .iter()
         .map(|f| {
