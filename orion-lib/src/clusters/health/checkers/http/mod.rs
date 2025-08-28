@@ -21,29 +21,32 @@
 #[cfg(test)]
 mod tests;
 
-use std::ops::Range;
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
-use http::uri::{Authority, PathAndQuery, Scheme};
-use http::{Response, Version};
+use bytes::Bytes;
+use http::{
+    Request, Response, Version,
+    uri::{Authority, PathAndQuery, Scheme},
+};
+use http_body_util::Empty;
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, Codec, HttpHealthCheck};
-use tokio::sync::{mpsc, Notify};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{Notify, mpsc},
+    task::JoinHandle,
+};
 
 use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
+use crate::body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind};
 // use crate::clusters::cluster::HyperService;
-use crate::clusters::health::checkers::checker::HealthCheckerLoop;
-use crate::clusters::health::counter::HealthStatusCounter;
-use crate::clusters::health::{EndpointHealthUpdate, EndpointId, HealthStatus};
-use crate::listeners::http_connection_manager::RequestHandler;
-use crate::transport::request_context::RequestWithContext;
-use crate::transport::HttpChannel;
-use crate::{Error, HttpBody};
-
-#[derive(Debug, thiserror::Error)]
-#[error("invalid HTTP status range")]
-// TODO: This error type is defined for future HTTP status range validation functionality
-pub struct InvalidHttpStatusRange;
+use crate::{
+    Error, PolyBody,
+    clusters::health::{
+        EndpointHealthUpdate, EndpointId, HealthStatus, checkers::checker::HealthCheckerLoop,
+        counter::HealthStatusCounter,
+    },
+    listeners::http_connection_manager::{RequestHandler, TransactionContext},
+    transport::{HttpChannel, policy::RequestExt},
+};
 
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.
 pub fn try_spawn_http_health_checker(
@@ -81,7 +84,7 @@ fn try_spawn_http_health_checker_impl<H, W>(
 where
     W: WaitInterval + Send + 'static,
     H: Send + 'static,
-    for<'a> &'a H: RequestHandler<RequestWithContext<'static, HttpBody>>,
+    for<'a> &'a H: RequestHandler<RequestExt<'static, Request<BodyWithMetrics<PolyBody>>>>,
 {
     tracing::debug!(
         "Starting HTTP health checks of endpoint {:?} in cluster {:?}",
@@ -130,13 +133,13 @@ struct HttpChecker<H = HttpChannel> {
 impl<H> ProtocolChecker for HttpChecker<H>
 where
     H: Send,
-    for<'a> &'a H: RequestHandler<RequestWithContext<'static, HttpBody>>,
+    for<'a> &'a H: RequestHandler<RequestExt<'static, Request<BodyWithMetrics<PolyBody>>>>,
 {
-    type Response = Response<HttpBody>;
+    type Response = Response<PolyBody>;
 
     async fn check(&mut self) -> Result<Self::Response, Error> {
         let request = create_request(self.http_version, &self.method, &self.host, &self.uri)?;
-        self.client.to_response(request).await
+        self.client.to_response(&Arc::new(TransactionContext::default()), request).await
     }
 
     fn process_response(
@@ -177,9 +180,11 @@ fn create_request(
     method: &http::Method,
     host: &str,
     uri: &http::Uri,
-) -> Result<RequestWithContext<'static, HttpBody>, http::Error> {
+) -> Result<RequestExt<'static, Request<BodyWithMetrics<PolyBody>>>, http::Error> {
     let req = http::Request::builder().version(http_version).method(method).uri(uri);
     let req = if http_version < http::Version::HTTP_2 { req.header("Host", host) } else { req };
     let req = req.header("User-Agent", "orion/health-checks");
-    Ok(RequestWithContext::new(req.body(HttpBody::default())?))
+
+    let empty = Empty::<Bytes>::default().into();
+    Ok(RequestExt::new(req.body(BodyWithMetrics::new(BodyKind::Request, empty, |_, _| {}))?))
 }

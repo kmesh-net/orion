@@ -18,29 +18,16 @@
 //
 //
 
-use crate::HttpBody;
 use bytes::Bytes;
-use http::uri::{InvalidUri, InvalidUriParts};
-use http::{HeaderValue, Version as HttpVersion};
-use http::{Response, StatusCode};
+use http::{HeaderValue, Response, StatusCode, Version as HttpVersion};
 use http_body_util::Full;
 
-#[derive(Debug, thiserror::Error)]
-// TODO: Error type for synthetic response validation - implement validation logic or remove if unused
-pub enum InvalidSyntheticResponse {
-    #[error(transparent)]
-    BadHttpResponse(#[from] http::Error),
-    #[error(transparent)]
-    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
-    #[error(transparent)]
-    InvalidUri(#[from] InvalidUri),
-    #[error(transparent)]
-    InvalidUriParts(#[from] InvalidUriParts),
-}
+use crate::{PolyBody, body::response_flags::ResponseFlags};
 
 #[derive(Clone, Debug)]
 pub struct SyntheticHttpResponse {
     http_status: StatusCode,
+    response_flags: ResponseFlags,
     body: Bytes,
     close_connection: bool,
 }
@@ -48,54 +35,90 @@ pub struct SyntheticHttpResponse {
 // === impl SyntheticHttpResponse ===
 
 impl SyntheticHttpResponse {
-    pub fn internal_error() -> Self {
-        Self { http_status: StatusCode::INTERNAL_SERVER_ERROR, body: Bytes::default(), close_connection: true }
+    pub fn internal_error(response_flags: ResponseFlags) -> Self {
+        Self {
+            http_status: StatusCode::INTERNAL_SERVER_ERROR,
+            response_flags,
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
-    pub fn bad_gateway() -> Self {
-        Self { http_status: StatusCode::BAD_GATEWAY, body: Bytes::default(), close_connection: true }
+    pub fn bad_gateway(response_flags: ResponseFlags) -> Self {
+        Self { http_status: StatusCode::BAD_GATEWAY, response_flags, body: Bytes::default(), close_connection: true }
     }
 
     #[allow(dead_code)]
     pub fn forbidden(msg: &str) -> Self {
         Self {
             http_status: StatusCode::FORBIDDEN,
+            response_flags: ResponseFlags::default(),
             body: Bytes::copy_from_slice(msg.as_bytes()),
             //should this close actually? the connection seems to stay open since it's only triggered for a single http
             close_connection: true,
         }
     }
 
-    // TODO: Implement unavailable response - used for service health checks
-    pub fn unavailable() -> Self {
-        Self { http_status: StatusCode::SERVICE_UNAVAILABLE, body: Bytes::default(), close_connection: true }
+    #[allow(dead_code)]
+    pub fn service_unavailable(response_flags: ResponseFlags) -> Self {
+        Self {
+            http_status: StatusCode::SERVICE_UNAVAILABLE,
+            response_flags,
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
-    pub fn gateway_timeout() -> Self {
-        Self { http_status: StatusCode::GATEWAY_TIMEOUT, body: Bytes::default(), close_connection: true }
+    pub fn gateway_timeout(response_flags: ResponseFlags) -> Self {
+        Self {
+            http_status: StatusCode::GATEWAY_TIMEOUT,
+            response_flags,
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
     pub fn not_found() -> Self {
-        Self { http_status: StatusCode::NOT_FOUND, body: Bytes::default(), close_connection: false }
+        Self {
+            http_status: StatusCode::NOT_FOUND,
+            response_flags: ResponseFlags::default(),
+            body: Bytes::default(),
+            close_connection: false,
+        }
     }
 
     #[allow(dead_code)]
     pub fn upgrade_required() -> Self {
-        Self { http_status: StatusCode::UPGRADE_REQUIRED, body: Bytes::default(), close_connection: true }
+        Self {
+            http_status: StatusCode::UPGRADE_REQUIRED,
+            response_flags: ResponseFlags::default(),
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
     #[allow(dead_code)]
     pub fn bad_request() -> Self {
-        Self { http_status: StatusCode::BAD_REQUEST, body: Bytes::default(), close_connection: true }
+        Self {
+            http_status: StatusCode::BAD_REQUEST,
+            response_flags: ResponseFlags::default(),
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
-    pub fn not_allowed() -> Self {
-        Self { http_status: StatusCode::METHOD_NOT_ALLOWED, body: Bytes::default(), close_connection: true }
+    pub fn not_allowed(response_flags: ResponseFlags) -> Self {
+        Self {
+            http_status: StatusCode::METHOD_NOT_ALLOWED,
+            response_flags,
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
-    // TODO: Implement custom error responses - used for flexible error handling
-    pub fn custom_error(http_status: StatusCode) -> Self {
-        Self { http_status, body: Bytes::default(), close_connection: false }
+    #[allow(dead_code)]
+    pub fn custom_error(http_status: StatusCode, response_flags: ResponseFlags) -> Self {
+        Self { http_status, response_flags, body: Bytes::default(), close_connection: false }
     }
 
     // #[inline]
@@ -110,10 +133,11 @@ impl SyntheticHttpResponse {
     // }
 
     #[inline]
-    pub fn into_response(self, version: http::Version) -> Response<HttpBody> {
+    pub fn into_response(self, version: http::Version) -> Response<PolyBody> {
         let mut rsp = Response::new(Full::from(self.body).into());
         *rsp.status_mut() = self.http_status;
         *rsp.version_mut() = version;
+        rsp.extensions_mut().insert(self.response_flags);
         if self.close_connection && (version == HttpVersion::HTTP_10 || version == HttpVersion::HTTP_11) {
             // Notify the (proxy or non-proxy) client that the connection will be closed.
             rsp.headers_mut().insert(http::header::CONNECTION, HeaderValue::from_static("close"));

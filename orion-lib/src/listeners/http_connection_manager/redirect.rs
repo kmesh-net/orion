@@ -18,24 +18,29 @@
 //
 //
 
-use super::RequestHandler;
-use crate::{body::timeout_body::TimeoutBody, Error, HttpBody, PolyBody, Result};
+use super::{RequestHandler, TransactionContext};
+
+use crate::{
+    Error, PolyBody, Result,
+    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+};
 use http::{
+    HeaderValue, StatusCode, Uri,
     header::LOCATION,
     uri::{Authority, Parts as UriParts, PathAndQuery, Scheme},
-    HeaderValue, StatusCode, Uri,
 };
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response, body::Incoming};
 use orion_configuration::config::network_filters::http_connection_manager::route::{
     AuthorityRedirect, RedirectAction, RouteMatchResult,
 };
 use orion_error::Context;
 use std::str::FromStr;
 
-impl RequestHandler<(Request<TimeoutBody<Incoming>>, RouteMatchResult)> for &RedirectAction {
+impl RequestHandler<(Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, RouteMatchResult)> for &RedirectAction {
     async fn to_response(
         self,
-        (request, route_match_result): (Request<TimeoutBody<Incoming>>, RouteMatchResult),
+        _trans_ctx: &TransactionContext,
+        (request, route_match_result): (Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, RouteMatchResult),
     ) -> Result<Response<PolyBody>> {
         let (parts, _) = request.into_parts();
         let mut rsp = Response::builder().status(StatusCode::from(self.response_code)).version(parts.version);
@@ -58,24 +63,24 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, RouteMatchResult)> for &Red
                     Some(h.clone())
                 } else {
                     let uri = format!("{h}:{port}");
-                    Some(Authority::from_str(&uri).context("invalid uri \"{uri}\"")?)
+                    Some(Authority::from_str(&uri).with_context_msg("invalid uri \"{uri}\"")?)
                 }
             },
             // port redirect with a host in the original uri
             (Some(AuthorityRedirect::PortRedirect(port)), (Some(h), _)) => {
                 let uri = format!("{h}:{port}");
-                Some(Authority::from_str(&uri).context("invalid uri \"{uri}\"")?)
+                Some(Authority::from_str(&uri).with_context_msg("invalid uri \"{uri}\"")?)
             },
             // a port redirection with no known host
             (Some(AuthorityRedirect::PortRedirect(_)), (None, _)) => {
-                return Err("tried to perform a port redirection with no host given".into())
+                return Err("tried to perform a port redirection with no host given".into());
             },
         };
 
         // strip query if specified
         let orig_path_and_query = if let Some(orig) = orig_path_and_query {
             if orig.query().is_some() && self.strip_query {
-                Some(PathAndQuery::from_str(orig.path()).context("failed to strip query")?)
+                Some(PathAndQuery::from_str(orig.path()).with_context_msg("failed to strip query")?)
             } else {
                 Some(orig)
             }
@@ -89,7 +94,7 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, RouteMatchResult)> for &Red
         let path_and_query = if let Some(prs) = self.path_rewrite_specifier.as_ref() {
             if let Some(replacement) = prs
                 .apply(orig_path_and_query.as_ref(), &route_match_result)
-                .context("invalid path or query following replacement")?
+                .with_context_msg("invalid path or query following replacement")?
             {
                 Some(replacement)
             } else {
@@ -106,10 +111,10 @@ impl RequestHandler<(Request<TimeoutBody<Incoming>>, RouteMatchResult)> for &Red
             parts.path_and_query = path_and_query;
             parts
         })
-        .context("failed to reconstruct uri after applying redirect params")?;
+        .with_context_msg("failed to reconstruct uri after applying redirect params")?;
         let redirect_target =
-            HeaderValue::from_str(&new_uri.to_string()).context("couldn't convert uri to headervalue")?;
+            HeaderValue::from_str(&new_uri.to_string()).with_context_msg("couldn't convert uri to header value")?;
         rsp.headers_mut().and_then(|hm| hm.insert(LOCATION, redirect_target));
-        rsp.body(HttpBody::default()).map_err(Error::from)
+        rsp.body(PolyBody::default()).map_err(Error::from)
     }
 }

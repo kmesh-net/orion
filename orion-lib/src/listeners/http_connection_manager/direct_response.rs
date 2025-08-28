@@ -17,16 +17,21 @@
 // limitations under the License.
 //
 //
-
-use super::RequestHandler;
-use crate::{body::timeout_body::TimeoutBody, PolyBody, Result};
-
+use super::{RequestHandler, TransactionContext};
+use crate::{
+    PolyBody, Result,
+    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+};
 use http_body_util::Full;
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response, body::Incoming};
 use orion_configuration::config::network_filters::http_connection_manager::route::DirectResponseAction;
 
-impl RequestHandler<Request<TimeoutBody<Incoming>>> for &DirectResponseAction {
-    async fn to_response(self, request: Request<TimeoutBody<Incoming>>) -> Result<Response<PolyBody>> {
+impl RequestHandler<Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>> for &DirectResponseAction {
+    async fn to_response(
+        self,
+        _ctx: &TransactionContext,
+        request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
+    ) -> Result<Response<PolyBody>> {
         let body = Full::new(self.body.as_ref().map(|b| bytes::Bytes::copy_from_slice(b.data())).unwrap_or_default());
         let mut resp = Response::new(body.into());
         *resp.status_mut() = self.status;

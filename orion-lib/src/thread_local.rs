@@ -51,7 +51,7 @@ where
         LocalObject { tls, builder, arg }
     }
 
-    pub fn get(&self) -> &T {
+    pub fn get_or_build(&self) -> &T {
         self.tls.get_or(|| self.builder.build(self.arg.clone()))
     }
 }
