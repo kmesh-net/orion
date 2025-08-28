@@ -10,7 +10,7 @@ version = "0.1.0"
 base64                        = "0.22.1"
 base64-serde                  = "0.7.0"
 bytes.workspace               = true
-clap                          = { version = "4.4.8", features = ["derive"] }
+clap                          = { version = "4.5.46", features = ["derive"] }
 compact_str.workspace         = true
 envoy-data-plane-api          = { workspace = true, optional = true }
 exponential-backoff.workspace = true
