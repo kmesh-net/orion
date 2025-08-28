@@ -163,7 +163,7 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
         let endpoints = cluster
             .load_assignment
             .clone()
-            .ok_or_else(|| "No load assignment found".to_string())?
+            .ok_or_else(|| "No load assignment found".to_owned())?
             .endpoints
             .iter()
             .map(|lep| {

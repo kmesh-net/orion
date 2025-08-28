@@ -87,7 +87,7 @@ impl TcpProxy {
 
         let cluster_selector = &self.cluster;
         let cluster_id = clusters_manager::resolve_cluster(cluster_selector)
-            .ok_or_else(|| "Failed to resolve cluster from specifier".to_string())?;
+            .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let maybe_connector = clusters_manager::get_tcp_connection(cluster_id, RoutingContext::None);
 
         let mut bytes_received = 0;

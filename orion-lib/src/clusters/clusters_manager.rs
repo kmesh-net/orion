@@ -79,7 +79,7 @@ impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTi
                 Ok(RoutingContext::Header(header_value))
             },
             RoutingRequirement::Authority => {
-                let msg = "Routing by Authority is not currently supported, coming soon".to_string();
+                let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
                 warn!(msg);
                 Err(msg)
             },

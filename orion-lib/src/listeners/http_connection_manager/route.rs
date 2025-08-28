@@ -74,7 +74,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             websocket_enabled_by_default,
         } = request;
         let cluster_id = clusters_manager::resolve_cluster(&self.cluster_specifier)
-            .ok_or_else(|| "Failed to resolve cluster from specifier".to_string())?;
+            .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
         let hash_state = HashState::new(self.hash_policy.as_slice(), &downstream_request, remote_address);
         let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;

@@ -19,7 +19,7 @@ fn read_static_resource() {
     let loader = BootstrapLoader::load(path.into_os_string().into_string().unwrap());
     let listeners = loader.get_static_listener_configs().unwrap();
     let listener = listeners.first().unwrap();
-    assert_eq!(listener.name, "listener_0".to_string());
+    assert_eq!(listener.name, "listener_0".to_owned());
 
     let routes = loader.get_static_route_configs().unwrap();
     assert_eq!(routes.len(), 0);
@@ -65,7 +65,7 @@ fn read_dynamic_resource() {
             XdsType::Individual(TypeUrl::RouteConfiguration),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5678)),
                 resolver_name: String::new(),
@@ -131,7 +131,7 @@ static_resources:
             XdsType::Aggregated(HashSet::from([TypeUrl::Listener, TypeUrl::Cluster])),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5679)),
                 resolver_name: String::new(),
@@ -269,7 +269,7 @@ static_resources:
             XdsType::Aggregated(HashSet::from([TypeUrl::Cluster])),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5678)),
                 resolver_name: String::new(),
@@ -284,7 +284,7 @@ static_resources:
             XdsType::Individual(TypeUrl::Listener),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5677)),
                 resolver_name: String::new(),
@@ -299,7 +299,7 @@ static_resources:
             XdsType::Individual(TypeUrl::RouteConfiguration),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5679)),
                 resolver_name: String::new(),

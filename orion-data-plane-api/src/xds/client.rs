@@ -60,7 +60,7 @@ where
         if let Some(type_url) = C::type_url() {
             self = self.subscribe_resource_name_by_typeurl(resource_id, type_url);
         } else {
-            self.error = Some("subscribe only works if typed binding provides a compatible type_url".to_string());
+            self.error = Some("subscribe only works if typed binding provides a compatible type_url".to_owned());
         }
         self
     }
@@ -70,7 +70,7 @@ where
         if configured_type_url.is_none() || configured_type_url.is_some_and(|type_is_set| type_is_set == type_url) {
             self.initial_subscriptions.entry(type_url).or_default().insert(resource_id);
         } else {
-            self.error = Some("can only subscribe by type_url when using a compatible typed binding".to_string());
+            self.error = Some("can only subscribe by type_url when using a compatible typed binding".to_owned());
         }
         self
     }
@@ -298,7 +298,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 }
                 discovered = response_stream.message() => {
                     let payload = discovered?;
-                    let discovery_response = payload.ok_or(XdsError::UnknownResourceType("empty payload received".to_string()))?;
+                    let discovery_response = payload.ok_or(XdsError::UnknownResourceType("empty payload received".to_owned()))?;
                     self.process_and_acknowledge(discovery_response, &discovery_requests_tx, state).await?;
                 }
             }

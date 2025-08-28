@@ -442,7 +442,7 @@ mod tests {
     #[test]
     fn test_concrete_error_with_context() {
         let my_context = MyContext { value: 42 };
-        let err = WithContext::new(ReadConfigError { path: "/etc/config.toml".to_string() });
+        let err = WithContext::new(ReadConfigError { path: "/etc/config.toml".to_owned() });
         let err = err.with_context_data(my_context);
         let ctx = err.get_context_data::<MyContext>().expect("Expected context to be present");
         assert_eq!(ctx.value, 42);

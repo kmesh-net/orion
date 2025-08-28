@@ -101,7 +101,7 @@ fn test_json_any_decode() {
         assert_eq!(ctx.tls_params.unwrap().tls_maximum_protocol_version, 4);
         assert_eq!(
             *ctx.tls_certificates[0].private_key.as_ref().unwrap().specifier.as_ref().unwrap(),
-            Specifier::Filename("./certs/server.test.ecdsa-p256.key".to_string())
+            Specifier::Filename("./certs/server.test.ecdsa-p256.key".to_owned())
         );
     }
 }
@@ -210,7 +210,7 @@ staticResources:
 
             assert_eq!(route_config.name, "local_route");
             let route_match = route_config.virtual_hosts[0].routes[0].r#match.as_ref().unwrap();
-            assert_eq!(*route_match.path_specifier.as_ref().unwrap(), PathSpecifier::Prefix("/".to_string()));
+            assert_eq!(*route_match.path_specifier.as_ref().unwrap(), PathSpecifier::Prefix("/".to_owned()));
         }
     }
 }

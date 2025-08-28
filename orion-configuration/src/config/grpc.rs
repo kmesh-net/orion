@@ -51,7 +51,7 @@ mod envoy_conversions {
             let seconds = value.seconds;
             let nanos = value.nanos;
             if seconds < 0 || nanos < 0 {
-                return Err(GenericError::from_msg("duration with negative values".to_string()));
+                return Err(GenericError::from_msg("duration with negative values".to_owned()));
             }
             Ok(Duration(std::time::Duration::new(seconds as u64, nanos as u32)))
         }

@@ -203,7 +203,7 @@ mod config_dump_tests {
         };
         use serde_json::json;
         let envoy_sock_addr = EnvoySocketAddress {
-            address: "127.0.0.1".to_string(),
+            address: "127.0.0.1".to_owned(),
             port_specifier: Some(PortSpecifier::PortValue(12345)),
             ..Default::default()
         };
@@ -274,7 +274,7 @@ mod config_dump_tests {
                                     name: CompactString::from("vh1"),
                                     domains: vec![],
                                     routes: vec![Route {
-                                        name: "test_route".to_string(),
+                                        name: "test_route".to_owned(),
                                         response_header_modifier: HeaderModifier::default(),
                                         request_headers_to_add: vec![],
                                         request_headers_to_remove: vec![],
@@ -337,7 +337,7 @@ mod config_dump_tests {
             core::envoy_conversions::Address,
         };
         use std::{num::NonZeroU32, time::Duration};
-        let endpoint_addr = Address::Socket("127.0.0.1".to_string(), 9000);
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
@@ -390,7 +390,7 @@ mod config_dump_tests {
             core::envoy_conversions::Address,
         };
         use std::{num::NonZeroU32, time::Duration};
-        let endpoint_addr = Address::Socket("127.0.0.1".to_string(), 9000);
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
