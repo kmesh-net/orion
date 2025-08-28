@@ -162,7 +162,7 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
     fn try_from(cluster: &DynamicCluster) -> crate::Result<Self> {
         let endpoints = cluster
             .load_assignment
-            .clone()
+            .as_ref()
             .ok_or_else(|| "No load assignment found".to_owned())?
             .endpoints
             .iter()

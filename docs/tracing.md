@@ -2,7 +2,7 @@
 
 This document provides an overview of tracing functionality in Orion proxy.
 
-### Confirugration
+### Configuration
 
 To enable tracing, the Orion proxy must be built with the `tracing` feature flag. Each HTTP Connection Manager (HCM) can be configured in the bootstrap YAML file with `tracing` settings. Below is an example configuration added to the HttpConnectionManager settings:
 

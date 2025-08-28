@@ -12,7 +12,7 @@ We decided to use the Hyper library to handle Http1/Http2 traffic. The Hyper lib
 Before release, we rigorously tested Orion's performance in comparison to Envoy Proxy. The [results](./performance/performance.md) show that the Orion Proxy outperforms the Envoy Proxy in terms of throughput and request latency.
 
 ## Features and Future Roadmap
-Most of our efforts up to date, have been focused on ensuring that the Orion Proxy can reliably proxy Level 4 and Level 7 traffic. In future, we plan to shift our objectives and implement more features that will make Orion Proxy more robust, reliable and straightforward to operate in production environments. In the short term, we want to provide features such as access logging, metrics with open telemetry, and support for HAProxy and Websockets protocols.
+Most of our efforts to date, have been focused on ensuring that the Orion Proxy can reliably proxy Level 4 and Level 7 traffic. In future, we plan to shift our objectives and implement more features that will make Orion Proxy more robust, reliable and straightforward to operate in production environments. In the short term, we want to provide features such as access logging, metrics with open telemetry, and support for HAProxy and Websockets protocols.
 
 ## Current and Past Contributors
 

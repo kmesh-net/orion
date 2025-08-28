@@ -99,7 +99,7 @@ pub async fn handle_websocket_upgrade(
                             },
                             (req_state, resp_state) => {
                                 error!(
-                                    "Upgrade attempt falure, occurred during connection upgrade {:?},{:?}",
+                                    "Upgrade attempt failure, occurred during connection upgrade {:?},{:?}",
                                     req_state, resp_state
                                 );
                             },
@@ -109,7 +109,7 @@ pub async fn handle_websocket_upgrade(
                 },
                 Ok(response) => {
                     error!(
-                        "Upgrade attempt falure, upstream did not accept websocket upgrade, returned status code {:?}",
+                        "Upgrade attempt failure, upstream did not accept websocket upgrade, returned status code {:?}",
                         response.status()
                     );
                     Ok(SyntheticHttpResponse::not_allowed(ResponseFlags(FmtResponseFlags::UPSTREAM_CONNECTION_FAILURE))
