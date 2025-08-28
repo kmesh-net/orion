@@ -34,10 +34,10 @@ use webpki::types::ServerName;
 
 use super::health::HealthStatus;
 use crate::{
-    Error, Result, SecretManager,
     clusters::load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
     secrets::TransportSecret,
     transport::{GrpcService, HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
+    Error, Result, SecretManager,
 };
 
 use dynamic::{DynamicCluster, DynamicClusterBuilder};
@@ -218,9 +218,9 @@ impl PartialClusterType {
 #[cfg(test)]
 mod tests {
     use decode::from_yaml;
-    use orion_data_plane_api::envoy_data_plane_api::{self, envoy::config::cluster::v3::Cluster as EnvoyCluster};
     use orion_configuration::config::transport::BindDevice;
     use orion_data_plane_api::decode;
+    use orion_data_plane_api::envoy_data_plane_api::envoy::config::cluster::v3::Cluster as EnvoyCluster;
     use std::str::FromStr;
 
     use super::*;
