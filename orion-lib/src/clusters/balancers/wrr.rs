@@ -98,10 +98,10 @@ impl<T> Balancer<T> for WeightedRoundRobinBalancer<T> {
                 .fold(0, i32::saturating_add);
             // Find the item with the highest weight
             // Note: not using `max_by` here because it returns the last element for equal weights
-            let best_item =
-                self.items
-                    .iter_mut()
-                    .reduce(|best, item| if item.current_weight > best.current_weight { item } else { best });
+            let best_item = self
+                .items
+                .iter_mut()
+                .reduce(|best, item| if item.current_weight > best.current_weight { item } else { best });
             // Adjust its weight and return it
             best_item.map(|item| {
                 item.adjust_current_weight(-total);

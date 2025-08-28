@@ -22,12 +22,12 @@ use std::sync::Arc;
 
 use compact_str::CompactString;
 use rustls::{
-    client::WebPkiServerVerifier, server::WebPkiClientVerifier, sign::CertifiedKey, ClientConfig, RootCertStore,
-    ServerConfig, SupportedProtocolVersion,
+    ClientConfig, RootCertStore, ServerConfig, SupportedProtocolVersion, client::WebPkiServerVerifier,
+    server::WebPkiClientVerifier, sign::CertifiedKey,
 };
 use tracing::{debug, warn};
 
-use super::configurator::{get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert};
+use super::configurator::{ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert, get_crypto_key_provider};
 
 #[derive(Debug, Clone)]
 pub struct WantsCertStore {
@@ -247,7 +247,7 @@ impl TlsContextBuilder<WantsToBuildServer> {
 
         let verifier = match (self.state.require_client_cert, &self.state.certificate_store) {
             (true, None) => {
-                return Err("requireClientCertificate is true but no validation_context is configured".into())
+                return Err("requireClientCertificate is true but no validation_context is configured".into());
             },
             (true, Some(certificate_store)) => {
                 Some(WebPkiClientVerifier::builder(Arc::clone(certificate_store)).build()?)

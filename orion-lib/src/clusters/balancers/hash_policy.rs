@@ -18,19 +18,17 @@
 //
 //
 
-use std::hash::Hasher;
-use std::net::SocketAddr;
-use std::ops::ControlFlow;
+use std::{hash::Hasher, net::SocketAddr, ops::ControlFlow};
 
 use http::Request;
 use hyper::body::Incoming;
 use orion_configuration::config::network_filters::http_connection_manager::route::{HashPolicy, HashPolicyResult};
 use twox_hash::XxHash64;
 
-use crate::body::timeout_body::TimeoutBody;
+use crate::body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout};
 
 #[derive(Clone, Debug)]
-pub struct HashState<'a, B = TimeoutBody<Incoming>> {
+pub struct HashState<'a, B = BodyWithMetrics<BodyWithTimeout<Incoming>>> {
     policies: &'a [HashPolicy],
     req: &'a Request<B>,
     src_addr: SocketAddr,
@@ -83,7 +81,7 @@ impl DeterministicBuildHasher {
 #[cfg(test)]
 mod test {
     use super::{DeterministicBuildHasher, HashPolicy, HashState};
-    use http::{request::Builder, HeaderName, HeaderValue, Request};
+    use http::{HeaderName, HeaderValue, Request, request::Builder};
     use orion_configuration::config::network_filters::http_connection_manager::route::PolicySpecifier;
     use std::{
         hash::{Hash, Hasher},
@@ -123,6 +121,7 @@ mod test {
             .collect()
     }
 
+    #[allow(clippy::too_many_lines)]
     #[test]
     fn hash_policy() {
         let source_ip = SocketAddr::from(([192, 168, 0, 1], 8000));
@@ -169,21 +168,25 @@ mod test {
             TestHasher::new().hash(HeaderValue::from_static("foo")).finish()
         );
 
-        assert!(HashState::new(
-            &hasher_from_policies([(&policy_header, false)]),
-            &build_request("https://example.com", [("Different-Header", "foo")]),
-            source_ip
-        )
-        .compute()
-        .is_none());
+        assert!(
+            HashState::new(
+                &hasher_from_policies([(&policy_header, false)]),
+                &build_request("https://example.com", [("Different-Header", "foo")]),
+                source_ip
+            )
+            .compute()
+            .is_none()
+        );
 
-        assert!(HashState::new(
-            &hasher_from_policies([(&policy_header, false)]),
-            &build_request("https://example.com", None),
-            source_ip
-        )
-        .compute()
-        .is_none());
+        assert!(
+            HashState::new(
+                &hasher_from_policies([(&policy_header, false)]),
+                &build_request("https://example.com", None),
+                source_ip
+            )
+            .compute()
+            .is_none()
+        );
 
         // Check query parameter hashing
         assert_eq!(
@@ -209,21 +212,25 @@ mod test {
         );
 
         // Case sensitive
-        assert!(HashState::new(
-            &hasher_from_policies([(&policy_query, false)]),
-            &build_request("https://example.com/?Lb-Param=bar", None),
-            source_ip
-        )
-        .compute()
-        .is_none());
+        assert!(
+            HashState::new(
+                &hasher_from_policies([(&policy_query, false)]),
+                &build_request("https://example.com/?Lb-Param=bar", None),
+                source_ip
+            )
+            .compute()
+            .is_none()
+        );
 
-        assert!(HashState::new(
-            &hasher_from_policies([(&policy_query, false)]),
-            &build_request("https://example.com/?different-param=bar", None),
-            source_ip
-        )
-        .compute()
-        .is_none());
+        assert!(
+            HashState::new(
+                &hasher_from_policies([(&policy_query, false)]),
+                &build_request("https://example.com/?different-param=bar", None),
+                source_ip
+            )
+            .compute()
+            .is_none()
+        );
 
         // Check IP address hashing
         assert_eq!(

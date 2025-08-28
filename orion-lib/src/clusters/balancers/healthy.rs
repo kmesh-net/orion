@@ -22,8 +22,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use super::{Balancer, WeightedEndpoint};
 use crate::{
-    clusters::health::{EndpointHealth, HealthStatus, ValueUpdated},
     Result,
+    clusters::health::{EndpointHealth, HealthStatus, ValueUpdated},
 };
 
 #[derive(Clone, Debug)]
@@ -119,7 +119,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::clusters::{
-        balancers::{healthy::HealthyBalancer, wrr::WeightedRoundRobinBalancer, WeightedEndpoint},
+        balancers::{WeightedEndpoint, healthy::HealthyBalancer, wrr::WeightedRoundRobinBalancer},
         health::HealthStatus,
     };
 
