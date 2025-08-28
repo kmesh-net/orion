@@ -41,7 +41,7 @@ tower.workspace               = true
 tracing.workspace             = true
 twox-hash                     = "1.6.3"
 typed-builder                 = "0.18.2"
-x509-parser                   = { version = "0.16", features = ["default"] }
+x509-parser                   = { version = "0.17", features = ["default"] }
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true
