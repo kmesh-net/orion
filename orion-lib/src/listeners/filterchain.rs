@@ -23,17 +23,17 @@ use super::{
     tcp_proxy::{TcpProxy, TcpProxyBuilder},
 };
 use crate::{
-    listeners::http_connection_manager::HttpHandlerRequest,
+    AsyncStream, ConversionContext, Error, Result,
+    listeners::{filter_state::DownstreamConnectionMetadata, http_connection_manager::ExtendedRequest},
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::AsyncReadWrite,
-    utils::TokioExecutor,
-    AsyncStream, ConversionContext, Error, Result,
+    utils::tokio::TokioExecutor,
 };
 use compact_str::CompactString;
 use futures::TryFutureExt;
-use http::Request;
-use hyper::service::Service;
-use hyper_util::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
+use hyper::{Request, service::Service};
+use opentelemetry::KeyValue;
+use orion_client::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
 use orion_configuration::config::{
     listener::{FilterChain as FilterChainConfig, MainFilter},
     network_filters::{
@@ -41,9 +41,13 @@ use orion_configuration::config::{
         network_rbac::{NetworkContext, NetworkRbac},
     },
 };
-use rustls::{server::Acceptor, ServerConfig};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::net::TcpStream;
+use orion_metrics::{
+    metrics::{http, tcp, tls},
+    with_histogram, with_metric,
+};
+use rustls::{ServerConfig, server::Acceptor};
+use scopeguard::defer;
+use std::{sync::Arc, thread::ThreadId};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -87,14 +91,14 @@ impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
 #[derive(Debug, Clone)]
 pub struct FilterchainBuilder {
     name: CompactString,
-    listener_name: Option<CompactString>,
+    listener_name: Option<&'static str>,
     main_filter: MainFilterBuilder,
     rbac_filters: Vec<NetworkRbac>,
     tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
 
 impl FilterchainBuilder {
-    pub fn with_listener_name(self, name: CompactString) -> Self {
+    pub fn with_listener_name(self, name: &'static str) -> Self {
         FilterchainBuilder { listener_name: Some(name), ..self }
     }
 
@@ -107,11 +111,11 @@ impl FilterchainBuilder {
             rbac_filters: self.rbac_filters,
         };
         let handler = match self.main_filter {
-            MainFilterBuilder::Http(http_connection_manager) => ConnectionHandler::Http(Arc::new(
-                http_connection_manager.with_listener_name(listener_name.clone()).build()?,
-            )),
+            MainFilterBuilder::Http(http_connection_manager) => {
+                ConnectionHandler::Http(Arc::new(http_connection_manager.with_listener_name(listener_name).build()?))
+            },
             MainFilterBuilder::Tcp(tcp_proxy) => {
-                ConnectionHandler::Tcp(tcp_proxy.with_listener_name(listener_name.clone()).build()?)
+                ConnectionHandler::Tcp(tcp_proxy.with_listener_name(listener_name).build()?)
             },
         };
         Ok(FilterchainType { config, handler })
@@ -144,13 +148,13 @@ impl FilterchainType {
 
     pub fn apply_rbac(
         &self,
-        stream: TcpStream,
-        local_addr: SocketAddr,
-        peer_addr: SocketAddr,
+        stream: AsyncStream,
+        downstream_metadata: &DownstreamConnectionMetadata,
         server_name: Option<&str>,
-    ) -> Option<TcpStream> {
+    ) -> Option<AsyncStream> {
         let rbac_filters = &self.filter_chain().rbac_filters;
-        let network_context = NetworkContext::new(local_addr, peer_addr, server_name);
+        let network_context =
+            NetworkContext::new(downstream_metadata.local_address(), downstream_metadata.peer_address(), server_name);
         for rbac in rbac_filters {
             if !rbac.is_permitted(network_context) {
                 return None;
@@ -159,26 +163,40 @@ impl FilterchainType {
         Some(stream)
     }
 
-    pub async fn start_filterchain(&self, stream: TcpStream) -> Result<()> {
+    pub async fn start_filterchain(
+        &self,
+        stream: AsyncStream,
+        downstream_metadata: Arc<DownstreamConnectionMetadata>,
+        shard_id: ThreadId,
+        listener_name: &'static str,
+        start_instant: std::time::Instant,
+    ) -> Result<()> {
         let Self { config, handler } = self;
         match handler {
             ConnectionHandler::Http(http_connection_manager) => {
+                with_metric!(http::DOWNSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                with_metric!(http::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                defer! {
+                    with_metric!(http::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    with_metric!(http::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    let ms = u64::try_from(start_instant.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    with_histogram!(http::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+                }
+
                 let req_handler = http_connection_manager.request_handler();
                 // codec type as given in the listener, not alpn
                 let codec_type = http_connection_manager.codec_type;
-                let listener_name = http_connection_manager.listener_name.clone();
                 let tls_configurator = config
                     .tls_configurator
                     .clone()
                     .map(TlsConfigurator::<ServerConfig, WantsToBuildServer>::into_inner);
 
-                let peer_addr = stream.peer_addr().map_err(|e| {
-                    warn!("{listener_name} failed to read peer address");
-                    format!("Failed to read peer address: {e}")
-                })?;
                 let (stream, selected_codec) = if let Some(tls_configurator) = tls_configurator {
                     let (stream, negotiated) =
-                        start_tls(listener_name.clone(), stream, tls_configurator, Some(codec_type)).await?;
+                        start_tls(http_connection_manager.listener_name, stream, tls_configurator, Some(codec_type))
+                            .await?;
+                    with_metric!(tls::HANDSHAKES, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+
                     // if we negotiated a protocol over ALPN, use that instead of the configured CodecType.
                     // since we use codec_type to determine our alpn response, we will never negotiate a protocol not covered by codec_type
                     // if we change our config to support setting the alpn protocols from the TlsContext, we should
@@ -212,8 +230,9 @@ impl FilterchainType {
                     .serve_connection_with_upgrades(
                         stream,
                         hyper::service::service_fn(|req: Request<hyper::body::Incoming>| {
-                            let handler_req = HttpHandlerRequest { request: req, source_addr: peer_addr };
-                            req_handler.call(handler_req).map_err(orion_error::Error::inner)
+                            let handler_req =
+                                ExtendedRequest { request: req, downstream_metadata: downstream_metadata.clone() };
+                            req_handler.call(handler_req).map_err(orion_error::Error::into_inner)
                         }),
                     )
                     .await
@@ -221,21 +240,31 @@ impl FilterchainType {
                     .map_err(Error::from)
             },
             ConnectionHandler::Tcp(tcp_proxy) => {
+                with_metric!(tcp::DOWNSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                with_metric!(tcp::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                defer! {
+                    with_metric!(tcp::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    with_metric!(tcp::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    let ms = u64::try_from(start_instant.elapsed().as_millis()).unwrap_or(u64::MAX);
+                    with_histogram!(tcp::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+                }
+
                 let tcp_proxy = tcp_proxy.clone();
-                let listener_name = tcp_proxy.listener_name.clone();
+                let listener_name = tcp_proxy.listener_name;
                 let server_config = config
                     .tls_configurator
                     .clone()
                     .map(TlsConfigurator::<ServerConfig, WantsToBuildServer>::into_inner);
+
                 let (stream, _alpns): (Box<dyn AsyncReadWrite>, Option<AlpnCodecs>) =
                     if let Some(server_config) = server_config {
-                        start_tls(listener_name.clone(), stream, server_config, None).await?
+                        start_tls(listener_name, stream, server_config, None).await?
                     } else {
                         (Box::new(stream), None)
                     };
 
                 debug!("Starting tcp proxy");
-                let res = tcp_proxy.serve_connection(stream).await;
+                let res = tcp_proxy.serve_connection(stream, downstream_metadata.clone()).await;
                 debug!("TcpProxy closed {res:?}");
                 res
             },
@@ -252,8 +281,8 @@ fn negotiate_codec_type<'a>(codec_type: CodecType, client_alpns: impl Iterator<I
 }
 
 async fn start_tls(
-    listener_name: CompactString,
-    stream: TcpStream,
+    listener_name: &'static str,
+    stream: AsyncStream,
     mut config: ServerConfig,
     codec_type: Option<CodecType>,
 ) -> Result<(AsyncStream, Option<AlpnCodecs>)> {
@@ -315,8 +344,9 @@ async fn start_tls(
 #[cfg(test)]
 mod tests {
     use orion_configuration::config::listener::{FilterChainMatch, MatchResult};
-    use orion_data_plane_api::decode::from_yaml;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::config::listener::v3::FilterChainMatch as EnvoyFilterChainMatch;
+    use orion_data_plane_api::{
+        decode::from_yaml, envoy_data_plane_api::envoy::config::listener::v3::FilterChainMatch as EnvoyFilterChainMatch,
+    };
     use std::net::Ipv4Addr;
     use tracing_test::traced_test;
 
