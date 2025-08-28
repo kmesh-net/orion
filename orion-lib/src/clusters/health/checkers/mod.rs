@@ -30,16 +30,18 @@ use std::sync::Arc;
 use orion_configuration::config::cluster::health_check::{
     ClusterHealthCheck, GrpcHealthCheck, HttpHealthCheck, TcpHealthCheck,
 };
-use tokio::sync::{mpsc, Notify};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{Notify, mpsc},
+    task::JoinHandle,
+};
 
-use self::grpc::spawn_grpc_health_checker;
-use self::http::try_spawn_http_health_checker;
-use self::tcp::spawn_tcp_health_checker;
+use self::{grpc::spawn_grpc_health_checker, http::try_spawn_http_health_checker, tcp::spawn_tcp_health_checker};
 use super::{EndpointHealthUpdate, EndpointId, HealthStatus};
-use crate::clusters::GrpcService;
-use crate::transport::{HttpChannel, TcpChannel};
-use crate::Error;
+use crate::{
+    Error,
+    clusters::GrpcService,
+    transport::{HttpChannel, TcpChannelConnector},
+};
 
 #[derive(Debug)]
 pub struct EndpointHealthChecker {
@@ -75,7 +77,7 @@ impl EndpointHealthChecker {
         endpoint: EndpointId,
         cluster_config: ClusterHealthCheck,
         protocol_config: TcpHealthCheck,
-        channel: TcpChannel,
+        channel: TcpChannelConnector,
         sender: mpsc::Sender<EndpointHealthUpdate>,
     ) -> Self {
         let stop_signal = Arc::new(Notify::new());

@@ -18,103 +18,94 @@
 //
 //
 
+use super::AsyncReadWrite;
+use crate::utils::rewindable_stream::RewindableHeadAsyncStream;
+
 use rustls::server::Acceptor;
-use std::{cmp::Ordering, pin::Pin, task::Poll};
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    net::TcpStream,
-};
+use std::io;
 
-pub struct TlsInspector<'a> {
-    stream: &'a mut TcpStream,
-    bytes_read: usize,
-    buffer: Vec<u8>,
+#[derive(Debug)]
+pub enum InspectorResult {
+    /// Handshake with valid TLS and SNI.
+    Success(String),
+    /// Handshake with valid TLS, without server name indication.
+    SuccessNoSni,
+    /// Failed TLS Handshake (e.g. not TLS, or I/O, etc.).
+    TlsError(io::Error),
 }
 
-impl<'a> TlsInspector<'a> {
-    fn new(stream: &'a mut TcpStream) -> Self {
-        Self { stream, bytes_read: 0, buffer: Vec::with_capacity(0) }
-    }
-    pub async fn peek_sni(stream: &'a mut TcpStream) -> Option<String> {
-        // we discard any errors here to simplify the code.
-        // the tls inspector might fail to find a handshake if we don't configure TLS for the listener, or it might fail because of some other spurious IO error.
-        // in the former case, we want to continue on as normal without SNI while in the latter case (which should be rare) we will fail the connection later anyways.
-        let handshake = tokio_rustls::LazyConfigAcceptor::new(Acceptor::default(), Self::new(stream)).await.ok()?;
-        handshake.client_hello().server_name().map(String::from)
-    }
+pub async fn inspect_client_hello(stream: Box<dyn AsyncReadWrite>) -> (InspectorResult, Box<dyn AsyncReadWrite>) {
+    let mut inspector = RewindableHeadAsyncStream::new(stream);
+    let acceptor = tokio_rustls::LazyConfigAcceptor::new(Acceptor::default(), &mut inspector);
+    let result = match acceptor.await {
+        Ok(handshake) => match handshake.client_hello().server_name() {
+            Some(server_name) => InspectorResult::Success(server_name.to_string()),
+            None => InspectorResult::SuccessNoSni,
+        },
+        Err(e) => InspectorResult::TlsError(e),
+    };
+    let rewound_stream = inspector.into_rewound_stream();
+    (result, Box::new(rewound_stream))
 }
 
-impl AsyncRead for TlsInspector<'_> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let Self { stream, bytes_read, buffer } = Pin::into_inner(self);
-        //  on the first peek, we can attempt to peek directly into the provided buffer as an optimization
-        if *bytes_read == 0 {
-            let poll = Pin::new(stream).poll_peek(cx, buf);
-            if let Poll::Ready(Ok(n_bytes)) = poll {
-                *bytes_read = n_bytes;
-                Poll::Ready(Ok(()))
-            } else {
-                poll.map(|p| p.map(|_| ()))
-            }
-        } else {
-            let write_capacity = buf.remaining();
-            let internal_buffer_bound = *bytes_read + write_capacity;
-            if buffer.len() < internal_buffer_bound {
-                buffer.resize(internal_buffer_bound, 0);
-            }
-            let mut peek_read_buf = tokio::io::ReadBuf::new(buffer);
-            let poll = Pin::new(stream).poll_peek(cx, &mut peek_read_buf);
-            if let Poll::Ready(Ok(n_bytes)) = poll {
-                match n_bytes.cmp(bytes_read) {
-                    Ordering::Greater => {
-                        let newly_read = &peek_read_buf.filled()[*bytes_read..n_bytes];
-                        buf.put_slice(newly_read);
-                        *bytes_read = n_bytes;
-                        Poll::Ready(Ok(()))
-                    },
-                    Ordering::Equal => {
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    },
-                    Ordering::Less => Poll::Ready(Err(std::io::Error::other(
-                        "TLS inspector peeked less bytes than it did in a previous iteration",
-                    ))),
-                }
-            } else {
-                poll.map(|p| p.map(|_| ()))
-            }
-        }
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustls::{ClientConfig, ClientConnection, pki_types::ServerName};
+    use std::{io::Cursor, sync::Arc};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-// the rustls implementation requires we implement write, but we don't want to write here yet
-// ideally we would refactor this code in such a way that we simply return the result of the tls handshake
-// and continue from there instead of peeking
-//
-// for now, we simply error out on any writes. The TLS protocol should not require that we write anything before receiving the initial handshake
-// see https://tls13.xargs.org/
-impl AsyncWrite for TlsInspector<'_> {
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
-        std::task::Poll::Ready(Err(std::io::Error::other("TLS inspector tried to write to read-only stream")))
+    fn create_client_hello_with_sni(sni: &str) -> Vec<u8> {
+        let config = Arc::new(
+            ClientConfig::builder().with_root_certificates(rustls::RootCertStore::empty()).with_no_client_auth(),
+        );
+        let server_name = ServerName::try_from(sni.to_string()).unwrap();
+        let mut client = ClientConnection::new(config, server_name).unwrap();
+        let mut tls_data = Vec::new();
+        let mut cursor = Cursor::new(&mut tls_data);
+        client.write_tls(&mut cursor).unwrap();
+        tls_data
     }
-    fn poll_write(
-        self: Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-        _: &[u8],
-    ) -> std::task::Poll<std::result::Result<usize, std::io::Error>> {
-        std::task::Poll::Ready(Err(std::io::Error::other("TLS inspector tried to write to read-only stream")))
+
+    #[tokio::test]
+    async fn test_sni_detection() {
+        let tls_data = create_client_hello_with_sni("example.com");
+        let cursor = std::io::Cursor::new(tls_data.clone());
+        let inbound = Box::new(cursor) as Box<dyn AsyncReadWrite>;
+        let (result, rewound) = inspect_client_hello(inbound).await;
+        assert!(matches!(result, InspectorResult::Success(ref sni) if sni == "example.com"));
+
+        let (result, mut rewound_again) = inspect_client_hello(rewound).await;
+        assert!(matches!(result, InspectorResult::Success(ref sni) if sni == "example.com"));
+
+        let mut full_data = Vec::new();
+        rewound_again.read_to_end(&mut full_data).await.unwrap();
+        assert_eq!(full_data, tls_data);
     }
-    fn poll_shutdown(
-        self: Pin<&mut Self>,
-        _: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::result::Result<(), std::io::Error>> {
-        std::task::Poll::Ready(Err(std::io::Error::other("TLS inspector tried to write to read-only stream")))
+
+    #[tokio::test]
+    async fn test_no_sni() {
+        let tls_data = create_client_hello_with_sni("127.0.0.1");
+        let cursor = std::io::Cursor::new(tls_data);
+        let inbound = Box::new(cursor) as Box<dyn AsyncReadWrite>;
+        let (result, _) = inspect_client_hello(inbound).await;
+        assert!(matches!(result, InspectorResult::SuccessNoSni));
+    }
+
+    #[tokio::test]
+    async fn test_non_tls_data() {
+        let http_data = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+
+        let (mut write_stream, read_stream) = tokio::io::duplex(1024);
+        write_stream.write_all(http_data).await.unwrap();
+        write_stream.shutdown().await.unwrap();
+
+        let inbound = Box::new(read_stream) as Box<dyn AsyncReadWrite>;
+        let (result, mut rewound) = inspect_client_hello(inbound).await;
+        assert!(matches!(result, InspectorResult::TlsError(_)));
+
+        let mut full_data = Vec::new();
+        rewound.read_to_end(&mut full_data).await.unwrap();
+        assert_eq!(full_data, http_data);
     }
 }

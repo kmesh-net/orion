@@ -18,17 +18,21 @@
 //
 //
 
-use futures::future::BoxFuture;
-use futures::{FutureExt, TryFutureExt};
-use http::uri::{Authority, Scheme};
-use http::{Request, Uri};
+use futures::{FutureExt, TryFutureExt, future::BoxFuture};
+use http::{
+    Request, Uri,
+    uri::{Authority, Scheme},
+};
+use std::{iter::Cycle, sync::Arc, vec::IntoIter};
 
-use orion_xds::grpc_deps::{to_grpc_body, GrpcBody};
+use orion_xds::grpc_deps::{GrpcBody, to_grpc_body};
 use tower::Service;
 
-use crate::listeners::http_connection_manager::RequestHandler;
-use crate::transport::request_context::RequestWithContext;
-use crate::transport::HttpChannel;
+use crate::{
+    body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind},
+    listeners::http_connection_manager::{RequestHandler, TransactionContext},
+    transport::{HttpChannel, policy::RequestExt},
+};
 
 /// Adapts a [`HttpChannel`] to a [`Service`] that can be used as a channel for gRPC.
 /// the inner value should be kept cheap to clone
@@ -60,9 +64,15 @@ impl GrpcService {
         uri_parts.authority = Some(self.authority.clone());
         parts.uri = Uri::from_parts(uri_parts)?;
 
-        let http_req = Request::from_parts(parts, grpc_body.into());
+        let http_req = Request::from_parts(
+            parts,
+            BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _flags| {
+                println!("gRPC request body finalized")
+            }),
+        );
 
-        let svc_resp = self.inner.to_response(RequestWithContext::new(http_req)).await?;
+        let svc_resp =
+            self.inner.to_response(&Arc::new(TransactionContext::default()), RequestExt::new(http_req)).await?;
         Ok(svc_resp.map(to_grpc_body))
     }
 }
@@ -83,7 +93,43 @@ impl Service<Request<GrpcBody>> for GrpcService {
     fn call(&mut self, grpc_req: Request<GrpcBody>) -> Self::Future {
         self.clone()
             .do_call(grpc_req)
-            .map_err(|e| Box::new(crate::Error::inner(e)) as orion_xds::grpc_deps::Error)
+            .map_err(|e| Box::new(crate::Error::into_inner(e)) as orion_xds::grpc_deps::Error)
             .boxed()
+    }
+}
+
+/// Simple GrpcService that does round-robin load balancing
+/// over a static group of GrpcService instances
+pub struct SimpleRoundRobinGrpcServiceLB {
+    services: Cycle<IntoIter<GrpcService>>,
+}
+
+impl SimpleRoundRobinGrpcServiceLB {
+    pub fn new(services: Vec<GrpcService>) -> Self {
+        Self { services: services.into_iter().cycle() }
+    }
+    pub fn next_service(&mut self) -> Option<GrpcService> {
+        self.services.next()
+    }
+}
+
+impl Service<Request<GrpcBody>> for SimpleRoundRobinGrpcServiceLB {
+    type Response = http::Response<GrpcBody>;
+    type Error = orion_xds::grpc_deps::Error;
+    type Future = BoxFuture<'static, std::result::Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, grpc_req: Request<GrpcBody>) -> Self::Future {
+        if let Some(mut service) = self.next_service() {
+            service.call(grpc_req)
+        } else {
+            Box::pin(futures::future::err("No gRPC endpoints available".into()))
+        }
     }
 }

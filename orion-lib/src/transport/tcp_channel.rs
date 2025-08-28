@@ -18,25 +18,101 @@
 //
 //
 
-use std::time::Duration;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use super::bind_device::BindDevice;
-use super::connector::{ConnectError, LocalConnectorWithDNSResolver};
+use super::{
+    AsyncStream, UpstreamTransportSocketConfigurator, bind_device::BindDevice, connector::LocalConnectorWithDNSResolver,
+};
+use crate::{
+    listeners::filter_state::DownstreamConnectionMetadata,
+    secrets::{TlsConfigurator, WantsToBuildClient},
+};
 use futures::future::BoxFuture;
 use http::uri::Authority;
+use rustls::ClientConfig;
 use tokio::net::TcpStream;
+use tokio_rustls::TlsConnector;
+use webpki::types::ServerName;
 
 #[derive(Debug, Clone)]
-pub struct TcpChannel {
+pub struct TcpChannelConnector {
     connector: LocalConnectorWithDNSResolver,
+    transport_socket: UpstreamTransportSocketConfigurator,
 }
 
-impl TcpChannel {
-    pub fn new(authority: &Authority, bind_device: Option<BindDevice>, timeout: Option<Duration>) -> Self {
-        Self { connector: LocalConnectorWithDNSResolver { addr: authority.clone(), bind_device, timeout } }
+pub struct TcpChannel {
+    pub stream: AsyncStream,
+    pub cluster_name: &'static str,
+    pub upstream_local_addr: Option<SocketAddr>,
+    pub upstream_peer_addr: Option<SocketAddr>,
+}
+
+impl TcpChannelConnector {
+    pub fn new(
+        authority: &Authority,
+        cluster_name: &'static str,
+        bind_device: Option<BindDevice>,
+        timeout: Option<Duration>,
+        transport_socket: UpstreamTransportSocketConfigurator,
+    ) -> Self {
+        Self {
+            connector: LocalConnectorWithDNSResolver { addr: authority.clone(), cluster_name, bind_device, timeout },
+            transport_socket,
+        }
     }
 
-    pub fn connect(&self) -> BoxFuture<'static, std::result::Result<TcpStream, ConnectError>> {
-        Box::pin(self.connector.connect())
+    pub fn connect(
+        &self,
+        downstream_metadata: Option<&DownstreamConnectionMetadata>,
+    ) -> BoxFuture<'static, crate::Result<TcpChannel>> {
+        let connector = self.connector.clone();
+        let transport_socket = self.transport_socket.clone();
+        let downstream_metadata = downstream_metadata.cloned();
+
+        Box::pin(async move {
+            let (mut stream, cluster_name) = connector
+                .connect()
+                .await
+                .map_err(|e| -> crate::Error { format!("TCP connection failed: {e}").into() })?;
+
+            let upstream_local_addr = stream.local_addr().ok();
+            let upstream_peer_addr = stream.peer_addr().ok();
+
+            let stream: AsyncStream = match &transport_socket {
+                UpstreamTransportSocketConfigurator::Tls(tls_configurator) => {
+                    configure_tls(tls_configurator, stream).await?
+                },
+                UpstreamTransportSocketConfigurator::ProxyProtocol(proxy_configurator) => {
+                    if let Some(metadata) = &downstream_metadata {
+                        proxy_configurator.write_proxy_header(&mut stream, metadata).await.map_err(
+                            |e| -> crate::Error { format!("Failed to write proxy protocol header: {e}").into() },
+                        )?;
+                    }
+                    if let Some(inner_tls) = &proxy_configurator.inner_tls_configurator {
+                        configure_tls(inner_tls, stream).await?
+                    } else {
+                        Box::new(stream)
+                    }
+                },
+                UpstreamTransportSocketConfigurator::None => Box::new(stream),
+            };
+
+            Ok(TcpChannel { stream, cluster_name, upstream_local_addr, upstream_peer_addr })
+        })
     }
+}
+
+async fn configure_tls(
+    tls_config: &TlsConfigurator<ClientConfig, WantsToBuildClient>,
+    stream: TcpStream,
+) -> crate::Result<AsyncStream> {
+    let client_config = tls_config.clone().into_inner();
+    let server_name = ServerName::try_from(tls_config.sni())
+        .map_err(|e| -> crate::Error { format!("Invalid server name: {e}").into() })?;
+    let tls_connector = TlsConnector::from(Arc::new(client_config));
+    let tls_stream = tls_connector
+        .connect(server_name, stream)
+        .await
+        .map_err(|e| -> crate::Error { format!("TLS connection failed: {e}").into() })?;
+    Ok(Box::new(tls_stream))
 }

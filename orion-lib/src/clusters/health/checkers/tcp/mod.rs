@@ -23,19 +23,19 @@ mod tests;
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
-use futures::{FutureExt, TryFutureExt};
+use futures::{FutureExt, TryFutureExt, future::BoxFuture};
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, TcpHealthCheck};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Notify};
-use tokio::task::JoinHandle;
+use tokio::{
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    sync::{Notify, mpsc},
+    task::JoinHandle,
+};
 
-use crate::clusters::health::checkers::checker::HealthCheckerLoop;
-use crate::clusters::health::counter::HealthStatusCounter;
-use crate::clusters::health::EndpointId;
-use crate::transport::TcpChannel;
-use crate::{EndpointHealthUpdate, Error};
+use crate::{
+    EndpointHealthUpdate, Error,
+    clusters::health::{EndpointId, checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter},
+    transport::TcpChannelConnector,
+};
 
 use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
 
@@ -45,7 +45,7 @@ pub fn spawn_tcp_health_checker(
     endpoint: EndpointId,
     cluster_config: ClusterHealthCheck,
     protocol_config: TcpHealthCheck,
-    channel: TcpChannel,
+    channel: TcpChannelConnector,
     sender: mpsc::Sender<EndpointHealthUpdate>,
     stop_signal: Arc<Notify>,
 ) -> JoinHandle<Result<(), Error>> {
@@ -68,11 +68,10 @@ where
     fn connect(&self) -> BoxFuture<'static, std::result::Result<Self::Stream, Error>>;
 }
 
-impl TcpClient for TcpChannel {
-    type Stream = TcpStream;
-
+impl TcpClient for TcpChannelConnector {
+    type Stream = crate::transport::AsyncStream;
     fn connect(&self) -> BoxFuture<'static, std::result::Result<Self::Stream, Error>> {
-        self.connect().map_err(Error::from).boxed()
+        self.connect(None).map(|result| result.map(|channel| channel.stream)).map_err(Error::from).boxed()
     }
 }
 
