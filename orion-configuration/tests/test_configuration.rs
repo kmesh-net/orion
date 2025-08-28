@@ -4,12 +4,12 @@ use std::{fs::File, path::PathBuf};
 
 #[test]
 fn empty_config() {
-    let _cfg: Config = deserialize_yaml(&PathBuf::from("tests/yaml/config.yaml")).unwrap();
+    let _cfg: Config = deserialize_yaml(&PathBuf::from("tests/config_empty.yaml")).unwrap();
 }
 
 #[test]
 fn bad_config() {
-    let r: Result<Config, _> = deserialize_yaml(&PathBuf::from("tests/yaml/config_bad.yaml"));
+    let r: Result<Config, _> = deserialize_yaml(&PathBuf::from("tests/config_bad.yaml"));
     assert!(r.is_err());
 }
 
