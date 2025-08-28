@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -19,6 +18,8 @@
 //
 //
 
+#![allow(dead_code)]
+
 pub mod metric_exporters;
 
 use std::time::Duration;
@@ -33,10 +34,9 @@ pub fn init_metrics_exporter(config: Config) -> Result<()> {
     match config {
         StdOut => stdout::init(),
         Prometheus { socket_address } => prometheus::init(socket_address),
-        OtelPusher {
-            endpoint,
-            push_interval_seconds,
-        } => otel::init(endpoint, Duration::from_secs_f32(push_interval_seconds)),
+        OtelPusher { endpoint, push_interval_seconds } => {
+            otel::init(endpoint, Duration::from_secs_f32(push_interval_seconds))
+        },
     }
 }
 

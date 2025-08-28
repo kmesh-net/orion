@@ -1,4 +1,3 @@
-#![allow(clippy::print_stdout)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,8 @@
 // limitations under the License.
 //
 //
+
+#![allow(clippy::print_stdout)]
 
 use orion_configuration::{config::Config, options::Options, Result};
 use orion_error::Context;

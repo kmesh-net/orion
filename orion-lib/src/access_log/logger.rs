@@ -1,4 +1,3 @@
-#![allow(unused_macros)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,8 @@
 // limitations under the License.
 //
 //
+
+#![allow(unused_macros)]
 
 use super::{AccessLogMessage, Target};
 use std::collections::HashMap;

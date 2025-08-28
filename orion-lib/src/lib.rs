@@ -1,4 +1,3 @@
-#![recursion_limit = "128"]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,8 @@
 // limitations under the License.
 //
 //
+
+#![recursion_limit = "128"]
 
 pub mod configuration;
 

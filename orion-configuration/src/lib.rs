@@ -1,4 +1,3 @@
-#![allow(clippy::wildcard_imports)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,8 @@
 // limitations under the License.
 //
 //
+
+#![allow(clippy::wildcard_imports)]
 
 use orion_error::Error;
 pub(crate) type BoxedError = Box<dyn std::error::Error + Send + Sync>;

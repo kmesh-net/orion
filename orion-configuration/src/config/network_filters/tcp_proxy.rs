@@ -1,4 +1,3 @@
-#![allow(deprecated)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -18,6 +17,8 @@
 // limitations under the License.
 //
 //
+
+#![allow(deprecated)]
 
 use crate::config::cluster::ClusterSpecifier;
 use serde::{Deserialize, Serialize};
