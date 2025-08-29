@@ -23,24 +23,28 @@ mod tests;
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, GrpcHealthCheck};
-use orion_xds::grpc_deps::tonic_health::pb::health_client::HealthClient;
-use orion_xds::grpc_deps::tonic_health::pb::{
-    health_check_response::ServingStatus, HealthCheckRequest, HealthCheckResponse,
+use orion_xds::grpc_deps::{
+    tonic_health::pb::{
+        health_check_response::ServingStatus, health_client::HealthClient, HealthCheckRequest, HealthCheckResponse,
+    },
+    Response as TonicResponse, Status as TonicStatus,
 };
-use orion_xds::grpc_deps::{Response as TonicResponse, Status as TonicStatus};
 use std::future::Future;
-use tokio::sync::{mpsc, Notify};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{mpsc, Notify},
+    task::JoinHandle,
+};
 
 use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
-use crate::clusters::health::checkers::checker::HealthCheckerLoop;
-use crate::clusters::health::counter::HealthStatusCounter;
-use crate::clusters::health::{EndpointHealthUpdate, EndpointId};
-use crate::transport::GrpcService;
-use crate::Error;
+use crate::{
+    clusters::health::{
+        checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter, EndpointHealthUpdate, EndpointId,
+    },
+    transport::GrpcService,
+    Error,
+};
 
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.
 pub fn spawn_grpc_health_checker(
@@ -64,14 +68,14 @@ pub fn spawn_grpc_health_checker(
 
 trait GrpcHealthChannel {
     fn check(
-        &mut self,
+        &'_ mut self,
         request: HealthCheckRequest,
     ) -> BoxFuture<'_, Result<TonicResponse<HealthCheckResponse>, TonicStatus>>;
 }
 
 impl GrpcHealthChannel for HealthClient<GrpcService> {
     fn check(
-        &mut self,
+        &'_ mut self,
         request: HealthCheckRequest,
     ) -> BoxFuture<'_, Result<TonicResponse<HealthCheckResponse>, TonicStatus>> {
         HealthClient::check(self, request).boxed()

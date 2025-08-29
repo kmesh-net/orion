@@ -1,20 +1,167 @@
-use std::time::{Duration, SystemTime};
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
-use http::{uri::Authority, HeaderName, Request, Response, Version};
-use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr};
+use std::{
+    net::SocketAddr,
+    time::{Duration, SystemTime},
+};
 
 use crate::{
     operator::{Category, Operator},
-    types::{ResponseFlags, ResponseFlagsShort},
+    types::{ResponseFlags, ResponseFlagsLong, ResponseFlagsShort},
     StringType,
 };
-
-const X_ENVOY_ORIGINAL_PATH: HeaderName = HeaderName::from_static("x-envoy-original-path");
+use ahash::AHasher;
+use chrono::{DateTime, Datelike, Timelike, Utc};
+use http::{uri::Authority, Request, Response};
+use orion_http_header::{X_ENVOY_ORIGINAL_PATH, X_REQUEST_ID};
+use orion_interner::StringInterner;
+use smol_str::{format_smolstr, SmolStr, SmolStrBuilder, ToSmolStr};
+use uuid::Uuid;
 
 pub trait Context {
     fn eval_part(&self, op: &Operator) -> StringType;
-    fn category() -> Category;
+    fn categories() -> Category;
+}
+
+pub struct TcpContext<'a> {
+    pub downstream_local_addr: Option<SocketAddr>,
+    pub downstream_peer_addr: Option<SocketAddr>,
+    pub upstream_local_addr: Option<SocketAddr>,
+    pub upstream_peer_addr: Option<SocketAddr>,
+    pub cluster_name: &'a str,
+}
+
+impl Context for TcpContext<'_> {
+    fn categories() -> Category {
+        Category::UPSTREAM_CONTEXT | Category::DOWNSTREAM_CONTEXT
+    }
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::UpstreamHost | Operator::UpstreamRemoteAddress => match self.upstream_peer_addr {
+                Some(addr) => StringType::Smol(addr.to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::UpstreamRemoteAddressWithoutPort => match self.upstream_peer_addr {
+                None => StringType::None,
+                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
+            },
+            Operator::UpstreamRemotePort => match self.upstream_peer_addr {
+                None => StringType::None,
+                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
+            },
+            Operator::UpstreamLocalAddress => match self.upstream_local_addr {
+                Some(addr) => StringType::Smol(addr.to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::UpstreamLocalAddressWithoutPort => match self.upstream_local_addr {
+                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::UpstreamLocalPort => match self.upstream_local_addr {
+                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::DownstreamLocalAddress => match self.downstream_local_addr {
+                Some(addr) => StringType::Smol(addr.to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::DownstreamLocalAddressWithoutPort => match self.downstream_local_addr {
+                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
+                None => StringType::None,
+            },
+            Operator::DownstreamLocalPort => match self.downstream_local_addr {
+                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
+                None => StringType::None,
+            },
+
+            Operator::DownstreamRemoteAddress => match self.downstream_peer_addr {
+                Some(addr) => StringType::Smol(addr.to_smolstr()),
+                None => StringType::None,
+            },
+
+            Operator::DownstreamRemoteAddressWithoutPort => match self.downstream_peer_addr {
+                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
+                None => StringType::None,
+            },
+
+            Operator::DownstreamRemotePort => match self.downstream_peer_addr {
+                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
+                None => StringType::None,
+            },
+
+            Operator::UpstreamCluster | Operator::UpstreamClusterRaw => {
+                StringType::Smol(SmolStr::new(self.cluster_name))
+            },
+            Operator::ConnectionId => {
+                hash_connection(self.downstream_local_addr.as_ref(), self.downstream_peer_addr.as_ref(), &Protocol::Tcp)
+            },
+            Operator::UpstreamConnectionId => {
+                hash_connection(self.upstream_local_addr.as_ref(), self.upstream_peer_addr.as_ref(), &Protocol::Tcp)
+            },
+            _ => StringType::None,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Hash)]
+enum Protocol {
+    Tcp,
+    Udp,
+}
+
+#[inline]
+fn hash_connection(local: Option<&SocketAddr>, peer: Option<&SocketAddr>, protocol: &Protocol) -> StringType {
+    use std::hash::{Hash, Hasher};
+    match (local, peer) {
+        (Some(local), Some(peer)) => {
+            let mut hasher = AHasher::default();
+            local.hash(&mut hasher);
+            peer.hash(&mut hasher);
+            protocol.hash(&mut hasher);
+            StringType::Smol(format_smolstr!("{:x}", hasher.finish()))
+        },
+        _ => StringType::None,
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct UpstreamContext<'a> {
+    pub authority: &'a Authority,
+    pub cluster_name: &'a str,
+}
+
+impl Context for UpstreamContext<'_> {
+    fn categories() -> Category {
+        Category::UPSTREAM_CONTEXT
+    }
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.as_str())),
+            Operator::UpstreamCluster | Operator::UpstreamClusterRaw => {
+                StringType::Smol(SmolStr::new(self.cluster_name))
+            },
+            _ => StringType::None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -22,37 +169,9 @@ pub struct InitContext {
     pub start_time: SystemTime,
 }
 
-#[derive(Clone, Debug)]
-pub struct FinishContext {
-    pub duration: Duration,
-    pub bytes_received: usize,
-    pub bytes_sent: usize,
-    pub response_flags: ResponseFlags,
-}
-
-#[derive(Clone, Debug)]
-pub struct UpstreamContext<'a> {
-    pub authority: &'a Authority,
-}
-
-#[derive(Clone, Debug)]
-pub struct DownstreamContext {}
-
-impl Context for UpstreamContext<'_> {
-    fn category() -> Category {
-        Category::UpstreamContext
-    }
-    fn eval_part(&self, op: &Operator) -> StringType {
-        match op {
-            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.as_str())),
-            _ => StringType::None,
-        }
-    }
-}
-
 impl Context for InitContext {
-    fn category() -> Category {
-        Category::InitContext
+    fn categories() -> Category {
+        Category::INIT_CONTEXT
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
@@ -62,13 +181,97 @@ impl Context for InitContext {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct InitHttpContext<'a, T> {
+    pub start_time: SystemTime,
+    pub downstream_request: &'a Request<T>,
+    pub request_head_size: usize,
+    pub trace_id: Option<u128>,
+}
+
+impl<T> Context for InitHttpContext<'_, T> {
+    fn categories() -> Category {
+        Category::INIT_CONTEXT | Category::DOWNSTREAM_REQUEST
+    }
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::StartTime => StringType::Smol(format_system_time(self.start_time)),
+            _ => DownstreamContext {
+                request: self.downstream_request,
+                trace_id: self.trace_id,
+                request_head_size: self.request_head_size,
+            }
+            .eval_part(op),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpRequestDuration {
+    pub duration: Duration,
+    pub tx_duration: Duration,
+}
+
+impl Context for HttpRequestDuration {
+    fn categories() -> Category {
+        Category::REQUEST_DURATION
+    }
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::RequestDuration => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.duration.as_millis())))
+            },
+            Operator::RequestTxDuration => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.tx_duration.as_millis())))
+            },
+            _ => StringType::None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HttpResponseDuration {
+    pub duration: Duration,
+    pub tx_duration: Duration,
+}
+
+impl Context for HttpResponseDuration {
+    fn categories() -> Category {
+        Category::RESPONSE_DURATION
+    }
+    fn eval_part(&self, op: &Operator) -> StringType {
+        match op {
+            Operator::ResponseDuration => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.duration.as_millis())))
+            },
+            Operator::ResponseTxDuration => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.tx_duration.as_millis())))
+            },
+            _ => StringType::None,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FinishContext {
+    pub duration: Duration,
+    pub bytes_received: u64,
+    pub bytes_sent: u64,
+    pub response_flags: ResponseFlags,
+}
+
 impl Context for FinishContext {
-    fn category() -> Category {
-        Category::FinishContext
+    fn categories() -> Category {
+        Category::FINISH_CONTEXT
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
             Operator::ResponseFlags => StringType::Smol(ResponseFlagsShort(&self.response_flags).to_smolstr()),
+            Operator::ResponseFlagsLong => StringType::Smol(ResponseFlagsLong(&self.response_flags).to_smolstr()),
             Operator::Duration => {
                 let mut buffer = itoa::Buffer::new();
                 StringType::Smol(SmolStr::new(buffer.format(self.duration.as_millis())))
@@ -86,81 +289,119 @@ impl Context for FinishContext {
     }
 }
 
-pub struct DownstreamRequest<'a, T>(pub &'a Request<T>);
+pub struct DownstreamContext<'a, T> {
+    pub request: &'a Request<T>,
+    pub request_head_size: usize,
+    pub trace_id: Option<u128>,
+}
+
+pub struct DownstreamResponse<'a, T> {
+    pub response: &'a Response<T>,
+    pub response_head_size: usize,
+}
+
 pub struct UpstreamRequest<'a, T>(pub &'a Request<T>);
-pub struct DownstreamResponse<'a, T>(pub &'a Response<T>);
 pub struct UpstreamResponse<'a, T>(pub &'a Response<T>);
 
-impl<T> Context for DownstreamRequest<'_, T> {
-    fn category() -> Category {
-        Category::DownstreamRequest
+impl<T> Context for DownstreamContext<'_, T> {
+    fn categories() -> Category {
+        Category::DOWNSTREAM_REQUEST
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::RequestPath => StringType::Smol(SmolStr::new(self.0.uri().path())),
+            Operator::RequestHeadersBytes => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.request_head_size)))
+            },
+            Operator::RequestPath => StringType::Smol(SmolStr::new(self.request.uri().path())),
             Operator::RequestOriginalPathOrPath => {
                 let path_str = self
-                    .0
+                    .request
                     .headers()
                     .get(X_ENVOY_ORIGINAL_PATH)
                     .and_then(|p| p.to_str().ok())
-                    .unwrap_or_else(|| self.0.uri().path());
+                    .unwrap_or_else(|| self.request.uri().path());
 
                 StringType::Smol(SmolStr::new(path_str))
             },
             Operator::RequestAuthority => {
-                if let Some(a) = extract_authority_from_request(self.0) {
+                if let Some(a) = extract_authority_from_request(self.request) {
                     StringType::Smol(SmolStr::new(a))
                 } else {
-                    StringType::Smol(SmolStr::new_static("-"))
+                    StringType::None
                 }
             },
-            Operator::RequestMethod => StringType::Smol(SmolStr::new(self.0.method().as_str())),
+            Operator::RequestMethod => StringType::Smol(SmolStr::new(self.request.method().as_str())),
             Operator::RequestScheme => {
-                if let Some(s) = self.0.uri().scheme() {
+                if let Some(s) = self.request.uri().scheme() {
                     StringType::Smol(SmolStr::new(s.as_str()))
                 } else {
-                    StringType::Smol(SmolStr::new_static("-"))
+                    StringType::None
                 }
             },
-
-            Operator::RequestStandard(h) => {
-                let hv = self.0.headers().get(h);
+            Operator::Request(h) => {
+                let hv = self.request.headers().get(h.0.as_str());
                 match hv {
                     Some(hv) => StringType::Bytes(hv.as_bytes().into()),
-                    None => StringType::Smol(SmolStr::new_static("-")),
+                    None => StringType::None,
                 }
             },
-            Operator::Protocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
+            Operator::TraceId => {
+                if let Some(trace_id) = self.trace_id {
+                    StringType::Smol(format_smolstr!("{:032x}", trace_id))
+                } else {
+                    StringType::None
+                }
+            },
+            Operator::Protocol => StringType::Smol(SmolStr::new_static(self.request.version().to_static_str())),
             _ => StringType::None,
         }
     }
 }
 
 impl<T> Context for UpstreamRequest<'_, T> {
-    fn category() -> Category {
-        Category::UpstreamRequest
+    fn categories() -> Category {
+        Category::UPSTREAM_REQUEST
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::UpstreamProtocol => StringType::Smol(SmolStr::new_static(into_protocol(self.0.version()))),
+            Operator::UpstreamProtocol => StringType::Smol(SmolStr::new_static(self.0.version().to_static_str())),
+            Operator::UniqueId => {
+                let uuid = self
+                    .0
+                    .headers()
+                    .get(X_REQUEST_ID)
+                    .and_then(|id| id.to_str().ok())
+                    .filter(|s| Uuid::parse_str(s).is_ok())
+                    .map(SmolStr::new);
+                match uuid {
+                    Some(value) => StringType::Smol(value),
+                    None => StringType::None,
+                }
+            },
             _ => StringType::None,
         }
     }
 }
 
 impl<T> Context for DownstreamResponse<'_, T> {
-    fn category() -> Category {
-        Category::DownstreamResponse
+    fn categories() -> Category {
+        Category::DOWNSTREAM_RESPONSE
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::ResponseCode => StringType::Smol(SmolStr::new_inline(self.0.status().as_str())),
-            Operator::ResponseStandard(h) => {
-                let hv = self.0.headers().get(h.as_str());
+            Operator::ResponseHeadersBytes => {
+                let mut buffer = itoa::Buffer::new();
+                StringType::Smol(SmolStr::new(buffer.format(self.response_head_size)))
+            },
+            Operator::ResponseStatus | Operator::ResponseCode => {
+                StringType::Smol(SmolStr::new_inline(self.response.status().as_str()))
+            },
+            Operator::Response(header_name) => {
+                let hv = self.response.headers().get(header_name.0.as_str());
                 match hv {
                     Some(hv) => StringType::Bytes(hv.as_bytes().into()),
-                    None => StringType::Smol(SmolStr::new_static("-")),
+                    None => StringType::None,
                 }
             },
             _ => StringType::None,
@@ -188,17 +429,6 @@ const TWO_DIGITS: [&str; 100] = [
     "95", "96", "97", "98", "99",
 ];
 
-#[inline]
-fn into_protocol(ver: Version) -> &'static str {
-    match ver {
-        Version::HTTP_10 => "HTTP/1.0",
-        Version::HTTP_11 => "HTTP/1.1",
-        Version::HTTP_2 => "HTTP/2",
-        Version::HTTP_3 => "HTTP/3",
-        _ => "HTTP/UNKNOWN",
-    }
-}
-
 pub fn format_system_time(time: SystemTime) -> SmolStr {
     let datetime: DateTime<Utc> = time.into();
 
@@ -218,7 +448,7 @@ pub fn format_system_time(time: SystemTime) -> SmolStr {
     builder.push_str(unsafe { TWO_DIGITS.get_unchecked(datetime.second() as usize) });
     builder.push(':');
     builder.push_str(buffer.format(datetime.nanosecond() / 1_000_000));
-    // builder.push('Z');
+    builder.push('Z');
 
     builder.finish()
 }

@@ -25,9 +25,9 @@ use std::fmt::Debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Secret {
-    name: CompactString,
+    pub name: CompactString,
     #[serde(flatten)]
-    kind: Type,
+    pub kind: Type,
 }
 
 impl Secret {
@@ -37,6 +37,10 @@ impl Secret {
 
     pub fn kind(&self) -> &Type {
         &self.kind
+    }
+
+    pub fn kind_mut(&mut self) -> &mut Type {
+        &mut self.kind
     }
 }
 
@@ -84,8 +88,13 @@ impl TlsCertificate {
     pub fn certificate_chain(&self) -> &DataSource {
         &self.certificate_chain
     }
+
     pub fn private_key(&self) -> &DataSource {
         &self.private_key
+    }
+
+    pub fn private_key_mut(&mut self) -> &mut DataSource {
+        &mut self.private_key
     }
 }
 

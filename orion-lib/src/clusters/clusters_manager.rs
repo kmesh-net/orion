@@ -21,25 +21,73 @@
 use super::{
     balancers::hash_policy::HashState,
     cached_watch::{CachedWatch, CachedWatcher},
-    cluster::{ClusterType, TcpService},
+    cluster::ClusterType,
     health::HealthStatus,
     load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
 };
-use crate::clusters::cluster::ClusterOps;
-use crate::transport::{GrpcService, TcpChannel};
-use crate::PartialClusterType;
-use crate::Result;
-use crate::{secrets::TransportSecret, transport::HttpChannel};
-use compact_str::CompactString;
-use http::uri::Authority;
-use orion_configuration::config::cluster::ClusterSpecifier as ClusterSpecifierConfig;
-use rand::prelude::SliceRandom;
-use rand::thread_rng;
-use std::cell::RefCell;
-use std::collections::{btree_map::Entry as BTreeEntry, BTreeMap};
-use tracing::{debug, warn};
+use crate::{
+    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+    clusters::cluster::{ClusterOps, PartialClusterType},
+    secrets::TransportSecret,
+    transport::{GrpcService, HttpChannel, TcpChannelConnector},
+    Result,
+};
+use http::{uri::Authority, HeaderName, HeaderValue, Request};
+use hyper::body::Incoming;
+use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
+use orion_interner::StringInterner;
+use rand::{prelude::SliceRandom, thread_rng};
+use std::{
+    cell::RefCell,
+    collections::{btree_map::Entry as BTreeEntry, BTreeMap},
+};
+use tracing::warn;
 
-type ClustersMap = BTreeMap<CompactString, ClusterType>;
+type ClusterID = &'static str;
+type ClustersMap = BTreeMap<ClusterID, ClusterType>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoutingRequirement {
+    None,
+    Header(HeaderName),
+    Authority,
+    Hash,
+}
+
+pub enum RoutingContext<'a> {
+    None,
+    Header(&'a HeaderValue),
+    Authority(Authority),
+    Hash(HashState<'a>),
+}
+
+impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>)>
+    for RoutingContext<'a>
+{
+    type Error = String;
+
+    fn try_from(
+        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>),
+    ) -> std::result::Result<Self, Self::Error> {
+        let (routing_requirement, request, hash_state) = value;
+        match routing_requirement {
+            RoutingRequirement::Header(header_name) => {
+                let header_value = request
+                    .headers()
+                    .get(header_name)
+                    .ok_or_else(|| format!("Missing required header '{header_name}' for ORIGINAL_DST cluster"))?;
+                Ok(RoutingContext::Header(header_value))
+            },
+            RoutingRequirement::Authority => {
+                let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
+                warn!(msg);
+                Err(msg)
+            },
+            RoutingRequirement::Hash => Ok(RoutingContext::Hash(hash_state)),
+            RoutingRequirement::None => Ok(RoutingContext::None),
+        }
+    }
+}
 
 static CLUSTERS_MAP: CachedWatch<ClustersMap> = CachedWatch::new(ClustersMap::new());
 
@@ -47,23 +95,42 @@ thread_local! {
     static CLUSTERS_MAP_CACHE : RefCell<CachedWatcher<'static, ClustersMap>> = RefCell::new(CLUSTERS_MAP.watcher());
 }
 
+pub fn resolve_cluster(selector: &ClusterSpecifierConfig) -> Option<ClusterID> {
+    match selector {
+        ClusterSpecifierConfig::Cluster(cluster_name) => Some(cluster_name.to_static_str()),
+        ClusterSpecifierConfig::WeightedCluster(weighted_clusters) => weighted_clusters
+            .choose_weighted(&mut thread_rng(), |cluster| u32::from(cluster.weight))
+            .ok()
+            .map(|cluster| cluster.cluster.to_static_str()),
+    }
+}
+
+pub fn get_cluster_routing_requirements(cluster_id: ClusterID) -> RoutingRequirement {
+    with_cluster(cluster_id, |cluster| Ok(cluster.get_routing_requirements())).unwrap_or(RoutingRequirement::None)
+}
+
 pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssignment) -> Result<ClusterType> {
     CLUSTERS_MAP.update(|current| {
         if let Some(cluster) = current.get_mut(name) {
             match cluster {
-                ClusterType::Dynamic(dynamyc_cluster) => {
+                ClusterType::Dynamic(dynamic_cluster) => {
                     let cla = ClusterLoadAssignmentBuilder::builder()
                         .with_cla(cla.clone())
-                        .with_tls_configurator(dynamyc_cluster.tls_configurator.clone())
-                        .with_cluster_name(dynamyc_cluster.name.clone())
-                        .with_bind_device(dynamyc_cluster.bind_device.clone())
-                        .with_lb_policy(dynamyc_cluster.load_balancing_policy)
+                        .with_transport_socket(dynamic_cluster.transport_socket.clone())
+                        .with_cluster_name(dynamic_cluster.name)
+                        .with_bind_device(dynamic_cluster.bind_device.clone())
+                        .with_lb_policy(dynamic_cluster.load_balancing_policy)
                         .prepare();
-                    cla.build().map(|cla| dynamyc_cluster.change_load_assignment(Some(cla)))?;
+                    cla.build().map(|cla| dynamic_cluster.change_load_assignment(Some(cla)))?;
                     Ok(cluster.clone())
                 },
                 ClusterType::Static(_) => {
                     let msg = format!("{name} Attempt to change CLA for static cluster");
+                    warn!(msg);
+                    Err(msg.into())
+                },
+                ClusterType::OnDemand(_) => {
+                    let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster");
                     warn!(msg);
                     Err(msg.into())
                 },
@@ -87,6 +154,11 @@ pub fn remove_cluster_load_assignment(name: &str) -> Result<()> {
                 },
                 ClusterType::Static(_) => {
                     let msg = format!("{name} Attempt to change CLA for static cluster");
+                    warn!(msg);
+                    Err(msg.into())
+                },
+                ClusterType::OnDemand(_) => {
+                    let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster");
                     warn!(msg);
                     Err(msg.into())
                 },
@@ -120,16 +192,16 @@ pub fn update_tls_context(secret_id: &str, secret: &TransportSecret) -> Result<V
 
 pub fn add_cluster(partial_cluster: PartialClusterType) -> Result<ClusterType> {
     let cluster = partial_cluster.build()?;
-    let cluster_name = cluster.get_name().clone();
+    let cluster_name = cluster.get_name();
 
     CLUSTERS_MAP.update(|current| match current.entry(cluster_name) {
         BTreeEntry::Vacant(entry) => {
             entry.insert(cluster.clone());
             Ok(cluster)
         },
-        BTreeEntry::Occupied(entry) => {
-            let cluster_name = entry.key();
-            Err(format!("Cluster {cluster_name} already exists... need to remove it first").into())
+        BTreeEntry::Occupied(mut entry) => {
+            *(entry.get_mut()) = cluster.clone();
+            Ok(cluster)
         },
     })
 }
@@ -138,54 +210,43 @@ pub fn remove_cluster(cluster_name: &str) -> Result<()> {
     CLUSTERS_MAP.update(|current| current.remove(cluster_name).map(|_| ()).ok_or("No such cluster".into()))
 }
 
-pub fn get_http_connection(selector: &ClusterSpecifierConfig, lb_hash: Option<HashState>) -> Result<HttpChannel> {
-    debug!("Http connection for {selector:?}");
-    with_cluster_selector(selector, |cluster| cluster.get_http_connection(lb_hash))
+pub fn get_all_clusters() -> Vec<ClusterConfig> {
+    CLUSTERS_MAP.get_clone().0.values().by_ref().filter_map(|cluster| ClusterConfig::try_from(cluster).ok()).collect()
 }
 
-pub fn get_tcp_connection(selector: &ClusterSpecifierConfig) -> Result<TcpService> {
-    with_cluster_selector(selector, ClusterOps::get_tcp_connection)
+pub fn get_http_connection(cluster_id: ClusterID, context: RoutingContext) -> Result<HttpChannel> {
+    with_cluster(cluster_id, |cluster| cluster.get_http_connection(context))
 }
 
-pub fn get_grpc_connection(selector: &ClusterSpecifierConfig) -> Result<GrpcService> {
-    with_cluster_selector(selector, ClusterOps::get_grpc_connection)
+pub fn get_tcp_connection(cluster_id: ClusterID, context: RoutingContext) -> Result<TcpChannelConnector> {
+    with_cluster(cluster_id, |cluster| cluster.get_tcp_connection(context))
 }
 
-pub fn all_http_connections(cluster_name: &str) -> Result<Vec<(Authority, HttpChannel)>> {
-    with_cluster(cluster_name, |cluster| Ok(cluster.all_http_channels()))
+pub fn get_grpc_connection(cluster_id: ClusterID, context: RoutingContext) -> Result<GrpcService> {
+    with_cluster(cluster_id, |cluster| cluster.get_grpc_connection(context))
 }
 
-pub fn all_tcp_connections(cluster_name: &str) -> Result<Vec<(Authority, TcpChannel)>> {
-    with_cluster(cluster_name, |cluster| Ok(cluster.all_tcp_channels()))
+pub fn all_http_connections(cluster_id: ClusterID) -> Result<Vec<(Authority, HttpChannel)>> {
+    with_cluster(cluster_id, |cluster| Ok(cluster.all_http_channels()))
 }
 
-pub fn all_grpc_connections(cluster_name: &str) -> Result<Vec<Result<(Authority, GrpcService)>>> {
-    with_cluster(cluster_name, |cluster| Ok(cluster.all_grpc_channels()))
+pub fn all_tcp_connections(cluster_id: ClusterID) -> Result<Vec<(Authority, TcpChannelConnector)>> {
+    with_cluster(cluster_id, |cluster| Ok(cluster.all_tcp_channels()))
 }
 
-fn with_cluster_selector<F, R>(selector: &ClusterSpecifierConfig, f: F) -> Result<R>
-where
-    F: FnOnce(&mut ClusterType) -> Result<R>,
-{
-    let cluster_name = match selector {
-        ClusterSpecifierConfig::Cluster(cluster_name) => cluster_name,
-        ClusterSpecifierConfig::WeightedCluster(weighted_clusters) => {
-            &weighted_clusters.choose_weighted(&mut thread_rng(), |cluster| u32::from(cluster.weight))?.cluster
-        },
-    };
-
-    with_cluster(cluster_name, f)
+pub fn all_grpc_connections(cluster_id: ClusterID) -> Result<Vec<Result<(Authority, GrpcService)>>> {
+    with_cluster(cluster_id, |cluster| Ok(cluster.all_grpc_channels()))
 }
 
-fn with_cluster<F, R>(cluster_name: &str, f: F) -> Result<R>
+fn with_cluster<F, R>(cluster_id: &str, f: F) -> Result<R>
 where
     F: FnOnce(&mut ClusterType) -> Result<R>,
 {
     CLUSTERS_MAP_CACHE.with_borrow_mut(|watcher| {
-        if let Some(cluster) = watcher.cached_or_latest().get_mut(cluster_name) {
+        if let Some(cluster) = watcher.cached_or_latest().get_mut(cluster_id) {
             f(cluster)
         } else {
-            Err(format!("Cluster {cluster_name} not found").into())
+            Err(format!("Cluster {cluster_id} not found").into())
         }
     })
 }

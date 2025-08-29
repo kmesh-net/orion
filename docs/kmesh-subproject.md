@@ -1,11 +1,11 @@
 ## Background
-KMesh is using the Waypoint proxy to handle Level 7 traffic. The Waypoint Proxy is a fork of Istio Proxy, which is a fork of Envoy. While Envoy is a mature application widely used in Kubernetes deployments, we now have a unique opportunity to replace the Istio proxy with something faster, safer and more modern.
+KMesh is using the Waypoint proxy to handle Level 7 traffic. The Waypoint Proxy is a fork of Istio Proxy, which is a fork of Envoy. While Envoy is a mature application widely used in Kubernetes deployments, we now have a unique opportunity to replace an Istio proxy with something faster, safer and more modern.
 
 ## Orion Proxy
-Orion Proxy is a proxy application developed at Huawei Ireland Research Lab. We built Orion Proxy using the Rust programming language to achieve good performance, scalability, memory safety and portability. We wanted to ensure that the Orion proxy fits into the existing Kubernetes ecosystem. We made a pragmatic decision that the Orion Proxy should support the Envoy xDS protocol. This would enable the administrators or operators to dynamically configure the Orion Proxy in the same way as Envoy/Istio proxies are.
+Orion Proxy is a proxy application developed at Huawei Ireland Research Lab. We built the Orion Proxy using the Rust programming language to achieve good performance, scalability, memory safety and portability. We wanted to ensure that the Orion proxy fits into the existing Kubernetes ecosystem. We made a pragmatic decision that the Orion Proxy should support the Envoy xDS protocol. This would enable the administrators or operators to dynamically configure the Orion Proxy in the same way as Envoy/Istio proxies are.
 
 ## Architecture
-The architecture of the Orion Proxy is based on high-quality components and libraries provided by the Rust ecosystem. The Orion Proxy implementation is underpinned by the Tokio runtime. Tokio enables asynchronous processing of requests resulting in achieving very high throughput and good scalability. Tokio also provides us with well-defined building blocks to build a solution with a well-defined, manageable and extendable architecture. 
+The architecture of the Orion Proxy is based on high-quality components and libraries provided by the Rust ecosystem. The Orion Proxy implementation is underpinned by the Tokio runtime.  Tokio enables asynchronous processing of requests resulting in achieving very high throughput and good scalability. Tokio also provides us with well-defined building blocks to build a solution with a well-defined, manageable and extendable architecture. 
 We decided to use the Hyper library to handle Http1/Http2 traffic. The Hyper library combined with Rustls allowed us to handle modern TLS traffic through a secure and FIPS-compliant solution.
 
 ## Performance

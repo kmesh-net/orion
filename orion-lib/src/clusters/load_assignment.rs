@@ -20,15 +20,11 @@
 
 use std::{sync::Arc, time::Duration};
 
-use compact_str::CompactString;
-use futures::future::BoxFuture;
 use http::uri::Authority;
 use orion_configuration::config::cluster::{
     ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthStatus, HttpProtocolOptions,
     LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
 };
-use rustls::ClientConfig;
-use tokio::net::TcpStream;
 use tracing::debug;
 use typed_builder::TypedBuilder;
 use webpki::types::ServerName;
@@ -43,22 +39,22 @@ use super::{
     health::{EndpointHealth, ValueUpdated},
 };
 use crate::{
-    secrets::{TlsConfigurator, WantsToBuildClient},
     transport::{
-        bind_device::BindDevice, connector::ConnectError, GrpcService, HttpChannel, HttpChannelBuilder, TcpChannel,
+        bind_device::BindDevice, GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
+        UpstreamTransportSocketConfigurator,
     },
     Result,
 };
 
 #[derive(Debug, Clone)]
 pub struct LbEndpoint {
-    pub name: CompactString,
+    pub name: &'static str,
     pub authority: http::uri::Authority,
     pub bind_device: Option<BindDevice>,
     pub weight: u32,
     pub health_status: HealthStatus,
     http_channel: HttpChannel,
-    tcp_channel: TcpChannel,
+    tcp_channel: TcpChannelConnector,
 }
 
 impl PartialEq for LbEndpoint {
@@ -136,10 +132,10 @@ impl EndpointWithLoad for LbEndpoint {
 #[derive(Debug, Clone, TypedBuilder)]
 #[builder(build_method(vis="", name=prepare), field_defaults(setter(prefix = "with_")))]
 struct LbEndpointBuilder {
-    cluster_name: CompactString,
+    cluster_name: &'static str,
     endpoint: PartialLbEndpoint,
     http_protocol_options: HttpProtocolOptions,
-    tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    transport_socket: UpstreamTransportSocketConfigurator,
     #[builder(default)]
     server_name: Option<ServerName<'static>>,
     connect_timeout: Option<Duration>,
@@ -158,18 +154,23 @@ impl LbEndpointBuilder {
 
         let builder = HttpChannelBuilder::new(bind_device.clone())
             .with_authority(authority.clone())
-            .with_timeout(self.connect_timeout);
-        let builder = if let Some(tls_conf) = self.tls_configurator {
-            if let Some(server_name) = self.server_name {
-                builder.with_tls(tls_conf).with_server_name(server_name)
-            } else {
-                builder.with_tls(tls_conf)
-            }
+            .with_timeout(self.connect_timeout)
+            .with_cluster_name(cluster_name);
+
+        let maybe_tls_conf = self.transport_socket.tls_configurator();
+        let builder = if let Some(server_name) = self.server_name {
+            builder.with_tls(maybe_tls_conf.cloned()).with_server_name(server_name)
         } else {
-            builder
+            builder.with_tls(maybe_tls_conf.cloned())
         };
         let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
-        let tcp_channel = TcpChannel::new(&authority, bind_device.clone(), self.connect_timeout);
+        let tcp_channel = TcpChannelConnector::new(
+            &authority,
+            cluster_name,
+            bind_device.clone(),
+            self.connect_timeout,
+            self.transport_socket.clone(),
+        );
 
         Ok(Arc::new(LbEndpoint {
             name: cluster_name,
@@ -197,12 +198,12 @@ impl TryFrom<LbEndpointConfig> for PartialLbEndpoint {
 
 #[derive(Debug, Clone, Default)]
 pub struct LocalityLbEndpoints {
-    pub name: CompactString,
+    pub name: &'static str,
     pub endpoints: Vec<Arc<LbEndpoint>>,
     pub priority: u32,
     pub healthy_endpoints: u32,
     pub total_endpoints: u32,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    pub transport_socket: UpstreamTransportSocketConfigurator,
     pub http_protocol_options: HttpProtocolOptions,
     pub connection_timeout: Option<Duration>,
 }
@@ -213,10 +214,10 @@ impl LocalityLbEndpoints {
             .into_iter()
             .map(|e| {
                 LbEndpointBuilder::builder()
-                    .with_cluster_name(self.name.clone())
+                    .with_cluster_name(self.name)
                     .with_http_protocol_options(self.http_protocol_options.clone())
                     .with_connect_timeout(self.connection_timeout)
-                    .with_tls_configurator(self.tls_configurator.clone())
+                    .with_transport_socket(self.transport_socket.clone())
                     .with_endpoint(PartialLbEndpoint::new(&e))
                     .prepare()
                     .build()
@@ -235,11 +236,11 @@ pub struct PartialLocalityLbEndpoints {
 #[derive(Debug, Clone, Default, TypedBuilder)]
 #[builder(build_method(vis="", name=prepare), field_defaults(setter(prefix = "with_")))]
 pub struct LocalityLbEndpointsBuilder {
-    cluster_name: CompactString,
+    cluster_name: &'static str,
     bind_device: Option<BindDevice>,
     endpoints: PartialLocalityLbEndpoints,
     http_protocol_options: HttpProtocolOptions,
-    tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    transport_socket: UpstreamTransportSocketConfigurator,
     server_name: Option<ServerName<'static>>,
     connection_timeout: Option<Duration>,
 }
@@ -252,13 +253,13 @@ impl LocalityLbEndpointsBuilder {
         let endpoints: Vec<Arc<LbEndpoint>> = endpoints
             .into_iter()
             .map(|e| {
-                let server_name = self.tls_configurator.as_ref().and(self.server_name.clone());
+                let server_name = self.transport_socket.tls_configurator().and(self.server_name.clone());
 
                 LbEndpointBuilder::builder()
                     .with_endpoint(e)
-                    .with_cluster_name(cluster_name.clone())
+                    .with_cluster_name(cluster_name)
                     .with_connect_timeout(self.connection_timeout)
-                    .with_tls_configurator(self.tls_configurator.clone())
+                    .with_transport_socket(self.transport_socket.clone())
                     .with_server_name(server_name)
                     .with_http_protocol_options(self.http_protocol_options.clone())
                     .prepare()
@@ -287,7 +288,7 @@ impl LocalityLbEndpointsBuilder {
             priority,
             healthy_endpoints,
             total_endpoints,
-            tls_configurator: self.tls_configurator,
+            transport_socket: self.transport_socket,
             http_protocol_options: self.http_protocol_options,
             connection_timeout: self.connection_timeout,
         })
@@ -337,8 +338,8 @@ impl BalancerType {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct ClusterLoadAssignment {
-    cluster_name: CompactString,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    cluster_name: &'static str,
+    pub transport_socket: UpstreamTransportSocketConfigurator,
     protocol_options: HttpProtocolOptions,
     balancer: BalancerType,
     pub endpoints: Vec<LocalityLbEndpoints>,
@@ -355,9 +356,9 @@ impl ClusterLoadAssignment {
         Ok(endpoint.http_channel.clone())
     }
 
-    pub fn get_tcp_channel(&mut self) -> Result<BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>> {
+    pub fn get_tcp_channel(&mut self) -> Result<TcpChannelConnector> {
         let endpoint = self.balancer.next_item(None).ok_or("No active endpoint")?;
-        Ok(endpoint.tcp_channel.connect())
+        Ok(endpoint.tcp_channel.clone())
     }
 
     pub fn get_grpc_channel(&mut self) -> Result<GrpcService> {
@@ -369,7 +370,7 @@ impl ClusterLoadAssignment {
         self.all_endpoints_iter().map(|endpoint| (endpoint.authority.clone(), endpoint.http_channel.clone())).collect()
     }
 
-    pub fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannel)> {
+    pub fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)> {
         self.all_endpoints_iter().map(|endpoint| (endpoint.authority.clone(), endpoint.tcp_channel.clone())).collect()
     }
 
@@ -394,7 +395,7 @@ impl ClusterLoadAssignment {
             .endpoints
             .into_iter()
             .map(|mut e| {
-                e.tls_configurator.clone_from(&self.tls_configurator);
+                e.transport_socket = self.transport_socket.clone();
                 e.rebuild()
             })
             .collect::<Result<Vec<_>>>()?;
@@ -410,13 +411,13 @@ impl ClusterLoadAssignment {
 #[derive(Debug, Clone, TypedBuilder)]
 #[builder(build_method(vis="pub(crate)", name=prepare), field_defaults(setter(prefix = "with_")))]
 pub struct ClusterLoadAssignmentBuilder {
-    cluster_name: CompactString,
+    cluster_name: &'static str,
     cla: PartialClusterLoadAssignment,
     bind_device: Option<BindDevice>,
     #[builder(default)]
     protocol_options: Option<HttpProtocolOptions>,
     lb_policy: LbPolicy,
-    tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    transport_socket: UpstreamTransportSocketConfigurator,
     #[builder(default)]
     server_name: Option<ServerName<'static>>,
     #[builder(default)]
@@ -433,14 +434,14 @@ impl ClusterLoadAssignmentBuilder {
         let endpoints = endpoints
             .into_iter()
             .map(|e| {
-                let server_name = self.tls_configurator.as_ref().and(self.server_name.clone());
+                let server_name = self.transport_socket.tls_configurator().and(self.server_name.clone());
 
                 LocalityLbEndpointsBuilder::builder()
-                    .with_cluster_name(cluster_name.clone())
+                    .with_cluster_name(cluster_name)
                     .with_endpoints(e)
                     .with_bind_device(self.bind_device.clone())
                     .with_connection_timeout(self.connection_timeout)
-                    .with_tls_configurator(self.tls_configurator.clone())
+                    .with_transport_socket(self.transport_socket.clone())
                     .with_server_name(server_name)
                     .with_http_protocol_options(protocol_options.clone())
                     .prepare()
@@ -449,7 +450,9 @@ impl ClusterLoadAssignmentBuilder {
             .collect::<Result<Vec<_>>>()?;
 
         let balancer = match self.lb_policy {
-            LbPolicy::Random => BalancerType::Random(DefaultBalancer::from_slice(&endpoints)),
+            LbPolicy::Random | LbPolicy::ClusterProvided => {
+                BalancerType::Random(DefaultBalancer::from_slice(&endpoints))
+            },
             LbPolicy::RoundRobin => BalancerType::RoundRobin(DefaultBalancer::from_slice(&endpoints)),
             LbPolicy::LeastRequest => BalancerType::LeastRequests(DefaultBalancer::from_slice(&endpoints)),
             LbPolicy::RingHash => BalancerType::RingHash(DefaultBalancer::from_slice(&endpoints)),
@@ -460,7 +463,7 @@ impl ClusterLoadAssignmentBuilder {
             cluster_name,
             protocol_options,
             balancer,
-            tls_configurator: self.tls_configurator,
+            transport_socket: self.transport_socket,
             endpoints,
         })
     }
@@ -482,34 +485,39 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
 
 #[cfg(test)]
 mod test {
-    use compact_str::ToCompactString;
     use http::uri::Authority;
 
     use super::LbEndpoint;
-    use crate::clusters::health::HealthStatus;
-    use crate::transport::{bind_device::BindDevice, HttpChannelBuilder, TcpChannel};
+    use crate::{
+        clusters::health::HealthStatus,
+        transport::{
+            bind_device::BindDevice, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
+        },
+    };
 
     impl LbEndpoint {
         /// This function is used by unit tests in other modules
         pub fn new(
             authority: Authority,
+            cluster_name: &'static str,
             bind_device: Option<BindDevice>,
             weight: u32,
             health_status: HealthStatus,
         ) -> Self {
-            let http_channel =
-                HttpChannelBuilder::new(bind_device.clone()).with_authority(authority.clone()).build().unwrap();
-            let tcp_channel = TcpChannel::new(&authority, bind_device.clone(), None);
+            let http_channel = HttpChannelBuilder::new(bind_device.clone())
+                .with_authority(authority.clone())
+                .with_cluster_name(cluster_name)
+                .build()
+                .unwrap();
+            let tcp_channel = TcpChannelConnector::new(
+                &authority,
+                "test_cluster",
+                bind_device.clone(),
+                None,
+                UpstreamTransportSocketConfigurator::default(),
+            );
 
-            Self {
-                name: "Cluster".to_compact_string(),
-                authority,
-                bind_device,
-                weight,
-                health_status,
-                http_channel,
-                tcp_channel,
-            }
+            Self { name: "Cluster", authority, bind_device, weight, health_status, http_channel, tcp_channel }
         }
     }
 }

@@ -1,3 +1,22 @@
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
 use std::{
     pin::Pin,
     sync::{
@@ -180,14 +199,14 @@ impl ClusterDiscoveryService for MockDiscoveryService {
 
 #[tokio::test]
 async fn test_client_operations() {
-    let node = Node { id: "node-id".to_string(), cluster: "gw-cluster".to_string(), ..Default::default() };
-    let cluster = Cluster { name: "cluster-a".to_string(), ..Default::default() };
+    let node = Node { id: "node-id".to_owned(), cluster: "gw-cluster".to_owned(), ..Default::default() };
+    let cluster = Cluster { name: "cluster-a".to_owned(), ..Default::default() };
     let cluster_resource = Resource {
         name: cluster.name.clone(),
-        version: "0.1".to_string(),
+        version: "0.1".to_owned(),
         resource: Some(Any {
-            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
-            value: cluster.encode_to_vec().into(),
+            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -195,8 +214,8 @@ async fn test_client_operations() {
 
     let initial_response: Result<DeltaDiscoveryResponse, tonic::Status> = Ok(DeltaDiscoveryResponse {
         resources,
-        nonce: "abcd".to_string(),
-        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
+        nonce: "abcd".to_owned(),
+        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
         ..Default::default()
     });
 
@@ -221,7 +240,7 @@ async fn test_client_operations() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }))
@@ -239,7 +258,7 @@ async fn test_client_operations() {
 
     let _status = server_side_response_tx.send(initial_response).await;
 
-    let _ = client.subscribe("".to_string(), TypeUrl::Cluster).await;
+    let _ = client.subscribe("".to_owned(), TypeUrl::Cluster).await;
 
     tokio::select! {
         Some(captured_response) = client.recv() => {
@@ -259,14 +278,14 @@ async fn test_client_operations() {
 
 #[tokio::test]
 async fn test_client_resilience() {
-    let node = Node { id: "node-id".to_string(), cluster: "gw-cluster".to_string(), ..Default::default() };
-    let cluster = Cluster { name: "cluster-a".to_string(), ..Default::default() };
+    let node = Node { id: "node-id".to_owned(), cluster: "gw-cluster".to_owned(), ..Default::default() };
+    let cluster = Cluster { name: "cluster-a".to_owned(), ..Default::default() };
     let cluster_resource = Resource {
         name: cluster.name.clone(),
-        version: "0.1".to_string(),
+        version: "0.1".to_owned(),
         resource: Some(Any {
-            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
-            value: cluster.encode_to_vec().into(),
+            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -274,8 +293,8 @@ async fn test_client_resilience() {
 
     let initial_response: Result<DeltaDiscoveryResponse, tonic::Status> = Ok(DeltaDiscoveryResponse {
         resources,
-        nonce: "abcd".to_string(),
-        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
+        nonce: "abcd".to_owned(),
+        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
         ..Default::default()
     });
 
@@ -301,7 +320,7 @@ async fn test_client_resilience() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }));
@@ -310,8 +329,8 @@ async fn test_client_resilience() {
     let typed_binding = bindings::ClusterDiscoveryType { underlying_client: cds_client };
 
     let (mut worker, mut client) = DiscoveryClientBuilder::<bindings::ClusterDiscoveryType>::new(node, typed_binding)
-        .subscribe_resource_name("cluster-a".to_string())
-        .subscribe_resource_name("cluster-b".to_string())
+        .subscribe_resource_name("cluster-a".to_owned())
+        .subscribe_resource_name("cluster-b".to_owned())
         .build()
         .unwrap();
 
@@ -371,14 +390,14 @@ async fn test_client_resilience() {
 
 #[tokio::test]
 async fn test_aggregated_discovery() {
-    let node = Node { id: "node-id".to_string(), cluster: "gw-cluster".to_string(), ..Default::default() };
-    let cluster = Cluster { name: "cluster-a".to_string(), ..Default::default() };
+    let node = Node { id: "node-id".to_owned(), cluster: "gw-cluster".to_owned(), ..Default::default() };
+    let cluster = Cluster { name: "cluster-a".to_owned(), ..Default::default() };
     let cluster_resource = Resource {
         name: cluster.name.clone(),
-        version: "0.1".to_string(),
+        version: "0.1".to_owned(),
         resource: Some(Any {
-            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
-            value: cluster.encode_to_vec().into(),
+            type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
+            value: cluster.encode_to_vec(),
         }),
         ..Default::default()
     };
@@ -386,8 +405,8 @@ async fn test_aggregated_discovery() {
 
     let initial_response: Result<DeltaDiscoveryResponse, tonic::Status> = Ok(DeltaDiscoveryResponse {
         resources,
-        nonce: "abcd".to_string(),
-        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
+        nonce: "abcd".to_owned(),
+        type_url: "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
         ..Default::default()
     });
 
@@ -412,7 +431,7 @@ async fn test_aggregated_discovery() {
                 if let Some(client) = client {
                     Ok(TokioIo::new(client))
                 } else {
-                    Err(std::io::Error::new(std::io::ErrorKind::Other, "client is already taken"))
+                    Err(std::io::Error::other("client is already taken"))
                 }
             }
         }))
@@ -423,7 +442,7 @@ async fn test_aggregated_discovery() {
     let typed_binding = bindings::AggregatedDiscoveryType { underlying_client: ads_client };
 
     let client = DiscoveryClientBuilder::<bindings::AggregatedDiscoveryType>::new(node.clone(), typed_binding)
-        .subscribe_resource_name("my-cluster".to_string())
+        .subscribe_resource_name("my-cluster".to_owned())
         .build();
     assert!(client.is_err(), "cannot subscribe to resources without a type_url for ADS");
 
@@ -432,10 +451,10 @@ async fn test_aggregated_discovery() {
 
     let (mut worker, mut client) =
         DiscoveryClientBuilder::<bindings::AggregatedDiscoveryType>::new(node, typed_binding)
-            .subscribe_resource_name_by_typeurl("cluster-a".to_string(), TypeUrl::Cluster)
-            .subscribe_resource_name_by_typeurl("cluster-z".to_string(), TypeUrl::Cluster)
-            .subscribe_resource_name_by_typeurl("endpoints-a".to_string(), TypeUrl::ClusterLoadAssignment)
-            .subscribe_resource_name_by_typeurl("secret-config-a".to_string(), TypeUrl::Secret)
+            .subscribe_resource_name_by_typeurl("cluster-a".to_owned(), TypeUrl::Cluster)
+            .subscribe_resource_name_by_typeurl("cluster-z".to_owned(), TypeUrl::Cluster)
+            .subscribe_resource_name_by_typeurl("endpoints-a".to_owned(), TypeUrl::ClusterLoadAssignment)
+            .subscribe_resource_name_by_typeurl("secret-config-a".to_owned(), TypeUrl::Secret)
             .build()
             .unwrap();
 
@@ -445,7 +464,7 @@ async fn test_aggregated_discovery() {
 
     let _status = server_side_response_tx.send(initial_response).await;
 
-    let _ = client.subscribe("".to_string(), TypeUrl::Cluster).await;
+    let _ = client.subscribe("".to_owned(), TypeUrl::Cluster).await;
 
     tokio::select! {
         Some(captured_response) = client.recv() => {

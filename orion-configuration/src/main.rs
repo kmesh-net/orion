@@ -1,4 +1,3 @@
-#![allow(clippy::print_stdout)]
 // SPDX-FileCopyrightText: © 2025 kmesh authors
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -19,12 +18,14 @@
 //
 //
 
+#![allow(clippy::print_stdout)]
+
 use orion_configuration::{config::Config, options::Options, Result};
 use orion_error::Context;
 
 fn main() -> Result<()> {
     let config = Config::new(&Options::from_path("bootstrap.yaml"))?;
-    let yaml = serde_yaml::to_string(&config).context("failed to serialize orion config")?;
+    let yaml = serde_yaml::to_string(&config).with_context_msg("failed to serialize orion config")?;
     std::fs::write("orion.yaml", yaml.as_bytes())?;
     println!("{yaml}");
     Ok(())

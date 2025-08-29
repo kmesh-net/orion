@@ -20,14 +20,14 @@
 
 use std::collections::HashMap;
 
-use orion_configuration::config::cluster::health_check::HealthCheckProtocol;
-use orion_configuration::config::cluster::HealthCheck;
+use orion_configuration::config::cluster::{health_check::HealthCheckProtocol, HealthCheck};
 use tokio::sync::mpsc;
 
-use crate::clusters::cluster::{ClusterOps, ClusterType};
-use crate::clusters::clusters_manager;
-use crate::clusters::health::checkers::EndpointHealthChecker;
-use crate::clusters::health::EndpointHealthUpdate;
+use crate::clusters::{
+    cluster::{ClusterOps, ClusterType},
+    clusters_manager,
+    health::{checkers::EndpointHealthChecker, EndpointHealthUpdate},
+};
 
 use super::EndpointId;
 
@@ -49,21 +49,21 @@ impl HealthCheckManager {
     }
 
     pub async fn restart_cluster(&mut self, cluster_config: ClusterType) {
-        let cluster_name = cluster_config.get_name().clone();
-        self.stop_cluster(&cluster_name).await;
+        let cluster_name = cluster_config.get_name();
+        self.stop_cluster(cluster_name).await;
         if let Some(health_check_config) = cluster_config.into_health_check() {
             let HealthCheck { cluster: cluster_config, protocol } = health_check_config;
 
-            let checkers = self.checkers.entry(cluster_name.to_string()).or_default();
+            let checkers = self.checkers.entry(cluster_name.to_owned()).or_default();
 
             match protocol {
                 HealthCheckProtocol::Http(http_config) => {
-                    let Ok(endpoints) = clusters_manager::all_http_connections(&cluster_name) else {
+                    let Ok(endpoints) = clusters_manager::all_http_connections(cluster_name) else {
                         return;
                     };
 
                     for (authority, channel) in endpoints {
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint: authority };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint: authority };
 
                         let new_checker = EndpointHealthChecker::try_new_http(
                             endpoint_id.clone(),
@@ -87,12 +87,12 @@ impl HealthCheckManager {
                     }
                 },
                 HealthCheckProtocol::Tcp(tcp_config) => {
-                    let Ok(endpoints) = clusters_manager::all_tcp_connections(&cluster_name) else {
+                    let Ok(endpoints) = clusters_manager::all_tcp_connections(cluster_name) else {
                         return;
                     };
 
                     for (authority, channel) in endpoints {
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint: authority };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint: authority };
 
                         checkers.push(EndpointHealthChecker::new_tcp(
                             endpoint_id.clone(),
@@ -104,7 +104,7 @@ impl HealthCheckManager {
                     }
                 },
                 HealthCheckProtocol::Grpc(grpc_config) => {
-                    let Ok(endpoints) = clusters_manager::all_grpc_connections(&cluster_name) else {
+                    let Ok(endpoints) = clusters_manager::all_grpc_connections(cluster_name) else {
                         return;
                     };
 
@@ -117,7 +117,7 @@ impl HealthCheckManager {
                             },
                         };
 
-                        let endpoint_id = EndpointId { cluster: cluster_name.to_string(), endpoint };
+                        let endpoint_id = EndpointId { cluster: cluster_name.to_owned(), endpoint };
 
                         checkers.push(EndpointHealthChecker::new_grpc(
                             endpoint_id.clone(),

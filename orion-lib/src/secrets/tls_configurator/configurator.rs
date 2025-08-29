@@ -99,7 +99,7 @@ pub struct ClientCert {
 
 impl From<CertificateSecret> for ClientCert {
     fn from(secret: CertificateSecret) -> Self {
-        let CertificateSecret { name: _, key, certs } = secret;
+        let CertificateSecret { name: _, key, certs, config: _ } = secret;
         ClientCert { key, certs }
     }
 }
@@ -152,7 +152,7 @@ impl TryFrom<TransportSecret> for ClientCert {
 impl TryFrom<CertificateSecret> for ServerCert {
     type Error = crate::Error;
     fn try_from(secret: CertificateSecret) -> Result<Self> {
-        let CertificateSecret { name, key, certs } = secret;
+        let CertificateSecret { name, key, certs, config: _ } = secret;
         if let Some(name) = name {
             Ok(ServerCert { name, key: Arc::new(key.clone_key()), certs })
         } else {
@@ -313,7 +313,7 @@ impl TryFrom<(TlsServerConfig, &SecretManager)> for TlsConfigurator<ServerConfig
         let supported_versions = common_context
             .parameters
             .supported_version()
-            .into_iter()
+            .iter()
             .map(|version| match version {
                 TlsVersion::TLSv1_2 => &TLS12,
                 TlsVersion::TLSv1_3 => &TLS13,
@@ -381,7 +381,7 @@ impl TryFrom<(TlsClientConfig, &SecretManager)> for TlsConfigurator<ClientConfig
         let supported_versions = context
             .parameters
             .supported_version()
-            .into_iter()
+            .iter()
             .map(|version| match version {
                 TlsVersion::TLSv1_2 => &TLS12,
                 TlsVersion::TLSv1_3 => &TLS13,
@@ -464,8 +464,8 @@ impl TlsConfigurator<ClientConfig, WantsToBuildClient> {
     }
 }
 
-/// More relaxed version of ResolvesServerCertUsingSni
-/// Allowing ServerName instead of DNSNames
+/// More relaxed version of `ResolvesServerCertUsingSni`
+/// Allowing `ServerName` instead of `DNSNames`
 
 #[derive(Debug)]
 pub struct RelaxedResolvesServerCertUsingSni {

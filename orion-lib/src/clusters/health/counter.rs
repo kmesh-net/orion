@@ -110,8 +110,7 @@ impl HealthStatusCounter {
 
 #[cfg(test)]
 mod tests {
-    use super::HealthStatus;
-    use super::HealthStatusCounter;
+    use super::{HealthStatus, HealthStatusCounter};
 
     #[test]
     fn health_status_counter() {

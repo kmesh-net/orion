@@ -23,7 +23,7 @@ pub mod macros;
 pub mod metrics;
 pub mod sharded;
 
-use orion_configuration::config::{Bootstrap, metrics::StatsSink};
+use orion_configuration::config::{metrics::StatsSink, Bootstrap};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "metrics")]
@@ -76,10 +76,10 @@ impl From<&Bootstrap> for VecMetrics {
 // It's designed to be called during the application startup to initialize the OpenTelemetry metrics exporter.
 //
 #[cfg(feature = "metrics")]
-pub async fn launch_metrics_exporter(
+pub async fn otel_launch_exporter(
     multi_metrics: &[Metrics],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
-    info!("Launching OpenTelemetry exporter...");
+    info!("OTEL metrics: initializing exporter...");
     let mut provider_builder = opentelemetry_sdk::metrics::SdkMeterProvider::builder();
 
     for metrics in multi_metrics {
@@ -105,13 +105,13 @@ pub async fn launch_metrics_exporter(
     global::set_meter_provider(provider);
 
     signal_setup_complete();
-    info!("OpenTelemetry exporter launched successfully.");
+    info!("OTEL metrics: exporter launched successfully.");
 
     Ok(())
 }
 
 #[cfg(not(feature = "metrics"))]
-pub async fn launch_metrics_exporter(
+pub async fn otel_launch_exporter(
     _multi_metrics: &[Metrics],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
     Ok(())
@@ -133,5 +133,6 @@ pub fn wait_for_metrics_setup() {
         cvar.wait(&mut setup_complete);
     }
 }
+
 #[cfg(not(feature = "metrics"))]
 pub fn wait_for_metrics_setup() {}

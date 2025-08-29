@@ -18,11 +18,11 @@
 //
 //
 
-use super::{header_matcher::HeaderMatcher, RetryPolicy, UpgradeType};
+use super::{header_matcher::HeaderMatcher, RetryPolicy};
 use crate::config::{
     cluster::ClusterSpecifier,
     common::*,
-    core::{CaseSensitive, DataSource},
+    core::{CaseSensitive, DataSource, StringMatcher},
 };
 use bytes::Bytes;
 use compact_str::CompactString;
@@ -48,7 +48,6 @@ pub enum Action {
     Route(RouteAction),
     DirectResponse(DirectResponseAction),
     Redirect(RedirectAction),
-    Upgrade(UpgradeAction),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -222,25 +221,6 @@ impl Eq for DirectResponseBody {}
 //todo: impl serialize, deserialize on DirectResponsebody to prepare the bytes at deserialization
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum UpgradeActionType {
-    Websocket,
-    Connect { allow_post: bool /* , proxy_protocol_config: Option<...> */ },
-}
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct UpgradeAction {
-    pub cluster_specifier: ClusterSpecifier,
-    #[serde(
-        with = "http_serde_ext::status_code",
-        skip_serializing_if = "is_default_statuscode",
-        default = "default_statuscode_deser"
-    )]
-    pub cluster_not_found_response_code: StatusCode,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub rewrite: Option<PathRewriteSpecifier>,
-    pub upgrade_type: UpgradeActionType,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RouteAction {
     pub cluster_specifier: ClusterSpecifier,
     #[serde(
@@ -266,6 +246,8 @@ const DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE: StatusCode = StatusCode::SERVICE_UNA
 const fn default_statuscode_deser() -> StatusCode {
     DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_default_statuscode(code: &StatusCode) -> bool {
     *code == DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE
 }
@@ -301,16 +283,9 @@ pub struct UpgradeConfig {
 }
 
 impl UpgradeConfig {
-    pub fn is_websocket_enabled(&self, inherited: &[UpgradeType]) -> bool {
-        let enabled_via_hcm = inherited.iter().any(|upgrade| matches!(upgrade, UpgradeType::Websocket));
+    pub fn is_websocket_enabled(&self, enabled_via_hcm: bool) -> bool {
         let locally_enabled = matches!(self.websocket, Some(Websocket::Enabled));
         let locally_disabled = matches!(self.websocket, Some(Websocket::Disabled));
-        locally_enabled || (enabled_via_hcm && !locally_disabled)
-    }
-    pub fn is_connect_enabled(&self, inherited: &[UpgradeType]) -> bool {
-        let enabled_via_hcm = inherited.iter().any(|upgrade| matches!(upgrade, UpgradeType::Connect));
-        let locally_enabled = matches!(self.connect, Some(Connect::Enabled { allow_post: _ }));
-        let locally_disabled = matches!(self.connect, Some(Connect::Disabled));
         locally_enabled || (enabled_via_hcm && !locally_disabled)
     }
 }
@@ -367,7 +342,21 @@ pub enum PolicySpecifier {
     QueryParameter(CompactString),
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryParameterMatchSpecifier {
+    PresentMatch(bool),
+    StringMatch(StringMatcher),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub struct QueryParameterMatcher {
+    pub name: CompactString,
+    #[serde(flatten)]
+    pub match_specifier: QueryParameterMatchSpecifier,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct RouteMatch {
     // todo(hayley): can't be none?
     #[serde(flatten)]
@@ -375,6 +364,8 @@ pub struct RouteMatch {
     pub path_matcher: Option<PathMatcher>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub headers: Vec<HeaderMatcher>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
+    pub query_parameters: Vec<QueryParameterMatcher>,
 }
 
 impl Default for RouteMatch {
@@ -382,18 +373,23 @@ impl Default for RouteMatch {
         Self {
             path_matcher: Some(PathMatcher { specifier: PathSpecifier::Prefix("".into()), ignore_case: false }),
             headers: Vec::new(),
+            query_parameters: Vec::new(),
         }
     }
 }
 
+#[derive(Default)]
 pub struct RouteMatchResult {
     path_match: Option<PathMatcherResult>,
     headers_matched: bool,
+    query_parameters_matched: bool,
 }
 
 impl RouteMatchResult {
     pub fn matched(&self) -> bool {
-        self.headers_matched && self.path_match.as_ref().map(PathMatcherResult::matched).unwrap_or(true)
+        self.headers_matched
+            && self.query_parameters_matched
+            && self.path_match.as_ref().map(PathMatcherResult::matched).unwrap_or(true)
     }
 
     pub fn matched_range(&self) -> Option<Range<usize>> {
@@ -406,6 +402,23 @@ impl RouteMatchResult {
     }
 }
 
+impl QueryParameterMatcher {
+    pub fn matches(&self, query: Option<&str>) -> bool {
+        let param_value = query.and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes()).find(|(key, _)| key == self.name).map(|(_, value)| value)
+        });
+
+        match &self.match_specifier {
+            QueryParameterMatchSpecifier::PresentMatch(should_be_present) => {
+                param_value.is_some() == *should_be_present
+            },
+            QueryParameterMatchSpecifier::StringMatch(string_matcher) => {
+                param_value.map(|value| string_matcher.matches(&value)).unwrap_or(false)
+            },
+        }
+    }
+}
+
 impl RouteMatch {
     pub fn match_request<B>(&self, request: &Request<B>) -> RouteMatchResult {
         let path_match = self.path_matcher.as_ref().map(|path_matcher| {
@@ -413,16 +426,22 @@ impl RouteMatch {
             path_matcher.matches(request.uri().path_and_query().unwrap_or(&PathAndQuery::from_static("")))
         });
         //short circuit if path match fails
-        let headers_matched = if path_match.is_some() {
+        let headers_matched = if path_match.as_ref().map(PathMatcherResult::matched).unwrap_or(true) {
             self.headers.iter().all(|matcher| matcher.request_matches(request))
         } else {
             false
         };
-        RouteMatchResult { path_match, headers_matched }
+        let query_parameters_matched = if headers_matched {
+            let query = request.uri().query();
+            self.query_parameters.is_empty() || self.query_parameters.iter().all(|matcher| matcher.matches(query))
+        } else {
+            false
+        };
+        RouteMatchResult { path_match, headers_matched, query_parameters_matched }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct PathMatcher {
     #[serde(flatten)]
     pub specifier: PathSpecifier,
@@ -488,11 +507,21 @@ impl PartialEq for PathSpecifier {
 }
 
 impl Eq for PathSpecifier {}
+impl Hash for PathSpecifier {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Regex(r) => r.as_str().hash(state),
+            Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => s.hash(state),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use crate::config::core::{StringMatcher, StringMatcherPattern};
+    use http::Request;
 
     #[test]
     fn test_rewrite_uri_by_path_match_range() {
@@ -501,7 +530,11 @@ mod tests {
         let result = PathRewriteSpecifier::Prefix("/hello".into())
             .apply(
                 Some(&uri),
-                &RouteMatchResult { path_match: Some(PathMatcherResult { inner: Some(5) }), headers_matched: true },
+                &RouteMatchResult {
+                    path_match: Some(PathMatcherResult { inner: Some(5) }),
+                    headers_matched: true,
+                    query_parameters_matched: true,
+                },
             )
             .unwrap();
         assert_eq!(result, expected);
@@ -517,10 +550,96 @@ mod tests {
         })
         .apply(
             Some(&uri),
-            &RouteMatchResult { path_match: Some(PathMatcherResult { inner: None }), headers_matched: true },
+            &RouteMatchResult {
+                path_match: Some(PathMatcherResult { inner: None }),
+                headers_matched: true,
+                query_parameters_matched: true,
+            },
         )
         .unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_query_parameter_matching() {
+        let route_match = RouteMatch {
+            path_matcher: None,
+            headers: vec![],
+            query_parameters: vec![QueryParameterMatcher {
+                name: "version".into(),
+                match_specifier: QueryParameterMatchSpecifier::StringMatch(StringMatcher {
+                    ignore_case: false,
+                    pattern: StringMatcherPattern::Exact("v1".into()),
+                }),
+            }],
+        };
+        let req = Request::builder().uri("/test?version=v1").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(result.matched());
+        let req = Request::builder().uri("/test?version=v2").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(!result.matched());
+
+        let route_match = RouteMatch {
+            path_matcher: None,
+            headers: vec![],
+            query_parameters: vec![QueryParameterMatcher {
+                name: "x".into(),
+                match_specifier: QueryParameterMatchSpecifier::PresentMatch(true),
+            }],
+        };
+        let req = Request::builder().uri("/test?x=true").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(result.matched());
+        let req = Request::builder().uri("/test?x=").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(result.matched());
+        let req = Request::builder().uri("/test?notx=value").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(!result.matched());
+
+        let route_match = RouteMatch {
+            path_matcher: None,
+            headers: vec![],
+            query_parameters: vec![QueryParameterMatcher {
+                name: "y".into(),
+                match_specifier: QueryParameterMatchSpecifier::PresentMatch(false),
+            }],
+        };
+        let req = Request::builder().uri("/test?y=true").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(!result.matched());
+        let req = Request::builder().uri("/test?noty=value").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(result.matched());
+
+        let route_match = RouteMatch {
+            path_matcher: None,
+            headers: vec![],
+            query_parameters: vec![
+                QueryParameterMatcher {
+                    name: "version".into(),
+                    match_specifier: QueryParameterMatchSpecifier::StringMatch(StringMatcher {
+                        ignore_case: false,
+                        pattern: StringMatcherPattern::Exact("v1".into()),
+                    }),
+                },
+                QueryParameterMatcher {
+                    name: "x".into(),
+                    match_specifier: QueryParameterMatchSpecifier::PresentMatch(true),
+                },
+            ],
+        };
+        let req = Request::builder().uri("/test?version=v1&x=true").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(result.matched());
+
+        let req = Request::builder().uri("/test?version=v1").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(!result.matched());
+        let req = Request::builder().uri("/test?x=true").body(()).unwrap();
+        let result = route_match.match_request(&req);
+        assert!(!result.matched());
     }
 }
 
@@ -529,14 +648,15 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
         Action, AuthorityRedirect, Connect, DirectResponseAction, DirectResponseBody, HashPolicy, PathMatcher,
-        PathRewriteSpecifier, PathSpecifier, PolicySpecifier, RedirectAction, RedirectResponseCode,
-        RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
+        PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier, QueryParameterMatcher,
+        RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig,
+        Websocket, DEFAULT_TIMEOUT,
     };
-    use crate::config::network_filters::http_connection_manager::RetryPolicy;
     use crate::config::{
         common::*,
         core::{regex_from_envoy, DataSource},
-        util::{duration_from_envoy, http_status_from},
+        network_filters::http_connection_manager::RetryPolicy,
+        util::{duration_from_envoy, http_status_from, parse_cluster_not_found_response_code},
     };
     use http::{
         uri::{Authority, PathAndQuery, Scheme},
@@ -544,6 +664,7 @@ mod envoy_conversions {
     };
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::route::v3::{
+            query_parameter_matcher::QueryParameterMatchSpecifier as EnvoyQueryParameterMatchSpecifier,
             redirect_action::{
                 PathRewriteSpecifier as EnvoyPathRewriteSpecifier, RedirectResponseCode as EnvoyRedirectResponseCode,
                 SchemeRewriteSpecifier as EnvoySchemeRewriteSpecifier,
@@ -557,11 +678,12 @@ mod envoy_conversions {
                 HashPolicy as EnvoyHashPolicy, UpgradeConfig as EnvoyUpgradeConfig,
             },
             route_match::PathSpecifier as EnvoyPathSpecifier,
-            DirectResponseAction as EnvoyDirectResponseAction, RedirectAction as EnvoyRedirectAction,
-            RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
+            DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
+            RedirectAction as EnvoyRedirectAction, RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
         },
         r#type::matcher::v3::RegexMatchAndSubstitute as EnvoyRegexMatchAndSubstitute,
     };
+
     use orion_data_plane_api::envoy_data_plane_api::google::protobuf::BoolValue;
     use std::{num::NonZeroU16, str::FromStr};
 
@@ -582,7 +704,7 @@ mod envoy_conversions {
                 EnvoyAction::Route(r) => Self::Route(r.try_into()?),
                 EnvoyAction::FilterAction(_) => return Err(GenericError::unsupported_variant("FilterAction")),
                 EnvoyAction::NonForwardingAction(_) => {
-                    return Err(GenericError::unsupported_variant("NonForwardingAction"))
+                    return Err(GenericError::unsupported_variant("NonForwardingAction"));
                 },
             })
         }
@@ -783,12 +905,8 @@ mod envoy_conversions {
                 // cluster_specifier,
                 host_rewrite_specifier
             )?;
-            let cluster_not_found_response_code = if cluster_not_found_response_code.is_used() {
-                http_status_from(cluster_not_found_response_code)
-            } else {
-                Ok(super::DEFAULT_CLUSTER_NOT_FOUND_STATUSCODE)
-            }
-            .with_node("cluster_not_found_response_code")?;
+            let cluster_not_found_response_code =
+                parse_cluster_not_found_response_code(cluster_not_found_response_code)?;
             let timeout = timeout.map(duration_from_envoy).unwrap_or(Ok(DEFAULT_TIMEOUT)).with_node("timeout")?;
             // in envoy, the default value for the timeout (if not set) is 15s, but setting the timeout disables it.
             // in order to better match the rest of the code/rust, we map disabled to None and the default to Some(15s)
@@ -803,7 +921,7 @@ mod envoy_conversions {
                 (Some(_), Some(_)) => {
                     return Err(GenericError::from_msg(
                         "only one of `prefix_rewrite` and `regex_rewrite` may be specified",
-                    ))
+                    ));
                 },
             };
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
@@ -824,21 +942,21 @@ mod envoy_conversions {
     impl TryFrom<Vec<EnvoyUpgradeConfig>> for UpgradeConfig {
         type Error = GenericError;
         fn try_from(value: Vec<EnvoyUpgradeConfig>) -> Result<Self, Self::Error> {
+            const WEBSOCKET: &str = "websocket";
+            const CONNECT: &str = "connect";
             let mut upgrade_config = UpgradeConfig::default();
             for envoy_upgrade_config in value {
                 match (envoy_upgrade_config.upgrade_type.to_lowercase().as_str(), envoy_upgrade_config.enabled) {
-                    ("websocket", Some(BoolValue { value: true })) => {
-                        upgrade_config.websocket = Some(Websocket::Enabled)
-                    },
-                    ("websocket", Some(BoolValue { value: false })) => {
+                    (WEBSOCKET, Some(BoolValue { value: false })) => {
                         upgrade_config.websocket = Some(Websocket::Disabled)
                     },
-                    ("connect", Some(BoolValue { value: true })) => {
-                        return Err(GenericError::from_msg("Http CONNECT upgrades are not currently supported"))
+                    (WEBSOCKET, _) => upgrade_config.websocket = Some(Websocket::Enabled),
+                    (CONNECT, Some(BoolValue { value: false })) => upgrade_config.connect = Some(Connect::Disabled),
+                    (CONNECT, _) => {
+                        return Err(GenericError::from_msg("Http CONNECT upgrades are not currently supported"));
                     },
-                    ("connect", Some(BoolValue { value: false })) => upgrade_config.connect = Some(Connect::Disabled),
                     (unknown, _) => {
-                        return Err(GenericError::from_msg(format!("Unsupported upgrade type [{unknown}]")))
+                        return Err(GenericError::from_msg(format!("Unsupported upgrade type [{unknown}]")));
                     },
                 }
             }
@@ -871,6 +989,24 @@ mod envoy_conversions {
         }
     }
 
+    impl TryFrom<EnvoyQueryParameterMatcher> for QueryParameterMatcher {
+        type Error = GenericError;
+        fn try_from(value: EnvoyQueryParameterMatcher) -> Result<Self, Self::Error> {
+            let EnvoyQueryParameterMatcher { name, query_parameter_match_specifier } = value;
+            let name = required!(name)?.into();
+            let match_specifier = match query_parameter_match_specifier {
+                Some(EnvoyQueryParameterMatchSpecifier::StringMatch(string_match)) => {
+                    QueryParameterMatchSpecifier::StringMatch(string_match.try_into()?)
+                },
+                Some(EnvoyQueryParameterMatchSpecifier::PresentMatch(present)) => {
+                    QueryParameterMatchSpecifier::PresentMatch(present)
+                },
+                None => QueryParameterMatchSpecifier::PresentMatch(true),
+            };
+            Ok(Self { name, match_specifier })
+        }
+    }
+
     impl TryFrom<EnvoyRouteMatch> for RouteMatch {
         type Error = GenericError;
         fn try_from(value: EnvoyRouteMatch) -> Result<Self, Self::Error> {
@@ -889,17 +1025,18 @@ mod envoy_conversions {
                 // case_sensitive,
                 runtime_fraction,
                 // headers,
-                query_parameters,
+                // query_parameters,
                 grpc,
                 tls_context,
-                dynamic_metadata, // path_specifier,
+                dynamic_metadata, // path_specifier
                 filter_state
             )?;
             let ignore_case = !case_sensitive.map(|v| v.value).unwrap_or(true);
             let path_specifier = path_specifier.map(PathSpecifier::try_from).transpose().with_node("path_specifier")?;
             let headers = convert_vec!(headers)?;
+            let query_parameters = convert_vec!(query_parameters)?;
             let path_matcher = path_specifier.map(|specifier| PathMatcher { specifier, ignore_case });
-            Ok(Self { path_matcher, headers })
+            Ok(Self { path_matcher, headers, query_parameters })
         }
     }
 
@@ -911,9 +1048,9 @@ mod envoy_conversions {
                 EnvoyPathSpecifier::Path(s) => Ok(Self::Exact(s.into())),
                 EnvoyPathSpecifier::SafeRegex(r) => regex_from_envoy(r).map(Self::Regex),
                 EnvoyPathSpecifier::PathSeparatedPrefix(mut s) => {
-                    if s.ends_with('/') || s.contains(['?', '/']) {
+                    if s.ends_with('/') || s.contains(['?']) {
                         Err(GenericError::from_msg(format!(
-                            "PathSeperatedPrefix \"{s}\" contains invalid characters ('?' or '/') or ends with '/'"
+                            "PathSeperatedPrefix \"{s}\" contains invalid characters ('?') or ends with '/'"
                         )))
                     } else {
                         s.push('/');
@@ -923,6 +1060,42 @@ mod envoy_conversions {
                 EnvoyPathSpecifier::ConnectMatcher(_) => Err(GenericError::unsupported_variant("ConnectMatcher")),
                 EnvoyPathSpecifier::PathMatchPolicy(_) => Err(GenericError::unsupported_variant("PathMatchPolicy")),
             }
+        }
+    }
+    #[cfg(test)]
+    mod tests {
+        use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::PathSpecifier as EnvoyPathSpecifier;
+
+        use super::*;
+
+        #[test]
+        fn test_path_specifier() {
+            let path_specifier =
+                PathSpecifier::try_from(EnvoyPathSpecifier::PathSeparatedPrefix("/some/string".to_owned())).unwrap();
+
+            assert_eq!(path_specifier, PathSpecifier::PathSeparatedPrefix("/some/string/".into()));
+            assert!(
+                PathSpecifier::try_from(EnvoyPathSpecifier::PathSeparatedPrefix("/".to_owned())).is_err(),
+                "This should fail"
+            );
+
+            let pm =
+                PathMatcher { specifier: PathSpecifier::PathSeparatedPrefix("/api/dev/".into()), ignore_case: true };
+            let pq = PathAndQuery::from_static("/api/dev");
+            let res = pm.matches(&pq);
+            assert!(res.matched());
+
+            let pq = PathAndQuery::from_static("/api/dev/");
+            let res = pm.matches(&pq);
+            assert!(res.matched());
+
+            let pq = PathAndQuery::from_static("/api/dev/blah");
+            let res = pm.matches(&pq);
+            assert!(res.matched());
+
+            let pq = PathAndQuery::from_static("/api/devdfdffd/");
+            let res = pm.matches(&pq);
+            assert!(!res.matched());
         }
     }
 }

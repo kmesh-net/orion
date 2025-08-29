@@ -25,8 +25,8 @@ pub trait LocalBuilder<A, T> {
 }
 
 /// Provides a thread-local instance of an object. When a thread requests the local copy
-/// through [LocalObject::get()], the first time constructs it using the builder
-/// and arguments provided in [LocalObject::new()]. In subsequent requests a reference
+/// through [`LocalObject::get()`], the first time constructs it using the builder
+/// and arguments provided in [`LocalObject::new()`]. In subsequent requests a reference
 /// to this thread-local object is provided.
 #[derive(Debug)]
 pub struct LocalObject<T, B, A>
@@ -51,7 +51,7 @@ where
         LocalObject { tls, builder, arg }
     }
 
-    pub fn get(&self) -> &T {
+    pub fn get_or_build(&self) -> &T {
         self.tls.get_or(|| self.builder.build(self.arg.clone()))
     }
 }

@@ -22,6 +22,7 @@ use orion_configuration::{config::Config, options::Options};
 use orion_lib::{Result, RUNTIME_CONFIG};
 
 #[macro_use]
+mod admin;
 mod core_affinity;
 mod proxy;
 mod runtime;
@@ -31,7 +32,8 @@ pub fn run() -> Result<()> {
     let mut tracing_manager = proxy_tracing::TracingManager::new();
 
     let options = Options::parse_options();
-    let Config { runtime, logging, bootstrap } = Config::new(&options)?;
+    let Config { runtime, logging, access_logging, bootstrap } = Config::new(&options)?;
+
     RUNTIME_CONFIG.set(runtime).map_err(|_| "runtime config was somehow set before we had a chance to set it")?;
 
     tracing_manager.update(logging)?;
@@ -41,18 +43,21 @@ pub fn run() -> Result<()> {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
     }
 
-    proxy::run_proxy(bootstrap)
+    proxy::run_orion(bootstrap, access_logging)
 }
 
-#[cfg(not(feature = "console"))]
 mod proxy_tracing {
     use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
-    use tracing_subscriber::fmt::format::{DefaultFields, Format};
-    use tracing_subscriber::layer::Layered;
-    use tracing_subscriber::{fmt, reload};
-    use tracing_subscriber::{reload::Handle, EnvFilter, Registry};
+    use tracing_subscriber::{
+        fmt,
+        fmt::format::{DefaultFields, Format},
+        layer::Layered,
+        reload,
+        reload::Handle,
+        EnvFilter, Registry,
+    };
 
-    use orion_configuration::config::Log as LogConf;
+    use orion_configuration::config::LogConfig as LogConf;
     use orion_lib::Result;
 
     type RegistryLayer =
@@ -100,13 +105,11 @@ mod proxy_tracing {
             Ok(())
         }
 
-        #[cfg(not(feature = "console"))]
         fn init_tracing(
             registry: Registry,
             log_level: EnvFilter,
         ) -> (WorkerGuard, LayerReloadHandle, FilterReloadHandle) {
-            use tracing_subscriber::layer::SubscriberExt as _;
-            use tracing_subscriber::util::SubscriberInitExt as _;
+            use tracing_subscriber::{layer::SubscriberExt as _, util::SubscriberInitExt as _};
 
             let env_filter = EnvFilter::try_from_default_env().ok().or(Some(log_level)).unwrap_or_else(|| {
                 EnvFilter::builder()
@@ -124,7 +127,6 @@ mod proxy_tracing {
             (guard, layer_reload_handle, filter_reload_handle)
         }
 
-        #[cfg(not(feature = "console"))]
         fn stdout_layer() -> (WorkerGuard, RegistryLayer) {
             let out = std::io::stdout();
             let is_terminal = std::io::IsTerminal::is_terminal(&out);
@@ -138,40 +140,12 @@ mod proxy_tracing {
             (guard, std_layer)
         }
 
-        #[cfg(not(feature = "console"))]
         fn file_layer(filename: &str, log_directory: Option<&String>) -> (WorkerGuard, RegistryLayer) {
             let file_appender = tracing_appender::rolling::hourly(log_directory.unwrap_or(&".".into()), filename);
             let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
             let file_layer = fmt::layer().with_ansi(false).with_writer(non_blocking).with_thread_names(true);
 
             (guard, file_layer)
-        }
-    }
-}
-
-#[cfg(feature = "console")]
-mod proxy_tracing {
-    #[cfg(feature = "console")]
-    use console_subscriber;
-
-    use tracing_appender::non_blocking::WorkerGuard;
-
-    use orion_configuration::config::Log as LogConf;
-    use orion_lib::Result;
-
-    pub struct TracingManager {
-        _guard: WorkerGuard,
-    }
-
-    impl TracingManager {
-        pub fn new() -> Self {
-            let (_non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-            console_subscriber::init();
-            TracingManager { _guard: guard }
-        }
-
-        pub fn update(&mut self, _log_conf: LogConf) -> Result<()> {
-            Ok(())
         }
     }
 }

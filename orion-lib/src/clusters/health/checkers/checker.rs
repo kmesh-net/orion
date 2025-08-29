@@ -18,20 +18,21 @@
 //
 //
 
-use std::future::Future;
-use std::{sync::Arc, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use orion_configuration::config::cluster::{health_check::ClusterHealthCheck, HealthStatus};
 use pingora_timeout::fast_timeout::fast_timeout;
-use rand::Rng;
-use rand::{distributions::Uniform, thread_rng};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tokio::{select, sync::Notify};
+use rand::{distributions::Uniform, thread_rng, Rng};
+use tokio::{
+    select,
+    sync::{mpsc, Notify},
+    task::JoinHandle,
+};
 
-use crate::clusters::health::counter::HealthStatusCounter;
-use crate::clusters::health::{EndpointHealthUpdate, EndpointId};
-use crate::Error;
+use crate::{
+    clusters::health::{counter::HealthStatusCounter, EndpointHealthUpdate, EndpointId},
+    Error,
+};
 
 use super::CurrentHealthStatus;
 

@@ -1,4 +1,26 @@
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
 use super::model::{ResourceId, ResourceVersion, TypeUrl};
+
+use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{config::core::v3::Node as EnvoyNode, service::discovery::v3::DeltaDiscoveryRequest},
     google::rpc::Status,
@@ -32,7 +54,7 @@ impl StatusBuilder {
 }
 
 pub struct DeltaDiscoveryRequestBuilder {
-    node: Option<String>,
+    node: Option<Node>,
     nounce: Option<String>,
     type_url: TypeUrl,
     error_detail: Option<Status>,
@@ -55,8 +77,8 @@ impl DeltaDiscoveryRequestBuilder {
         }
     }
 
-    pub fn with_node_id(mut self, node_id: String) -> Self {
-        self.node = Some(node_id);
+    pub fn with_node_id(mut self, node: Node) -> Self {
+        self.node = Some(node);
         self
     }
 
@@ -89,10 +111,10 @@ impl DeltaDiscoveryRequestBuilder {
     }
 
     pub fn build(self) -> DeltaDiscoveryRequest {
-        let node_id = self.node.unwrap_or_default();
+        let Node { id, cluster_id } = self.node.unwrap_or_default();
         let nounce = self.nounce.unwrap_or_default();
         DeltaDiscoveryRequest {
-            node: Some(EnvoyNode { id: node_id, ..Default::default() }),
+            node: Some(EnvoyNode { id: id.into(), cluster: cluster_id.into(), ..Default::default() }),
             response_nonce: nounce,
             type_url: self.type_url.to_string(),
             resource_names_subscribe: self.resource_names_subscribe,

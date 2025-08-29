@@ -9,6 +9,8 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
+compact_str.workspace = true
+http.workspace = true
 lasso = { version = "0.7.3", features = [
   "ahash",
   "ahasher",

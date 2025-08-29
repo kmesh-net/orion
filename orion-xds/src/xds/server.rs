@@ -21,12 +21,12 @@
 use std::{net::SocketAddr, pin::Pin};
 
 use atomic_take::AtomicTake;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::{
-    aggregated_discovery_service_server::{AggregatedDiscoveryService, AggregatedDiscoveryServiceServer},
-    DeltaDiscoveryRequest, DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse, Resource, ResourceName,
-};
-use orion_data_plane_api::envoy_data_plane_api::tonic::{
-    self, transport::Server, IntoStreamingRequest, Response, Status,
+use orion_data_plane_api::envoy_data_plane_api::{
+    envoy::service::discovery::v3::{
+        aggregated_discovery_service_server::{AggregatedDiscoveryService, AggregatedDiscoveryServiceServer},
+        DeltaDiscoveryRequest, DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse, Resource, ResourceName,
+    },
+    tonic::{self, transport::Server, IntoStreamingRequest, Response, Status},
 };
 use tokio::sync::mpsc::{self, Receiver};
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};

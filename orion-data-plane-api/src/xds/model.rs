@@ -113,13 +113,13 @@ impl fmt::Display for TypeUrl {
             f,
             "{}",
             match self {
-                TypeUrl::Listener => "type.googleapis.com/envoy.config.listener.v3.Listener".to_string(),
-                TypeUrl::Cluster => "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_string(),
+                TypeUrl::Listener => "type.googleapis.com/envoy.config.listener.v3.Listener".to_owned(),
+                TypeUrl::Cluster => "type.googleapis.com/envoy.config.cluster.v3.Cluster".to_owned(),
                 TypeUrl::RouteConfiguration =>
-                    "type.googleapis.com/envoy.config.route.v3.RouteConfiguration".to_string(),
+                    "type.googleapis.com/envoy.config.route.v3.RouteConfiguration".to_owned(),
                 TypeUrl::ClusterLoadAssignment =>
-                    "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment".to_string(),
-                TypeUrl::Secret => "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret".to_string(),
+                    "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment".to_owned(),
+                TypeUrl::Secret => "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret".to_owned(),
             }
         )
     }

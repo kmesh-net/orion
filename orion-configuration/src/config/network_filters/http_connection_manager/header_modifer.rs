@@ -133,8 +133,10 @@ impl TryFrom<(String, String)> for HeaderKeyValue {
 mod tests {
     use super::*;
     use crate::config::network_filters::http_connection_manager::header_modifer::HeaderKeyValue;
-    use http::header::{COOKIE, LOCATION, USER_AGENT};
-    use http::{HeaderMap, HeaderValue};
+    use http::{
+        header::{COOKIE, LOCATION, USER_AGENT},
+        HeaderMap, HeaderValue,
+    };
 
     #[test]
     fn test_header_mutation_append_if_exists_or_add() {

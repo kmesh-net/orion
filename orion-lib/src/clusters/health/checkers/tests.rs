@@ -32,9 +32,7 @@ use tokio::{
 };
 
 use super::{checker::WaitInterval, CurrentHealthStatus};
-use crate::clusters::health::EndpointId;
-use crate::EndpointHealthUpdate;
-use crate::Error;
+use crate::{clusters::health::EndpointId, EndpointHealthUpdate, Error};
 
 macro_rules! deref {
     ($subclass:ty => $field:ident as $base:ty) => {

@@ -247,7 +247,7 @@ impl TlsContextBuilder<WantsToBuildServer> {
 
         let verifier = match (self.state.require_client_cert, &self.state.certificate_store) {
             (true, None) => {
-                return Err("requireClientCertificate is true but no validation_context is configured".into())
+                return Err("requireClientCertificate is true but no validation_context is configured".into());
             },
             (true, Some(certificate_store)) => {
                 Some(WebPkiClientVerifier::builder(Arc::clone(certificate_store)).build()?)

@@ -20,11 +20,18 @@
 
 use std::sync::OnceLock;
 
+use compact_str::CompactString;
+use http::Version;
 use lasso::ThreadedRodeo;
 
 static GLOBAL_INTERNER: OnceLock<ThreadedRodeo> = OnceLock::new();
 
-pub fn to_static_str(s: &str) -> &'static str {
+pub trait StringInterner {
+    fn to_static_str(&self) -> &'static str;
+}
+
+#[inline]
+fn intern_str(s: &str) -> &'static str {
     let interner = GLOBAL_INTERNER.get_or_init(ThreadedRodeo::new);
     let key = interner.get_or_intern(s);
     let static_ref = interner.resolve(&key);
@@ -34,4 +41,35 @@ pub fn to_static_str(s: &str) -> &'static str {
     // are also valid for the `'static` lifetime. This transmute is safe because
     // we are extending a lifetime that is already effectively `'static`.
     unsafe { std::mem::transmute::<&str, &'static str>(static_ref) }
+}
+
+impl StringInterner for &str {
+    fn to_static_str(&self) -> &'static str {
+        intern_str(self)
+    }
+}
+
+impl StringInterner for String {
+    fn to_static_str(&self) -> &'static str {
+        intern_str(self)
+    }
+}
+
+impl StringInterner for CompactString {
+    fn to_static_str(&self) -> &'static str {
+        intern_str(self)
+    }
+}
+
+impl StringInterner for Version {
+    fn to_static_str(&self) -> &'static str {
+        match *self {
+            Version::HTTP_09 => "HTTP/0.9",
+            Version::HTTP_10 => "HTTP/1.0",
+            Version::HTTP_11 => "HTTP/1.1",
+            Version::HTTP_2 => "HTTP/2",
+            Version::HTTP_3 => "HTTP/3",
+            _ => "HTTP/unknown",
+        }
+    }
 }

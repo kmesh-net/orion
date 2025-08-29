@@ -24,6 +24,7 @@ use super::{
     request::{DeltaDiscoveryRequestBuilder, StatusBuilder},
 };
 use core::result::Result::{Err, Ok};
+
 use orion_configuration::config::bootstrap::Node;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::{DeltaDiscoveryRequest, DeltaDiscoveryResponse},
@@ -43,7 +44,7 @@ pub const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 pub const MAX_BACKOFF: Duration = Duration::from_secs(20);
 pub const BACKOFF_INTERVAL: Duration = Duration::from_secs(2);
 pub const RETRY_INTERVAL: Duration = Duration::from_secs(5);
-pub const ACK_TIMEOUT: Duration = Duration::from_secs(5);
+pub const ACK_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub struct DiscoveryClientBuilder<C: bindings::TypedXdsBinding> {
     node: Node,
@@ -105,7 +106,7 @@ where
 }
 
 /// Incremental Client that operates the delta version of the xDS protocol
-/// use to consume xDS configuration updates asychronously, modify resource subscriptions
+/// use to consume xDS configuration updates asynchronously, modify resource subscriptions
 
 #[derive(Debug)]
 pub struct DeltaDiscoveryClient {
@@ -199,7 +200,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 {
                     warn!("xDS client terminated: {}, retrying in {:?}", err_detail, backoff);
                 } else {
-                    warn!("xDS client interupted: {}, retrying in {:?}", err_detail, backoff);
+                    warn!("xDS client interrupted: {}, retrying in {:?}", err_detail, backoff);
                 }
                 let backoff = std::cmp::min(MAX_BACKOFF, state.backoff * 2);
                 tokio::time::sleep(backoff).await;
@@ -274,7 +275,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     if let Err(err) = discovery_requests_tx
                         .send(
                             DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                                .with_node_id(self.node.id.clone().to_string())
+                                .with_node_id(self.node.clone())
                                 .with_resource_names_subscribe(vec![resource_id])
                                 .build(),
                         )
@@ -291,7 +292,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     if let Err(err) = discovery_requests_tx
                         .send(
                             DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                                .with_node_id(self.node.id.clone().to_string())
+                                .with_node_id(self.node.clone())
                                 .with_resource_names_unsubscribe(vec![resource_id])
                                 .build(),
                         )
@@ -322,7 +323,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let mut pending_update_versions = Self::extract_update_versions(&decoded_updates);
                 let mut removal_notifications = for_removal
                     .iter()
-                    .map(|resource_id| XdsResourceUpdate::Remove(resource_id.to_string(), type_url))
+                    .map(|resource_id| XdsResourceUpdate::Remove(resource_id.clone(), type_url))
                     .collect::<Vec<XdsResourceUpdate>>();
 
                 let mut batched_updates = Vec::<XdsResourceUpdate>::new();
@@ -404,10 +405,10 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             Some(type_url) => vec![type_url],
             _ => vec![
                 TypeUrl::Secret,
-                TypeUrl::ClusterLoadAssignment,
                 TypeUrl::Cluster,
-                TypeUrl::RouteConfiguration,
+                TypeUrl::ClusterLoadAssignment,
                 TypeUrl::Listener,
+                TypeUrl::RouteConfiguration,
             ],
         };
         resource_types
@@ -417,7 +418,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 let already_tracked: HashMap<ResourceId, ResourceVersion> =
                     tracking_state.tracked.get(resource_type).cloned().unwrap_or_default();
                 DeltaDiscoveryRequestBuilder::for_resource(resource_type.to_owned())
-                    .with_node_id(self.node.id.clone().to_string())
+                    .with_node_id(self.node.clone())
                     .with_initial_resource_versions(already_tracked)
                     .with_resource_names_subscribe(subscriptions.into_iter().collect())
                     .build()
@@ -480,7 +481,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         let mut update_versions = HashMap::<ResourceId, ResourceVersion>::new();
         for update in updates {
             if let XdsResourceUpdate::Update(resource_id, _, resource_version) = update {
-                update_versions.insert(resource_id.to_string(), resource_version.to_string());
+                update_versions.insert(resource_id.clone(), resource_version.clone());
             }
         }
         update_versions

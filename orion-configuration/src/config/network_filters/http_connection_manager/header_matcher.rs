@@ -24,7 +24,7 @@ use http::{HeaderMap, HeaderName, Method, Request, Response, Uri};
 use serde::{de::Visitor, Deserialize, Serialize};
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HeaderNames {
     Method,
     Path,
@@ -94,7 +94,7 @@ impl FromStr for HeaderNames {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct HeaderMatcher {
     #[serde(rename = "name")]
     pub header_name: HeaderNames,
@@ -115,7 +115,7 @@ impl HeaderMatcher {
         // what if someone sets them in the config though, with treat_missing_header_as_empty?
         self.is_match(None, None, response.headers())
     }
-    /// checks if this matcher matches any of the headers in header_map
+    /// checks if this matcher matches any of the headers in `header_map`
     /// Header values that contain non visible-ascii characters are skipped
     fn is_match(&self, method: Option<&Method>, uri: Option<&Uri>, header_map: &HeaderMap) -> bool {
         match &self.header_name {

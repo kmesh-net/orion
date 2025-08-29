@@ -1,33 +1,41 @@
 [package]
-name = "orion-format"
-version = "0.1.0"
-edition = "2021"
+edition.workspace      = true
+license-file.workspace = true
+name                   = "orion-format"
+rust-version.workspace = true
+version.workspace      = true
 
 [lints]
 workspace = true
 
 [dependencies]
-http.workspace = true
-thiserror.workspace = true
+http.workspace              = true
+orion-http-header.workspace = true
+orion-interner.workspace = true
+thiserror.workspace      = true
 
-criterion = "0.5.1"
-ptrie = "0.7.2"
-smol_str = { version = "0.3.2", features = ["serde"] }
-chrono = "0.4.40"
-dhat = "0.3.3"
-bitflags = "2.9.0"
-itoa = "1.0.15"
-serde = { workspace = true, features = ["rc"] }
+ahash          = "0.8.11"
+bitflags        = { version = "2.9.0", features = ["serde"] }
+chrono         = "0.4.40"
+compact_str    = "0.8.0"
+criterion      = "0.5.1"
+dhat           = "0.3.3"
 http-serde-ext = "1.0.2"
-strum = { version = "0.27.1", features = ["derive"] }
-strum_macros = "0.27.1"
+hyper          = { version = "1" }
+itoa           = "1.0.15"
+ptrie          = "0.7.2"
+serde          = { workspace = true, features = ["rc"] }
+smol_str       = { version = "0.3.2", features = ["serde"] }
+thread_local   = "1.1.8"
+traceparent    = "0.0.3"
+uuid           = { version = "1.16.0", features = ["v4"] }
 
 [features]
 dhat-heap = []
 
 [[bench]]
-name = "benchmark"
 harness = false
+name    = "benchmark"
 
 [[bin]]
 name = "format-test"

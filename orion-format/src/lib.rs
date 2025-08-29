@@ -1,3 +1,23 @@
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
 pub mod context;
 pub mod grammar;
 pub mod operator;
@@ -5,19 +25,21 @@ pub mod types;
 
 use crate::grammar::EnvoyGrammar;
 use context::Context;
-use operator::{Category, Operator};
+use operator::{Category, Operator, NUM_OPERATOR_CATEGORIES};
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use std::fmt::{self, Display, Formatter, Write};
-use std::io::Write as IoWrite;
-use std::sync::Arc;
-use strum::EnumCount;
+use std::{
+    fmt::{self, Display, Formatter, Write},
+    io::Write as IoWrite,
+    sync::Arc,
+};
 use thiserror::Error;
+use thread_local::ThreadLocal;
 
-pub const DEFAULT_ENVOY_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
+pub const DEFAULT_ACCESS_LOG_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
 "#;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Eq, PartialEq)]
 pub enum FormatError {
     #[error("invalid operator `{0}`")]
     InvalidOperator(String),
@@ -54,36 +76,50 @@ pub enum StringType {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
-struct IndexedTemplate {
+struct LogFormatterConf {
     templates: Vec<Template>,
-    indices: [Vec<u8>; Category::COUNT],
+    indices: [Vec<u8>; NUM_OPERATOR_CATEGORIES],
+    omit_empty_values: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 #[allow(clippy::unsafe_derive_deserialize)]
-#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct LogFormatter {
-    catalog: Arc<IndexedTemplate>,
+    main: LogFormatterConf,
+    #[serde(skip_serializing, skip_deserializing)]
+    local: ThreadLocal<Arc<LogFormatterConf>>,
     format: Vec<StringType>,
 }
 
-impl Default for LogFormatter {
-    fn default() -> Self {
-        if let Ok(log) = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT) {
-            log
-        } else {
-            unimplemented!("Failed to create default LogFormatter")
-        }
+impl PartialEq for LogFormatter {
+    fn eq(&self, other: &Self) -> bool {
+        self.main == other.main && self.format == other.format
     }
 }
 
+impl Eq for LogFormatter {}
+
+impl Clone for LogFormatter {
+    fn clone(&self) -> Self {
+        LogFormatter { main: self.main.clone(), local: ThreadLocal::new(), format: self.format.clone() }
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+pub struct LogFormatterLocal {
+    local: Arc<LogFormatterConf>,
+    format: Vec<StringType>,
+}
+
 impl LogFormatter {
-    pub fn try_new(input: &str) -> Result<LogFormatter, FormatError> {
+    pub fn try_new(input: &str, omit_empty_values: bool) -> Result<LogFormatter, FormatError> {
         let templates = EnvoyGrammar::parse(input)?;
-        let mut indices: [Vec<u8>; Category::COUNT] = std::array::from_fn(|_| vec![]);
+        let mut indices: [Vec<u8>; NUM_OPERATOR_CATEGORIES] = std::array::from_fn(|_| vec![]);
 
         for (i, part) in templates.iter().enumerate() {
-            if let Template::Placeholder(_, category) = part {
-                indices[*category as usize].push(u8::try_from(i)?);
+            if let Template::Placeholder(_, cat) = part {
+                let idx = cat.bits().trailing_zeros();
+                indices[idx as usize].push(u8::try_from(i)?);
             }
         }
 
@@ -97,29 +133,48 @@ impl LogFormatter {
             }
         }
 
-        Ok(LogFormatter { catalog: Arc::new(IndexedTemplate { templates, indices }), format })
+        Ok(LogFormatter {
+            main: LogFormatterConf { templates, indices, omit_empty_values },
+            local: ThreadLocal::new(),
+            format,
+        })
     }
 
+    pub fn local_clone(&self) -> LogFormatterLocal {
+        LogFormatterLocal {
+            local: Arc::clone(self.local.get_or(|| Arc::new(self.main.clone()))),
+            format: self.format.clone(),
+        }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.format.is_empty()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.format.len()
+    }
+}
+
+impl LogFormatterLocal {
     pub fn with_context<C: Context>(&mut self, ctx: &C) -> &Self {
-        for idx in &self.catalog.indices[C::category() as usize] {
+        for cat in C::categories() {
             unsafe {
-                if let Template::Placeholder(op, _) = self.catalog.templates.get_unchecked(*idx as usize) {
-                    *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(op);
+                for idx in self.local.indices.get_unchecked(cat.bits().trailing_zeros() as usize) {
+                    if let Template::Placeholder(op, _) = self.local.templates.get_unchecked(*idx as usize) {
+                        *self.format.get_unchecked_mut(*idx as usize) = ctx.eval_part(op);
+                    }
                 }
             }
         }
-
         self
     }
 
     #[inline]
     pub fn into_message(self) -> FormattedMessage {
-        FormattedMessage { format: self.format }
-    }
-
-    #[inline]
-    pub fn is_fully_formatted(&self) -> bool {
-        self.format.iter().all(|f| *f != StringType::None)
+        FormattedMessage { format: self.format, omit_empty_values: self.local.omit_empty_values }
     }
 
     #[inline]
@@ -135,15 +190,11 @@ impl LogFormatter {
 
 #[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
 pub struct FormattedMessage {
+    omit_empty_values: bool,
     format: Vec<StringType>,
 }
 
 impl FormattedMessage {
-    #[inline]
-    pub fn is_fully_formatted(&self) -> bool {
-        self.format.iter().all(|f| *f != StringType::None)
-    }
-
     pub fn write_to<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<usize> {
         let mut total_bytes = 0;
         for out in &self.format {
@@ -155,11 +206,27 @@ impl FormattedMessage {
                     IoWrite::write(w, bytes)?
                 },
                 StringType::Bytes(v) => IoWrite::write(w, v.as_ref())?,
-                StringType::None => IoWrite::write(w, "?".as_bytes())?, // this corresponds to an operator not evaluated from contexts
+                StringType::None => {
+                    if self.omit_empty_values {
+                        0
+                    } else {
+                        IoWrite::write(w, "-".as_bytes())?
+                    }
+                },
             };
         }
 
         Ok(total_bytes)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.format.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.format.is_empty()
     }
 }
 
@@ -170,7 +237,11 @@ impl Display for FormattedMessage {
                 StringType::Smol(s) => f.write_str(s.as_ref())?,
                 StringType::Char(c) => f.write_char(*c)?,
                 StringType::Bytes(v) => f.write_str(&String::from_utf8_lossy(v))?,
-                StringType::None => f.write_str("?")?,
+                StringType::None => {
+                    if !self.omit_empty_values {
+                        f.write_str("-")?
+                    }
+                },
             }
         }
         Ok(())
@@ -189,7 +260,7 @@ mod tests {
 
     use crate::{
         context::{
-            DownstreamRequest, DownstreamResponse, FinishContext, InitContext, UpstreamContext, UpstreamRequest,
+            DownstreamContext, DownstreamResponse, FinishContext, InitContext, UpstreamContext, UpstreamRequest,
         },
         types::ResponseFlags,
     };
@@ -210,11 +281,11 @@ mod tests {
         let mut req = build_request();
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
-        let source = LogFormatter::try_new("%REQ(:PATH)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(:PATH)%", false).unwrap();
+        let mut formatter = source.local_clone();
         let expected = "/";
 
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -224,11 +295,11 @@ mod tests {
         let mut req = build_request();
         req.headers_mut().append("X-ENVOY-ORIGINAL-PATH", HeaderValue::from_static("/original"));
 
-        let source = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%", false).unwrap();
+        let mut formatter = source.local_clone();
         let expected = "/original";
 
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -236,11 +307,11 @@ mod tests {
     #[test]
     fn test_request_method() {
         let req = build_request();
-        let source = LogFormatter::try_new("%REQ(:METHOD)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(:METHOD)%", false).unwrap();
+        let mut formatter = source.local_clone();
         println!("FORMATTER: {formatter:?}");
         let expected = "GET";
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -248,11 +319,11 @@ mod tests {
     #[test]
     fn test_request_protocol() {
         let req = build_request();
-        let source = LogFormatter::try_new("%PROTOCOL%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%PROTOCOL%", false).unwrap();
+        let mut formatter = source.local_clone();
         println!("FORMATTER: {formatter:?}");
         let expected = "HTTP/1.1";
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -260,8 +331,8 @@ mod tests {
     #[test]
     fn test_request_upstream_protocol() {
         let req = build_request();
-        let source = LogFormatter::try_new("%UPSTREAM_PROTOCOL%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%UPSTREAM_PROTOCOL%", false).unwrap();
+        let mut formatter = source.local_clone();
         println!("FORMATTER: {formatter:?}");
         let expected = "HTTP/1.1";
         formatter.with_context(&UpstreamRequest(&req));
@@ -272,10 +343,10 @@ mod tests {
     #[test]
     fn test_request_scheme() {
         let req = build_request();
-        let source = LogFormatter::try_new("%REQ(:SCHEME)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(:SCHEME)%", false).unwrap();
+        let mut formatter = source.local_clone();
         let expected = "https";
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -283,10 +354,10 @@ mod tests {
     #[test]
     fn test_request_authority() {
         let req = build_request();
-        let source = LogFormatter::try_new("%REQ(:AUTHORITY)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(:AUTHORITY)%", false).unwrap();
+        let mut formatter = source.local_clone();
         let expected = "www.rust-lang.org";
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -294,18 +365,18 @@ mod tests {
     #[test]
     fn test_request_user_agent() {
         let req = build_request();
-        let source = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(USER-AGENT)%", false).unwrap();
+        let mut formatter = source.local_clone();
         let expected = "awesome/1.0";
-        formatter.with_context(&DownstreamRequest(&req));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn test_unevaluated_operator() {
-        let source = LogFormatter::try_new("%REQ(USER-AGENT)%").unwrap();
-        let formatter = source.clone();
+        let source = LogFormatter::try_new("%REQ(USER-AGENT)%", false).unwrap();
+        let formatter = source.local_clone();
         let actual = format!("{}", &formatter.into_message());
         println!("{actual}");
     }
@@ -314,19 +385,19 @@ mod tests {
     fn default_format_string() {
         let req = build_request();
         let resp = build_response();
-        let source = LogFormatter::try_new(DEFAULT_ENVOY_FORMAT).unwrap();
-        let mut formatter = source.clone();
+        let source = LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false).unwrap();
+        let mut formatter = source.local_clone();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
-        formatter.with_context(&DownstreamRequest(&req));
-        formatter.with_context(&UpstreamContext { authority: req.uri().authority().unwrap() });
-        formatter.with_context(&DownstreamResponse(&resp));
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter
+            .with_context(&UpstreamContext { authority: req.uri().authority().unwrap(), cluster_name: "test_cluster" });
+        formatter.with_context(&DownstreamResponse { response: &resp, response_head_size: 0 });
         formatter.with_context(&FinishContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
         });
-        assert!(formatter.is_fully_formatted());
         println!("{}", &formatter.into_message());
     }
 

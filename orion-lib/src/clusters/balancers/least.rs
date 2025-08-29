@@ -188,14 +188,12 @@ fn all_equal<E>(items: &[LbItem<E>]) -> bool {
 mod test {
     use std::sync::Arc;
 
-    use rand::rngs::SmallRng;
-    use rand::SeedableRng;
+    use rand::{rngs::SmallRng, SeedableRng};
 
-    use crate::clusters::balancers::least::DEFAULT_ACTIVE_REQUEST_BIAS;
-    use crate::clusters::balancers::least::DEFAULT_P2C_CHOICE_COUNT;
-    use crate::clusters::balancers::Balancer;
-    use crate::clusters::balancers::EndpointWithLoad;
-    use crate::clusters::balancers::WeightedEndpoint;
+    use crate::clusters::balancers::{
+        least::{DEFAULT_ACTIVE_REQUEST_BIAS, DEFAULT_P2C_CHOICE_COUNT},
+        Balancer, EndpointWithLoad, WeightedEndpoint,
+    };
 
     use super::{LbItem, WeightedLeastRequestBalancer};
 

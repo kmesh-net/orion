@@ -1,3 +1,22 @@
+// SPDX-FileCopyrightText: © 2025 kmesh authors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Copyright 2025 kmesh authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
 use envoy_data_plane_api::envoy::config::{
     bootstrap::v3::Bootstrap,
     core::v3::{address, socket_address::PortSpecifier, Address, SocketAddress},
@@ -19,7 +38,7 @@ fn read_static_resource() {
     let loader = BootstrapLoader::load(path.into_os_string().into_string().unwrap());
     let listeners = loader.get_static_listener_configs().unwrap();
     let listener = listeners.first().unwrap();
-    assert_eq!(listener.name, "listener_0".to_string());
+    assert_eq!(listener.name, "listener_0".to_owned());
 
     let routes = loader.get_static_route_configs().unwrap();
     assert_eq!(routes.len(), 0);
@@ -65,7 +84,7 @@ fn read_dynamic_resource() {
             XdsType::Individual(TypeUrl::RouteConfiguration),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5678)),
                 resolver_name: String::new(),
@@ -131,7 +150,7 @@ static_resources:
             XdsType::Aggregated(HashSet::from([TypeUrl::Listener, TypeUrl::Cluster])),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5679)),
                 resolver_name: String::new(),
@@ -269,7 +288,7 @@ static_resources:
             XdsType::Aggregated(HashSet::from([TypeUrl::Cluster])),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5678)),
                 resolver_name: String::new(),
@@ -284,7 +303,7 @@ static_resources:
             XdsType::Individual(TypeUrl::Listener),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5677)),
                 resolver_name: String::new(),
@@ -299,7 +318,7 @@ static_resources:
             XdsType::Individual(TypeUrl::RouteConfiguration),
             SocketAddress {
                 protocol: 0,
-                address: "127.0.0.1".to_string(),
+                address: "127.0.0.1".to_owned(),
                 ipv4_compat: false,
                 port_specifier: Some(PortSpecifier::PortValue(5679)),
                 resolver_name: String::new(),

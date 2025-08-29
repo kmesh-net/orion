@@ -21,7 +21,6 @@
 use std::net::SocketAddr;
 
 use futures::Stream;
-use orion_data_plane_api::envoy_data_plane_api::envoy;
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::{
         config::{
@@ -327,19 +326,6 @@ pub fn create_listener(
             virtual_hosts: vec![virtual_host],
             ..Default::default()
         })),
-        http_filters: vec![envoy::extensions::filters::network::http_connection_manager::v3::HttpFilter {
-            name: "envoy.filters.http.router".to_string(),
-            config_type: Some(
-                envoy::extensions::filters::network::http_connection_manager::v3::http_filter::ConfigType::TypedConfig(
-                    Any {
-                        type_url: "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router".to_string(),
-                        value: vec![],
-                    },
-                ),
-            ),
-            is_optional: false,
-            disabled: false,
-        }],
         ..Default::default()
     };
 
@@ -404,11 +390,13 @@ pub fn delta_dicovery_request_stream() -> impl Stream<Item = DeltaDiscoveryReque
 
 #[cfg(test)]
 mod test {
-    use orion_data_plane_api::decode::from_yaml;
-    use orion_data_plane_api::envoy_data_plane_api::{
-        envoy::{config::cluster::v3::Cluster, service::discovery::v3::Resource},
-        google::protobuf::Any,
-        prost::{self, Message},
+    use orion_data_plane_api::{
+        decode::from_yaml,
+        envoy_data_plane_api::{
+            envoy::{config::cluster::v3::Cluster, service::discovery::v3::Resource},
+            google::protobuf::Any,
+            prost::{self, Message},
+        },
     };
     use tracing::info;
 

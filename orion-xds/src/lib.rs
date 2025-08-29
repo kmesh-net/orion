@@ -27,22 +27,29 @@ use crate::xds::{
 };
 use http::{Request, Response};
 use orion_configuration::config::bootstrap::Node;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient;
-use orion_data_plane_api::envoy_data_plane_api::tonic;
-use tonic::body::BoxBody;
-use tonic::codegen::StdError as TonicError;
-use tonic::transport::{Channel, Endpoint};
+use orion_data_plane_api::envoy_data_plane_api::{
+    envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, tonic,
+};
+use tonic::{
+    body::BoxBody,
+    codegen::StdError as TonicError,
+    transport::{Channel, Endpoint},
+};
 use tower::Service;
 use tracing::info;
 use xds::client::{DeltaClientBackgroundWorker, DeltaDiscoverySubscriptionManager};
 
 pub mod grpc_deps {
-    pub use orion_data_plane_api::envoy_data_plane_api::tonic::body::boxed as to_grpc_body;
-    pub use orion_data_plane_api::envoy_data_plane_api::tonic::body::BoxBody as GrpcBody;
-    pub use orion_data_plane_api::envoy_data_plane_api::tonic::codegen::StdError as Error;
-    pub use orion_data_plane_api::envoy_data_plane_api::tonic::{Response, Status};
-    pub use orion_data_plane_api::envoy_data_plane_api::tonic_health;
+    pub use orion_data_plane_api::envoy_data_plane_api::{
+        tonic::{
+            body::{boxed as to_grpc_body, BoxBody as GrpcBody},
+            codegen::StdError as Error,
+            Response, Status,
+        },
+        tonic_health,
+    };
 }
+pub const DECODED_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
 
 pub async fn start_aggregate_client(
     node: Node,
@@ -82,7 +89,8 @@ where
     C: Service<Request<BoxBody>, Response = Response<BoxBody>, Error = TonicError> + Send,
     C::Future: Send,
 {
-    let underlying_client = AggregatedDiscoveryServiceClient::new(channel);
+    let underlying_client =
+        AggregatedDiscoveryServiceClient::new(channel).max_decoding_message_size(DECODED_MESSAGE_SIZE);
     let aggregated_discovery_service_client = AggregatedDiscoveryType { underlying_client };
     DiscoveryClientBuilder::new(node, aggregated_discovery_service_client).build()
 }

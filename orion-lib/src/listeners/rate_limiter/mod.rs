@@ -19,56 +19,59 @@
 //
 
 mod token_bucket;
-
-use std::sync::Arc;
-
-use http::status::StatusCode;
-use http::Request;
-use hyper::Response;
+use http::{status::StatusCode, Request};
 use tracing::warn;
 
 use token_bucket::TokenBucket;
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::local_rate_limit::LocalRateLimit as LocalRateLimitConfig;
 
-use crate::listeners::synthetic_http_response::SyntheticHttpResponse;
-use crate::{runtime_config, HttpBody};
+use crate::body::response_flags::ResponseFlags;
+use orion_format::types::ResponseFlags as FmtResponseFlags;
 
-#[allow(dead_code)]
+use crate::{
+    listeners::{http_connection_manager::FilterDecision, synthetic_http_response::SyntheticHttpResponse},
+    runtime_config,
+};
+
 #[derive(Debug, Clone)]
-// TODO: Implement rate limiting functionality - this struct defines the interface for local rate limits
 pub struct LocalRateLimit {
     pub status: StatusCode,
-    pub token_bucket: Arc<TokenBucket>,
+    pub token_bucket: Option<TokenBucket>,
 }
 
-#[allow(dead_code)]
 impl LocalRateLimit {
-    // TODO: Implement rate limit enforcement - used to check and consume tokens for incoming requests
-    pub fn run<B>(&self, req: &Request<B>) -> Option<Response<HttpBody>> {
-        if !self.token_bucket.consume(1) {
-            let status = self.status;
-            return Some(SyntheticHttpResponse::custom_error(status).into_response(req.version()));
+    pub fn run<B>(&self, req: &Request<B>) -> FilterDecision {
+        if let Some(token_bucket) = &self.token_bucket {
+            if !token_bucket.consume(1) {
+                let status = self.status;
+                return FilterDecision::DirectResponse(
+                    SyntheticHttpResponse::custom_error(status, ResponseFlags(FmtResponseFlags::RATE_LIMITED))
+                        .into_response(req.version()),
+                );
+            }
         }
-        None
+        FilterDecision::Continue
     }
 }
 
 impl From<LocalRateLimitConfig> for LocalRateLimit {
     fn from(rate_limit: LocalRateLimitConfig) -> Self {
         let status = rate_limit.status;
-        let max_tokens = rate_limit.max_tokens;
-        let tokens_per_fill = rate_limit.tokens_per_fill;
-        let fill_interval = rate_limit.fill_interval;
-        let adjusted_fill_interval = fill_interval.checked_mul(runtime_config().num_runtimes.into());
-        let fill_interval = if let Some(value) = adjusted_fill_interval {
-            value
-        } else {
-            warn!("failed to adjust fill interval to number of configured runtimes (overflow)");
-            fill_interval
-        };
-        let token_bucket = Arc::new(TokenBucket::new(max_tokens, tokens_per_fill, fill_interval));
-
-        Self { status, token_bucket }
+        if let Some(token_bucket) = rate_limit.token_bucket {
+            let max_tokens = token_bucket.max_tokens;
+            let tokens_per_fill = token_bucket.tokens_per_fill;
+            let fill_interval = token_bucket.fill_interval;
+            let adjusted_fill_interval = fill_interval.checked_mul(runtime_config().num_runtimes.into());
+            let fill_interval = if let Some(value) = adjusted_fill_interval {
+                value
+            } else {
+                warn!("failed to adjust fill interval to number of configured runtimes (overflow)");
+                fill_interval
+            };
+            let tb = TokenBucket::new(max_tokens, tokens_per_fill, fill_interval);
+            return Self { status, token_bucket: Some(tb) };
+        }
+        Self { status, token_bucket: None }
     }
 }

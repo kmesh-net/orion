@@ -19,24 +19,26 @@
 //
 
 #![allow(dead_code)]
+
 use std::{future::Future, pin::Pin};
 
 use model::TypeUrl;
-use orion_data_plane_api::envoy_data_plane_api::envoy::service::{
-    cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient,
-    discovery::v3::{
-        aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, DeltaDiscoveryRequest,
-        DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse,
+use orion_data_plane_api::envoy_data_plane_api::{
+    envoy::service::{
+        cluster::v3::cluster_discovery_service_client::ClusterDiscoveryServiceClient,
+        discovery::v3::{
+            aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, DeltaDiscoveryRequest,
+            DeltaDiscoveryResponse, DiscoveryRequest, DiscoveryResponse,
+        },
+        endpoint::v3::endpoint_discovery_service_client::EndpointDiscoveryServiceClient,
+        listener::v3::listener_discovery_service_client::ListenerDiscoveryServiceClient,
+        route::v3::route_discovery_service_client::RouteDiscoveryServiceClient,
+        secret::v3::secret_discovery_service_client::SecretDiscoveryServiceClient,
     },
-    endpoint::v3::endpoint_discovery_service_client::EndpointDiscoveryServiceClient,
-    listener::v3::listener_discovery_service_client::ListenerDiscoveryServiceClient,
-    route::v3::route_discovery_service_client::RouteDiscoveryServiceClient,
-    secret::v3::secret_discovery_service_client::SecretDiscoveryServiceClient,
+    tonic,
 };
-use orion_data_plane_api::envoy_data_plane_api::tonic;
 use tokio_stream::Stream;
-use tonic::codegen::StdError;
-use tonic::transport::Channel;
+use tonic::{codegen::StdError, transport::Channel};
 
 use super::model;
 
@@ -85,10 +87,8 @@ pub struct AggregatedDiscoveryType<C> {
 
 impl<C> TypedXdsBinding for AggregatedDiscoveryType<C>
 where
-    C: tonic::client::GrpcService<tonic::body::BoxBody> + Send,
+    C: tower::Service<http::Request<tonic::body::BoxBody>, Response = http::Response<tonic::body::BoxBody>> + Send,
     C::Error: Into<StdError>,
-    C::ResponseBody: tonic::codegen::Body<Data = tonic::codegen::Bytes> + std::marker::Send + 'static,
-    <C::ResponseBody as tonic::codegen::Body>::Error: Into<StdError> + std::marker::Send,
     C::Future: Send,
 {
     fn type_url() -> Option<TypeUrl> {

@@ -18,155 +18,145 @@
 //
 //
 
-use compact_str::{CompactString, ToCompactString};
+mod dynamic;
+mod original_dst;
+mod r#static;
+
 use enum_dispatch::enum_dispatch;
-use futures::future::BoxFuture;
 use http::uri::Authority;
 
-use orion_configuration::config::cluster::ClusterDiscoveryType;
-use orion_configuration::config::cluster::{Cluster as ClusterConfig, HealthCheck, LbPolicy};
-use rustls::ClientConfig;
-use tokio::net::TcpStream;
+use crate::clusters::clusters_manager::{RoutingContext, RoutingRequirement};
+use orion_configuration::config::cluster::{
+    Cluster as ClusterConfig, ClusterDiscoveryType, ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck,
+};
 use tracing::debug;
 use webpki::types::ServerName;
 
-use super::balancers::hash_policy::HashState;
-use super::{health::HealthStatus, load_assignment::ClusterLoadAssignment};
-use crate::clusters::load_assignment::PartialClusterLoadAssignment;
-use crate::transport::{GrpcService, HttpChannel};
+use super::health::HealthStatus;
 use crate::{
-    clusters::load_assignment::ClusterLoadAssignmentBuilder,
-    secrets::{TlsConfigurator, TransportSecret, WantsToBuildClient},
-    transport::{bind_device::BindDevice, connector::ConnectError, TcpChannel},
+    clusters::load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
+    secrets::TransportSecret,
+    transport::{GrpcService, HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     Error, Result, SecretManager,
 };
 
-pub type TcpService = BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>;
-
-#[derive(Debug, Clone)]
-pub struct StaticCluster {
-    pub name: CompactString,
-    pub load_assignment: ClusterLoadAssignment,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
-    pub health_check: Option<HealthCheck>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DynamicCluster {
-    pub name: CompactString,
-    pub bind_device: Option<BindDevice>,
-    load_assignment: Option<ClusterLoadAssignment>,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
-    pub health_check: Option<HealthCheck>,
-    pub load_balancing_policy: LbPolicy,
-}
-
-#[derive(Debug, Clone)]
-pub struct StaticClusterBuilder {
-    pub name: CompactString,
-    pub load_assignment: ClusterLoadAssignmentBuilder,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
-    pub health_check: Option<HealthCheck>,
-}
-
-#[derive(Debug, Clone)]
-// TODO: Implement dynamic cluster configuration builder
-// Used for clusters that are configured at runtime via xDS or other control plane mechanisms
-pub struct DynamicClusterBuilder {
-    pub name: CompactString,
-    pub bind_device: Option<BindDevice>,
-    pub tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
-    pub health_check: Option<HealthCheck>,
-    pub load_balancing_policy: LbPolicy,
-}
-
-impl StaticClusterBuilder {
-    fn build(self) -> Result<ClusterType> {
-        let StaticClusterBuilder { name, load_assignment, tls_configurator, health_check } = self;
-        let load_assignment = load_assignment.build()?;
-        Ok(ClusterType::Static(StaticCluster { name, load_assignment, tls_configurator, health_check }))
-    }
-}
-
-impl DynamicClusterBuilder {
-    fn build(self) -> ClusterType {
-        let DynamicClusterBuilder { name, tls_configurator, health_check, load_balancing_policy, bind_device } = self;
-        ClusterType::Dynamic(DynamicCluster {
-            name,
-            load_assignment: None,
-            tls_configurator,
-            health_check,
-            load_balancing_policy,
-            bind_device,
-        })
-    }
-}
+use dynamic::{DynamicCluster, DynamicClusterBuilder};
+use original_dst::{OriginalDstCluster, OriginalDstClusterBuilder};
+use orion_interner::StringInterner;
+use r#static::{StaticCluster, StaticClusterBuilder};
 
 impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
     type Error = Error;
     fn try_from(value: (ClusterConfig, &SecretManager)) -> std::result::Result<Self, Self::Error> {
         let (cluster, secrets) = value;
-        let upstream_tls_context = cluster.tls_config;
+        let config = cluster.clone();
+        let transport_socket_config = cluster.transport_socket;
         let bind_device = cluster.bind_device;
         let load_balancing_policy = cluster.load_balancing_policy;
         let protocol_options = cluster.http_protocol_options;
 
-        let cluster_tls_configurator = if let Some(upstream_tls_context) = upstream_tls_context {
-            Some(TlsConfigurator::<ClientConfig, WantsToBuildClient>::try_from((upstream_tls_context, secrets))?)
-        } else {
-            None
-        };
+        let transport_socket = UpstreamTransportSocketConfigurator::try_from((transport_socket_config, secrets))?;
 
         let health_check = cluster.health_check;
         debug!("Cluster {} type {:?} ", cluster.name, cluster.discovery_settings);
         match cluster.discovery_settings {
             ClusterDiscoveryType::Static(cla) => {
-                let server_name = cluster_tls_configurator
-                    .as_ref()
+                let server_name = transport_socket
+                    .tls_configurator()
                     .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
                     .transpose()?;
 
                 let cla = ClusterLoadAssignmentBuilder::builder()
                     .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
-                    .with_cluster_name(cluster.name.clone())
+                    .with_cluster_name(cluster.name.to_static_str())
                     .with_bind_device(bind_device)
                     .with_lb_policy(load_balancing_policy)
                     .with_connection_timeout(cluster.connect_timeout)
-                    .with_tls_configurator(cluster_tls_configurator.clone())
+                    .with_transport_socket(transport_socket.clone())
                     .with_server_name(server_name)
                     .with_protocol_options(Some(protocol_options))
                     .prepare();
 
                 Ok(PartialClusterType::Static(StaticClusterBuilder {
-                    name: cluster.name.to_compact_string(),
+                    name: cluster.name.to_static_str(),
                     load_assignment: cla,
-                    tls_configurator: cluster_tls_configurator,
+                    transport_socket,
                     health_check,
+                    config,
                 }))
             },
-            ClusterDiscoveryType::Eds => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
-                name: cluster.name.to_compact_string(),
+
+            // at the moment there is no difference for us since both cluster types are using the same resolver
+            ClusterDiscoveryType::StrictDns(cla) => {
+                let server_name = transport_socket
+                    .tls_configurator()
+                    .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
+                    .transpose()?;
+
+                let cla = ClusterLoadAssignmentBuilder::builder()
+                    .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
+                    .with_cluster_name(cluster.name.to_static_str())
+                    .with_bind_device(bind_device)
+                    .with_lb_policy(load_balancing_policy)
+                    .with_connection_timeout(cluster.connect_timeout)
+                    .with_transport_socket(transport_socket.clone())
+                    .with_server_name(server_name)
+                    .with_protocol_options(Some(protocol_options))
+                    .prepare();
+
+                Ok(PartialClusterType::Static(StaticClusterBuilder {
+                    name: cluster.name.to_static_str(),
+                    load_assignment: cla,
+                    transport_socket,
+                    health_check,
+                    config,
+                }))
+            },
+
+            ClusterDiscoveryType::Eds(None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
+                name: cluster.name.to_static_str(),
                 bind_device,
-                tls_configurator: cluster_tls_configurator,
+                transport_socket,
                 health_check,
                 load_balancing_policy,
+                config,
             })),
+            ClusterDiscoveryType::Eds(Some(_)) => {
+                Err("EDS clusters can't have a static cluster load assignment configured".into())
+            },
+            ClusterDiscoveryType::OriginalDst(_) => {
+                let server_name = transport_socket
+                    .tls_configurator()
+                    .as_ref()
+                    .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
+                    .transpose()?;
+
+                Ok(PartialClusterType::OnDemand(OriginalDstClusterBuilder {
+                    name: cluster.name.to_static_str(),
+                    bind_device,
+                    transport_socket,
+                    connect_timeout: cluster.connect_timeout,
+                    server_name,
+                    config,
+                }))
+            },
         }
     }
 }
 
 #[enum_dispatch]
 pub trait ClusterOps {
-    fn get_name(&self) -> &CompactString;
+    fn get_name(&self) -> &'static str;
     fn into_health_check(self) -> Option<HealthCheck>;
     fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)>;
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannel)>;
+    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)>;
     fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>>;
     fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()>;
     fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus);
-    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel>;
-    fn get_tcp_connection(&mut self) -> Result<BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>>;
-    fn get_grpc_connection(&mut self) -> Result<GrpcService>;
+    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel>;
+    fn get_tcp_connection(&mut self, context: RoutingContext) -> Result<TcpChannelConnector>;
+    fn get_grpc_connection(&mut self, context: RoutingContext) -> Result<GrpcService>;
+    fn get_routing_requirements(&self) -> RoutingRequirement;
 }
 
 #[derive(Debug, Clone)]
@@ -174,26 +164,46 @@ pub trait ClusterOps {
 pub enum ClusterType {
     Static(StaticCluster),
     Dynamic(DynamicCluster),
+    OnDemand(OriginalDstCluster),
+}
+
+impl TryFrom<&ClusterType> for ClusterConfig {
+    type Error = Error;
+    fn try_from(cluster: &ClusterType) -> Result<Self> {
+        match cluster {
+            ClusterType::Static(static_cluster) => Ok(static_cluster.config.clone()),
+            ClusterType::Dynamic(dynamic_cluster) => {
+                let cla: ClusterLoadAssignmentConfig = dynamic_cluster.try_into()?;
+                let mut config = dynamic_cluster.config.clone();
+                config.discovery_settings = ClusterDiscoveryType::Eds(Some(cla));
+                Ok(config)
+            },
+            ClusterType::OnDemand(original_dst_cluster) => Ok(original_dst_cluster.config.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum PartialClusterType {
     Static(StaticClusterBuilder),
     Dynamic(DynamicClusterBuilder),
+    OnDemand(OriginalDstClusterBuilder),
 }
 
 impl PartialClusterType {
     pub fn build(self) -> Result<ClusterType> {
         match self {
-            Self::Static(cluster_builder) => cluster_builder.build(),
-            Self::Dynamic(cluster_builder) => Ok(cluster_builder.build()),
+            PartialClusterType::Static(cluster_builder) => cluster_builder.build(),
+            PartialClusterType::Dynamic(cluster_builder) => Ok(cluster_builder.build()),
+            PartialClusterType::OnDemand(cluster_builder) => Ok(cluster_builder.build()),
         }
     }
 
-    pub fn get_name(&self) -> &CompactString {
+    pub fn get_name(&self) -> &'static str {
         match &self {
-            PartialClusterType::Static(cluster) => &cluster.name,
-            PartialClusterType::Dynamic(cluster) => &cluster.name,
+            PartialClusterType::Static(cluster) => cluster.name,
+            PartialClusterType::Dynamic(cluster) => cluster.name,
+            PartialClusterType::OnDemand(cluster) => cluster.name,
         }
     }
 
@@ -201,140 +211,18 @@ impl PartialClusterType {
         match self {
             PartialClusterType::Static(cluster) => cluster.health_check,
             PartialClusterType::Dynamic(cluster) => cluster.health_check,
+            PartialClusterType::OnDemand(_cluster) => None,
         }
-    }
-}
-
-impl DynamicCluster {
-    pub fn change_load_assignment(&mut self, cluster_load_assignment: Option<ClusterLoadAssignment>) {
-        self.load_assignment = cluster_load_assignment;
-    }
-}
-
-impl ClusterOps for DynamicCluster {
-    fn get_name(&self) -> &CompactString {
-        &self.name
-    }
-
-    fn into_health_check(self) -> Option<HealthCheck> {
-        self.health_check
-    }
-
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
-        self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_http_channels)
-    }
-
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannel)> {
-        self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_tcp_channels)
-    }
-
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
-        self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::try_all_grpc_channels)
-    }
-
-    fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()> {
-        if let Some(tls_configurator) = self.tls_configurator.clone() {
-            let tls_configurator =
-                TlsConfigurator::<ClientConfig, WantsToBuildClient>::update(tls_configurator, secret_id, secret)?;
-            if let Some(mut load_assignment) = self.load_assignment.take() {
-                load_assignment.tls_configurator = Some(tls_configurator.clone());
-                let load_assignment = load_assignment.rebuild()?;
-                self.load_assignment = Some(load_assignment);
-            }
-            self.tls_configurator = Some(tls_configurator);
-        }
-        Ok(())
-    }
-
-    fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus) {
-        if let Some(load_assignment) = self.load_assignment.as_mut() {
-            load_assignment.update_endpoint_health(endpoint, health);
-        }
-    }
-
-    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel> {
-        if let Some(cla) = self.load_assignment.as_mut() {
-            cla.get_http_channel(lb_hash)
-        } else {
-            Err(format!("{} No channels available", self.name).into())
-        }
-    }
-
-    fn get_tcp_connection(&mut self) -> Result<BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>> {
-        if let Some(cla) = self.load_assignment.as_mut() {
-            cla.get_tcp_channel()
-        } else {
-            Err(format!("{} No channels available", self.name).into())
-        }
-    }
-
-    fn get_grpc_connection(&mut self) -> Result<GrpcService> {
-        if let Some(cla) = self.load_assignment.as_mut() {
-            cla.get_grpc_channel()
-        } else {
-            Err(format!("{} No channels available", self.name).into())
-        }
-    }
-}
-
-impl ClusterOps for StaticCluster {
-    fn get_name(&self) -> &CompactString {
-        &self.name
-    }
-
-    fn into_health_check(self) -> Option<HealthCheck> {
-        self.health_check
-    }
-
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
-        self.load_assignment.all_http_channels()
-    }
-
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannel)> {
-        self.load_assignment.all_tcp_channels()
-    }
-
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
-        self.load_assignment.try_all_grpc_channels()
-    }
-
-    fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()> {
-        if let Some(tls_configurator) = self.tls_configurator.clone() {
-            let tls_configurator =
-                TlsConfigurator::<ClientConfig, WantsToBuildClient>::update(tls_configurator, secret_id, secret)?;
-            let mut load_assignment = self.load_assignment.clone();
-            load_assignment.tls_configurator = Some(tls_configurator.clone());
-            let load_assignment = load_assignment.rebuild()?;
-            self.load_assignment = load_assignment;
-            self.tls_configurator = Some(tls_configurator);
-        }
-        Ok(())
-    }
-
-    fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus) {
-        self.load_assignment.update_endpoint_health(endpoint, health);
-    }
-
-    fn get_http_connection(&mut self, lb_hash: Option<HashState>) -> Result<HttpChannel> {
-        debug!("{} : Getting connection", self.name);
-        self.load_assignment.get_http_channel(lb_hash)
-    }
-
-    fn get_tcp_connection(&mut self) -> Result<BoxFuture<'static, std::result::Result<TcpStream, ConnectError>>> {
-        self.load_assignment.get_tcp_channel()
-    }
-
-    fn get_grpc_connection(&mut self) -> Result<GrpcService> {
-        self.load_assignment.get_grpc_channel()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use orion_data_plane_api::decode::from_yaml;
+    use decode::from_yaml;
+    use orion_configuration::config::transport::BindDevice;
+    use orion_data_plane_api::decode;
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::cluster::v3::Cluster as EnvoyCluster;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -347,6 +235,7 @@ mod tests {
                 assert_eq!(&d.bind_device, &expected_bind_device);
                 d.load_assignment.as_ref()
             },
+            ClusterType::OnDemand(_) => unreachable!("OnDemand cluster has no load assignment"),
         };
 
         if let Some(load_assignment) = cla {

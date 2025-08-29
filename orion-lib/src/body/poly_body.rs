@@ -18,7 +18,7 @@
 //
 //
 
-use super::timeout_body::{TimeoutBody, TimeoutBodyError};
+use super::body_with_timeout::{BodyWithTimeout, TimeoutBodyError};
 use bytes::Bytes;
 use http_body_util::{Empty, Full};
 use hyper::body::{Body, Incoming};
@@ -30,7 +30,7 @@ pub enum PolyBody {
     Empty(#[pin] Empty<Bytes>),
     Full(#[pin] Full<Bytes>),
     Incoming(#[pin] Incoming),
-    Timeout(#[pin] TimeoutBody<Incoming>),
+    Timeout(#[pin] BodyWithTimeout<Incoming>),
     Grpc(#[pin] GrpcBody),
 }
 
@@ -38,6 +38,18 @@ impl Default for PolyBody {
     #[inline]
     fn default() -> Self {
         PolyBody::Empty(Empty::<Bytes>::default())
+    }
+}
+
+impl std::fmt::Debug for PolyBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PolyBody::Empty(_) => f.write_str("PolyBody::Empty"),
+            PolyBody::Full(body) => f.write_str(&format!("PolyBody::Full {body:?}")),
+            PolyBody::Incoming(_) => f.write_str("PolyBody::Incoming"),
+            PolyBody::Timeout(body) => f.write_str(&format!("PolyBody::Timeout: {body:?}")),
+            PolyBody::Grpc(_) => f.write_str("PolyBody::Grpc"),
+        }
     }
 }
 
@@ -104,9 +116,9 @@ impl From<Incoming> for PolyBody {
     }
 }
 
-impl From<TimeoutBody<Incoming>> for PolyBody {
+impl From<BodyWithTimeout<Incoming>> for PolyBody {
     #[inline]
-    fn from(body: TimeoutBody<Incoming>) -> Self {
+    fn from(body: BodyWithTimeout<Incoming>) -> Self {
         PolyBody::Timeout(body)
     }
 }

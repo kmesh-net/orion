@@ -1,47 +1,78 @@
 [package]
-edition = "2021"
-name = "orion-lib"
-publish = ["rust-inhuawei-com"]
-version = "0.1.0"
+edition.workspace      = true
+license-file.workspace = true
+name                   = "orion-lib"
+rust-version.workspace = true
+version.workspace      = true
 
 [dependencies]
-abort-on-drop.workspace       = true
-atomic-time                   = "0.1.4"
-bytes.workspace               = true
-compact_str.workspace         = true
-enum_dispatch                 = "0.3.13"
-futures.workspace             = true
-h2                            = "0.4.5"
-hickory-resolver              = { version = "0.24", features = ["system-config"] }
-http.workspace                = true
-http-body.workspace           = true
-http-body-util.workspace      = true
-hyper                         = { version = "1", features = ["full"] }
-hyper-rustls                  = { version = "0.27.1", features = ["default", "http2"] }
-hyper-util.workspace    = true
+abort-on-drop.workspace = true
+ahash = "0.8.11"
+arc-swap = "1.7.1"
+arrayvec = "0.7.6"
+async-stream = "0.3"
+atomic-time = "0.1.4"
+bytes.workspace = true
+compact_str.workspace = true
+enum_dispatch = "0.3.13"
+exponential-backoff.workspace = true
+futures.workspace = true
+futures-util = { version = "0.3", default-features = false }
+h2 = "0.4.5"
+hickory-resolver = { version = "0.24", features = ["system-config"] }
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+hyper = { version = "1", features = ["full"] }
+hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
+ipnet = "2.9"
+once_cell = { version = "1.19" }
+opentelemetry = "0.29.0"
+orion-client = { package = "hyper-util", version = "0.1.15", features = [
+  "full",
+] }
 orion-configuration.workspace = true
-orion-error.workspace         = true
-orion-xds.workspace           = true
-parking_lot                   = "0.12.3"
-pin-project                   = "1.1.5"
-pingora-timeout               = "0.3.0"
-pretty-duration               = "0.1.1"
-rand                          = { version = "0.8.5", features = ["small_rng"] }
-rustc-hash                    = "2.1.1"
-rustls                        = "0.23"
-rustls-pemfile                = "2.1"
-rustls-platform-verifier      = { version = "0.3" }
-rustls-webpki                 = "0.102"
-serde.workspace               = true
-thiserror.workspace           = true
-thread_local                  = "1.1.8"
-tokio.workspace               = true
-tokio-rustls                  = "0.26"
-tower.workspace               = true
-tracing.workspace             = true
-twox-hash                     = "1.6.3"
-typed-builder                 = "0.18.2"
-x509-parser                   = { version = "0.17", features = ["default"] }
+orion-data-plane-api.workspace = true
+orion-error.workspace = true
+orion-format.workspace = true
+orion-http-header.workspace = true
+orion-interner.workspace = true
+orion-metrics.workspace = true
+orion-tracing.workspace = true
+orion-xds.workspace = true
+parking_lot = "0.12.3"
+bounded-integer.workspace = true
+pin-project = "1.1.5"
+pingora-timeout = "0.3.0"
+ppp.workspace = true
+pretty-duration = "0.1.1"
+rand = { version = "0.8.5", features = ["small_rng"] }
+regex.workspace = true
+rustc-hash = "1.1.0"
+rustls = "0.23"
+rustls-pemfile = "2.1"
+rustls-platform-verifier = { version = "0.3" }
+rustls-webpki = "0.102"
+scopeguard = "1.2.0"
+serde.workspace = true
+smol_str = "0.3.2"
+thiserror.workspace = true
+thread-id = "5.0.0"
+thread_local = "1.1.8"
+tokio.workspace = true
+tokio-rustls = "0.26"
+tokio-stream.workspace = true
+tower.workspace = true
+tower-service = "0.3.2"
+traceparent = "0.0.3"
+tracing.workspace = true
+tracing-appender = "0.2.3"
+twox-hash = "1.6.3"
+typed-builder = "0.18.2"
+url.workspace = true
+uuid = { version = "1.17.0", features = ["v4"] }
+x509-parser = { version = "0.17", features = ["default"] }
+
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true
@@ -51,8 +82,8 @@ tracing-test.workspace         = true
 [features]
 # making sure we are not using pure ring
 aws_lc_rs = ["rustls/aws_lc_rs"]
-default = ["aws_lc_rs"]
-
+default   = ["aws_lc_rs"]
+metrics   = ["orion-metrics/metrics"]
 
 [lints]
 workspace = true

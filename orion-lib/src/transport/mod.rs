@@ -19,19 +19,25 @@
 //
 
 use tokio::io::{AsyncRead, AsyncWrite};
+
 pub mod bind_device;
 pub mod connector;
 mod grpc_channel;
 mod http_channel;
 mod resolver;
-mod tcp_channel;
+pub mod tcp_channel;
 pub use resolver::resolve;
-pub mod request_context;
+pub mod policy;
+pub mod proxy_protocol;
 pub mod tls_inspector;
+pub mod transport_socket;
+
 pub use self::{
-    grpc_channel::GrpcService,
+    grpc_channel::{GrpcService, SimpleRoundRobinGrpcServiceLB},
     http_channel::{HttpChannel, HttpChannelBuilder},
-    tcp_channel::TcpChannel,
+    proxy_protocol::ProxyProtocolReader,
+    tcp_channel::TcpChannelConnector,
+    transport_socket::UpstreamTransportSocketConfigurator,
 };
 
 pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Send + Sync + Unpin {}

@@ -83,7 +83,7 @@ mod tests {
     };
 
     fn expected_conn_manager() -> HttpConnectionManager {
-        HttpConnectionManager { server_name: "name".to_string(), ..Default::default() }
+        HttpConnectionManager { server_name: "name".to_owned(), ..Default::default() }
     }
 
     /// In a previous version there was a different impl of the Any type was
@@ -96,7 +96,7 @@ mod tests {
         // same as the envoy HttpConnectionManager server_name
         // (api/envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto)
         const PAYLOAD: &[u8] = b"R\x04name";
-        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec().into() };
+        let v = Any { type_url: "url".into(), value: PAYLOAD.to_vec() };
         let m: HttpConnectionManager = decode_any_type(&v, "---").unwrap();
         assert_eq!(m, expected_conn_manager());
 
@@ -117,23 +117,23 @@ filterChains:
             "#;
 
     fn prost_payload_listen_filter() -> Vec<u8> {
-        let http_man = HttpConnectionManager { server_name: "name".to_string(), ..Default::default() };
+        let http_man = HttpConnectionManager { server_name: "name".to_owned(), ..Default::default() };
 
         let any = Any {
             type_url:
                 "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
                     .to_string(),
-            value: http_man.encode_to_vec().into(),
+            value: http_man.encode_to_vec(),
         };
 
         let filter = Filter {
-            name: "envoy.filters.network.http_connection_manager".to_string(),
+            name: "envoy.filters.network.http_connection_manager".to_owned(),
             config_type: Some(ConfigType::TypedConfig(any)),
         };
 
         let fc = FilterChain { filters: vec![filter], ..Default::default() };
 
-        Listener { name: "name".to_string(), filter_chains: vec![fc], ..Default::default() }.encode_to_vec()
+        Listener { name: "name".to_owned(), filter_chains: vec![fc], ..Default::default() }.encode_to_vec()
     }
 
     /// In a previous version there was a different impl of the Any type was

@@ -152,11 +152,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use compact_str::ToCompactString;
     use orion_configuration::config::cluster::HttpProtocolOptions;
     use std::sync::Arc;
-
-    use rustls::ClientConfig;
 
     use super::DefaultBalancer;
     use crate::{
@@ -165,7 +162,7 @@ mod test {
             health::HealthStatus,
             load_assignment::{LbEndpoint, LocalityLbEndpoints},
         },
-        secrets::{TlsConfigurator, WantsToBuildClient},
+        transport::UpstreamTransportSocketConfigurator,
     };
     type TestpointData = (u32, u32, Vec<(http::uri::Authority, u32, HealthStatus)>);
 
@@ -179,16 +176,16 @@ mod test {
                 if health_status == HealthStatus::Healthy {
                     healthy += 1;
                 }
-                lb_endpoints.push(Arc::new(LbEndpoint::new(auth, None, weight, health_status)));
+                lb_endpoints.push(Arc::new(LbEndpoint::new(auth, "test_cluster", None, weight, health_status)));
             }
 
             loc_lb_endpoints.push(LocalityLbEndpoints {
-                name: "Cluster1".to_compact_string(),
+                name: "Cluster1",
                 endpoints: lb_endpoints,
                 priority,
                 healthy_endpoints: healthy,
                 total_endpoints: u32::try_from(len).expect("Too many endpoints"),
-                tls_configurator: Option::<TlsConfigurator<ClientConfig, WantsToBuildClient>>::None,
+                transport_socket: UpstreamTransportSocketConfigurator::None,
                 http_protocol_options: HttpProtocolOptions::default(),
                 connection_timeout: None,
             });

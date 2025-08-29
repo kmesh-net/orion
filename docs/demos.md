@@ -19,16 +19,13 @@ docker run --rm -p 4004:80 ealen/echo-server
 
 3. Make some calls with Curl
 
-
-Return pre-canned response
+    Return pre-canned response
 
 ```shell
 curl -i http://127.0.0.1:8000/direct-response
 ```
 
-
-Route to an endpoint configured in cluster 1. If there are no endpoints available it will return 502
-
+        Route to an endpoint configured in cluster 1. If there are no endpoints available it will return 502
 
 ```shell
 curl -i http://127.0.0.1:8000/blah

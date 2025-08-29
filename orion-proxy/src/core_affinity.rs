@@ -20,8 +20,7 @@
 
 use orion_configuration::config::runtime::{Affinity, CoreId};
 use orion_lib::Result;
-use std::collections::BTreeMap;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::runtime::RuntimeId;
 
