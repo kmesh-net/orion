@@ -91,7 +91,7 @@ impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
 #[derive(Debug, Clone)]
 pub struct FilterchainBuilder {
     name: CompactString,
-    listener_name: Option<&'static str>,
+    listener_name: Option<String>,
     filter_chain_match_hash: u64,
     main_filter: MainFilterBuilder,
     rbac_filters: Vec<NetworkRbac>,
@@ -99,8 +99,8 @@ pub struct FilterchainBuilder {
 }
 
 impl FilterchainBuilder {
-    pub fn with_listener_name(self, name: &'static str) -> Self {
-        FilterchainBuilder { listener_name: Some(name), ..self }
+    pub fn with_listener_name(self, name: &str) -> Self {
+        FilterchainBuilder { listener_name: Some(name.to_string()), ..self }
     }
 
     pub fn build(self) -> Result<FilterchainType> {
@@ -114,12 +114,12 @@ impl FilterchainBuilder {
         let handler = match self.main_filter {
             MainFilterBuilder::Http(http_connection_manager) => ConnectionHandler::Http(Arc::new(
                 http_connection_manager
-                    .with_listener_name(listener_name)
+                    .with_listener_name(&listener_name)
                     .with_filter_chain_match_hash(self.filter_chain_match_hash)
                     .build()?,
             )),
             MainFilterBuilder::Tcp(tcp_proxy) => {
-                ConnectionHandler::Tcp(tcp_proxy.with_listener_name(listener_name).build()?)
+                ConnectionHandler::Tcp(tcp_proxy.with_listener_name(&listener_name).build()?)
             },
         };
         Ok(FilterchainType { config, handler })
@@ -173,19 +173,32 @@ impl FilterchainType {
         stream: AsyncStream,
         downstream_metadata: Arc<DownstreamMetadata>,
         shard_id: ThreadId,
-        listener_name: &'static str,
+        listener_name: &str,
         start_instant: std::time::Instant,
     ) -> Result<()> {
         let Self { config, handler } = self;
+        let listener_str = listener_name.to_string();
         match handler {
             ConnectionHandler::Http(http_connection_manager) => {
-                with_metric!(http::DOWNSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
-                with_metric!(http::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                with_metric!(
+                    http::DOWNSTREAM_CX_TOTAL,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("listener", listener_str.clone())]
+                );
+                with_metric!(
+                    http::DOWNSTREAM_CX_ACTIVE,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("listener", listener_str.clone())]
+                );
                 defer! {
-                    with_metric!(http::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
-                    with_metric!(http::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    with_metric!(http::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_str.clone())]);
+                    with_metric!(http::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_str.clone())]);
                     let ms = u64::try_from(start_instant.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    with_histogram!(http::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+                    with_histogram!(http::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_str.clone())]);
                 }
 
                 let req_handler = http_connection_manager.request_handler();
@@ -198,9 +211,9 @@ impl FilterchainType {
 
                 let (stream, selected_codec) = if let Some(tls_configurator) = tls_configurator {
                     let (stream, negotiated) =
-                        start_tls(http_connection_manager.listener_name, stream, tls_configurator, Some(codec_type))
+                        start_tls(&http_connection_manager.listener_name, stream, tls_configurator, Some(codec_type))
                             .await?;
-                    with_metric!(tls::HANDSHAKES, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    with_metric!(tls::HANDSHAKES, add, 1, shard_id, &[KeyValue::new("listener", listener_str.clone())]);
 
                     // if we negotiated a protocol over ALPN, use that instead of the configured CodecType.
                     // since we use codec_type to determine our alpn response, we will never negotiate a protocol not covered by codec_type
@@ -245,17 +258,29 @@ impl FilterchainType {
                     .map_err(Error::from)
             },
             ConnectionHandler::Tcp(tcp_proxy) => {
-                with_metric!(tcp::DOWNSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
-                with_metric!(tcp::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                with_metric!(
+                    tcp::DOWNSTREAM_CX_TOTAL,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("listener", listener_str.clone())]
+                );
+                with_metric!(
+                    tcp::DOWNSTREAM_CX_ACTIVE,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("listener", listener_str.clone())]
+                );
                 defer! {
-                    with_metric!(tcp::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
-                    with_metric!(tcp::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                    with_metric!(tcp::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_str.clone())]);
+                    with_metric!(tcp::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_str.clone())]);
                     let ms = u64::try_from(start_instant.elapsed().as_millis()).unwrap_or(u64::MAX);
-                    with_histogram!(tcp::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+                    with_histogram!(tcp::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_str.clone())]);
                 }
 
                 let tcp_proxy = tcp_proxy.clone();
-                let listener_name = tcp_proxy.listener_name;
+                let listener_name = tcp_proxy.listener_name.clone();
                 let server_config = config
                     .tls_configurator
                     .clone()
@@ -263,7 +288,7 @@ impl FilterchainType {
 
                 let (stream, _alpns): (Box<dyn AsyncReadWrite>, Option<AlpnCodecs>) =
                     if let Some(server_config) = server_config {
-                        start_tls(listener_name, stream, server_config, None).await?
+                        start_tls(&listener_name, stream, server_config, None).await?
                     } else {
                         (Box::new(stream), None)
                     };
@@ -286,7 +311,7 @@ fn negotiate_codec_type<'a>(codec_type: CodecType, client_alpns: impl Iterator<I
 }
 
 async fn start_tls(
-    listener_name: &'static str,
+    listener_name: &str,
     stream: AsyncStream,
     mut config: ServerConfig,
     codec_type: Option<CodecType>,

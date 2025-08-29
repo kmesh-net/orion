@@ -157,7 +157,7 @@ mod test {
         clusters::{
             balancers::{wrr::WeightedRoundRobinBalancer, Balancer},
             health::HealthStatus,
-            load_assignment::{LbEndpoint, LocalityLbEndpoints},
+            load_assignment::{EndpointAddressType, LbEndpoint, LocalityLbEndpoints},
         },
         transport::UpstreamTransportSocketConfigurator,
     };
@@ -229,7 +229,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint11:8000",
             "endpoint12:8000",
@@ -284,7 +292,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint11:8000",
             "endpoint12:8000",
@@ -339,7 +355,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint11:8000",
             "endpoint12:8000",
@@ -394,7 +418,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint21:8000",
             "endpoint22:8000",
@@ -449,7 +481,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint21:8000",
             "endpoint22:8000",
@@ -504,7 +544,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint21:8000",
             "endpoint22:8000",
@@ -559,7 +607,15 @@ mod test {
             results.push(next);
         }
 
-        let results: Vec<_> = results.into_iter().filter_map(|r| r.map(|f| f.authority.to_string())).collect();
+        let results: Vec<_> = results
+            .into_iter()
+            .filter_map(|r| {
+                r.map(|f| match &f.address {
+                    EndpointAddressType::Socket(authority) => authority.to_string(),
+                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                })
+            })
+            .collect();
         let expected = [
             "endpoint21:8000",
             "endpoint31:8000",
