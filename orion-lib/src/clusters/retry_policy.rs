@@ -52,7 +52,7 @@ pub enum EventError {
 
 // DISCLAIMER: This is a workaround for the fact that `EventError` can't implement `Clone`.
 // Cloning is not possible because `Elapsed` and `io::Error` do not implement `Clone`.
-// Their presence in `EventError` is required by the `orion_client` crate, as it needs
+// Their presence in `EventError` is required by the `hyper_util` crate, as it needs
 // to traverse the `EventError` to extract either the underlying `io::Error` or `Elapsed`
 // in order to produce a more specific error message.
 // In this case, we create a new `EventError` by reconstructing the `io::Error`
@@ -126,7 +126,7 @@ impl<'a> TryInferFrom<&'a (dyn std::error::Error + 'static)> for EventError {
             }
         }
 
-        if let Some(h_err) = err.downcast_ref::<orion_client::client::legacy::Error>() {
+        if let Some(h_err) = err.downcast_ref::<hyper_util::client::legacy::Error>() {
             if let Some(source) = h_err.source() {
                 return Self::try_infer_from(source);
             }

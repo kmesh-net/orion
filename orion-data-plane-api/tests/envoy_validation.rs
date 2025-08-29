@@ -126,10 +126,10 @@ typed_extension_protocol_options:
             assert_eq!(ka.interval.as_ref().unwrap(), &Duration { seconds: 30, nanos: 0 });
             assert_eq!(ka.timeout.as_ref().unwrap(), &Duration { seconds: 5, nanos: 0 });
         } else {
-            panic!("Expecting http2 options, got {:?}", cfg);
+            panic!("Expecting http2 options, got {cfg:?}");
         }
     } else {
-        panic!("Expecting ExplicitHttpConfig, got {:?}", upstream_opts);
+        panic!("Expecting ExplicitHttpConfig, got {upstream_opts:?}");
     }
 }
 

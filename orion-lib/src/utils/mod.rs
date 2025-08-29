@@ -20,4 +20,3 @@
 
 pub mod http;
 pub mod rewindable_stream;
-pub mod tokio;
