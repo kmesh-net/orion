@@ -138,11 +138,10 @@ impl XdsConfigurationHandler {
             tokio::time::sleep(RETRY_INTERVAL).await;
         };
 
-        let _xds_worker: ChildTask<_> = tokio::spawn(async move {
+        tokio::spawn(async move {
             let subscribe = worker.run().await;
             info!("Worker exited {subscribe:?}");
-        })
-        .into();
+        });
 
         loop {
             select! {
