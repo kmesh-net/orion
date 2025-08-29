@@ -29,7 +29,7 @@ use orion_format::types::ResponseFlags as FmtResponseFlags;
 
 use http::{header, HeaderMap, HeaderValue, StatusCode, Version};
 use hyper::{Request, Response};
-use orion_client::rt::TokioIo;
+use hyper_util::rt::TokioIo;
 use orion_configuration::config::network_filters::http_connection_manager::UpgradeType;
 use tokio::io::copy_bidirectional;
 use tracing::error;

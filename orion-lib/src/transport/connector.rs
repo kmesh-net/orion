@@ -29,7 +29,7 @@ use std::{
 
 use http::uri::Authority;
 use hyper::Uri;
-use orion_client::rt::TokioIo;
+use hyper_util::rt::TokioIo;
 use orion_error::{Context, WithContext};
 use orion_format::types::ResponseFlags;
 use pingora_timeout::fast_timeout::fast_timeout;

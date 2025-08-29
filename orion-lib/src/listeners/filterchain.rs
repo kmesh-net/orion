@@ -26,14 +26,14 @@ use crate::{
     listeners::{filter_state::DownstreamConnectionMetadata, http_connection_manager::ExtendedRequest},
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::AsyncReadWrite,
-    utils::tokio::TokioExecutor,
     AsyncStream, ConversionContext, Error, Result,
 };
 use compact_str::CompactString;
 use futures::TryFutureExt;
 use hyper::{service::Service, Request};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use hyper_util::server::conn::auto::Builder as HyperServerBuilder;
 use opentelemetry::KeyValue;
-use orion_client::{rt::TokioIo, server::conn::auto::Builder as HyperServerBuilder};
 use orion_configuration::config::{
     listener::{FilterChain as FilterChainConfig, MainFilter},
     network_filters::{
@@ -223,7 +223,7 @@ impl FilterchainType {
                 };
 
                 debug!("{listener_name} tried to negotiate {codec_type:?}, got {selected_codec:?}");
-                let mut hyper_server = HyperServerBuilder::new(TokioExecutor);
+                let mut hyper_server = HyperServerBuilder::new(TokioExecutor::new());
                 let stream = TokioIo::new(stream);
                 //todo(hayley): we should be applying listener http settings here
                 hyper_server = match selected_codec {

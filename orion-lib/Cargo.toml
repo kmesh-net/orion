@@ -28,9 +28,7 @@ hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
 ipnet = "2.9"
 once_cell = { version = "1.19" }
 opentelemetry = "0.29.0"
-orion-client = { package = "hyper-util", version = "0.1.15", features = [
-  "full",
-] }
+hyper-util.workspace = true
 orion-configuration.workspace = true
 orion-data-plane-api.workspace = true
 orion-error.workspace = true

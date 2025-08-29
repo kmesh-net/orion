@@ -135,7 +135,7 @@ impl TryFrom<&str> for TypeUrl {
             "type.googleapis.com/envoy.config.route.v3.RouteConfiguration" => Ok(TypeUrl::RouteConfiguration),
             "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment" => Ok(TypeUrl::ClusterLoadAssignment),
             "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret" => Ok(TypeUrl::Secret),
-            value => Err(XdsError::UnknownResourceType(format!("did not recognise type_url {}", value))),
+            value => Err(XdsError::UnknownResourceType(format!("did not recognise type_url {value}"))),
         }
     }
 }

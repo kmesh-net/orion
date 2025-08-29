@@ -29,7 +29,7 @@ mod listeners;
 mod secrets;
 pub(crate) mod thread_local;
 mod transport;
-pub(crate) mod utils;
+mod utils;
 
 use std::sync::OnceLock;
 
