@@ -57,7 +57,7 @@ impl ListenerInfo {
 pub struct ListenersManager {
     configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
-    listener_handles: BTreeMap<&'static str, ListenerInfo>,
+    listener_handles: BTreeMap<String, ListenerInfo>,
 }
 
 impl ListenersManager {
@@ -119,23 +119,27 @@ impl ListenersManager {
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name();
-        let (addr, dev) = listener.get_socket();
-        info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+        let listener_name = listener.get_name().clone();
+        if let Some((addr, dev)) = listener.get_socket() {
+            info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+        } else {
+            info!("Internal listener {}", listener_name);
+        }
+        let listener_name_for_spawn = listener_name.clone();
         // spawn the task for this listener address, this will spawn additional task per connection
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
-            warn!("Listener {listener_name} exited: {error}");
+            warn!("Listener {listener_name_for_spawn} exited: {error}");
         });
         #[cfg(debug_assertions)]
-        if self.listener_handles.contains_key(&listener_name) {
+        if self.listener_handles.contains_key(&listener_name.to_string()) {
             debug!("Listener {listener_name} already exists, replacing it");
         }
         // note: join handle gets overwritten here if it already exists.
         // handles are abort on drop so will be aborted, closing the socket
         // but the any tasks spawned within this task, which happens on a per-connection basis,
         // will survive past this point and only get dropped when their session ends
-        self.listener_handles.insert(listener_name, ListenerInfo::new(join_handle, listener_conf));
+        self.listener_handles.insert(listener_name.to_string(), ListenerInfo::new(join_handle, listener_conf));
 
         Ok(())
     }
@@ -176,7 +180,10 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+            address: orion_configuration::config::listener::ListenerAddress::Socket(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                1234,
+            )),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -215,7 +222,10 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+            address: orion_configuration::config::listener::ListenerAddress::Socket(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                1234,
+            )),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,

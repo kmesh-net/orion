@@ -460,6 +460,7 @@ mod tests {
             }),
             cleanup_interval,
             transport_socket: None,
+            internal_transport_socket: None,
             bind_device: None,
             load_balancing_policy: LbPolicy::ClusterProvided,
             http_protocol_options: HttpProtocolOptions::default(),
