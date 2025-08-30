@@ -49,8 +49,8 @@ regex.workspace = true
 rustc-hash = "1.1.0"
 rustls = "0.23"
 rustls-pemfile = "2.1"
-rustls-platform-verifier = { version = "0.3" }
-rustls-webpki = "0.102"
+rustls-platform-verifier = { version = "0.6" }
+rustls-webpki = "0.103"
 scopeguard = "1.2.0"
 serde.workspace = true
 smol_str = "0.3.2"
