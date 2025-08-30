@@ -77,6 +77,19 @@ docker run -d \
 | ------------------ | ---------------------------------------- | ----------- |
 | `CONTROL_PLANE_IP` | IP address of the control plane          | `127.0.0.1` |
 | `LOG_LEVEL`        | Logging level (debug, info, warn, error) | `info`      |
+| `ORION_CPU_LIMIT`  | Number of CPU cores/threads to use. Set this to control Orion's concurrency, especially in containers. | (auto-detect) |
+### Example: Setting CPU Limit in Docker
+
+To explicitly set the number of CPU cores/threads Orion should use:
+
+```bash
+docker run -d \
+  -e ORION_CPU_LIMIT=2 \
+  --name orion-proxy \
+  orion-proxy
+```
+
+Or, in Kubernetes, use the Downward API as shown in the main README.
 
 ## Verification
 

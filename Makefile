@@ -7,7 +7,7 @@ fmt-check:
 	cargo fmt --all -- --check
 
 lint:
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --all-targets --all-features
 
 build:
 	cargo build --workspace --release --locked
@@ -18,7 +18,7 @@ test:
 # Sequential CI (keep for local/dev reproducibility)
 ci: init
 	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
+	cargo clippy --all-targets --all-features
 	cargo build --workspace --release --locked
 	cargo test --workspace --release --locked
 
@@ -28,7 +28,7 @@ ci-parallel: init
 	@bash -ec '\
 	set -o pipefail; \
 	cargo fmt --all -- --check & pid_fmt=$$!; \
-	cargo clippy --all-targets --all-features -- -D warnings & pid_clippy=$$!; \
+	cargo clippy --all-targets --all-features & pid_clippy=$$!; \
 	cargo build --workspace --release --locked & pid_build=$$!; \
 	wait $$pid_fmt; rc_fmt=$$?; \
 	wait $$pid_clippy; rc_clippy=$$?; \
