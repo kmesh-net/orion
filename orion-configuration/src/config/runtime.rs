@@ -56,9 +56,10 @@ impl Runtime {
     #[must_use]
     pub fn update_from_env_and_options(self, opt: &Options) -> Self {
         Runtime {
-            num_cpus: var("ORION_GATEWAY_CORES")
+            num_cpus: var("ORION_CPU_LIMIT")
                 .ok()
                 .and_then(|v| v.parse::<NonZeroUsize>().ok())
+                .or_else(|| var("ORION_GATEWAY_CORES").ok().and_then(|v| v.parse::<NonZeroUsize>().ok()))
                 .or(opt.num_cpus)
                 .unwrap_or(self.num_cpus),
 
@@ -111,22 +112,17 @@ pub(crate) fn non_zero_num_cpus() -> NonZeroUsize {
     NonZeroUsize::try_from(cpus).expect("found zero cpus")
 }
 
-
 #[cfg(target_os = "linux")]
 fn detect_available_cpus() -> usize {
     match get_container_cpu_limit() {
-        Ok(container_cpus) if container_cpus > 0 => {
+        Ok(container_cpus) => {
             tracing::debug!("Detected container CPU limit: {}", container_cpus);
             container_cpus
-        }
-        Ok(zero_cpus) => {
-            tracing::debug!("Container CPU limit is {}, falling back to system CPU count.", zero_cpus);
-            num_cpus::get()
-        }
+        },
         Err(e) => {
             tracing::debug!("Could not detect container CPU limit: {}. Falling back to system CPU count.", e);
             num_cpus::get()
-        }
+        },
     }
 }
 
@@ -136,17 +132,14 @@ fn detect_available_cpus() -> usize {
 }
 
 fn get_container_cpu_limit() -> crate::Result<usize> {
-    if let Ok(cpus) = get_cgroup_v2_cpu_limit() {
-        return Ok(cpus);
-    }
-    get_cgroup_v1_cpu_limit()
+    get_cgroup_v2_cpu_limit().or_else(|_| get_cgroup_v1_cpu_limit())
 }
 
 fn get_cgroup_v2_cpu_limit() -> crate::Result<usize> {
     if !std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists() {
         return Err("cgroups v2 not available".into());
     }
-    
+
     if let Ok(content) = std::fs::read_to_string("/sys/fs/cgroup/cpu.max") {
         return parse_cgroup_v2_cpu_max(&content);
     }
@@ -172,7 +165,7 @@ fn get_cgroup_v1_cpu_limit() -> crate::Result<usize> {
     let cgroup_path = get_cgroup_v1_cpu_path()?;
     let quota_path = format!("{}/cpu.cfs_quota_us", cgroup_path);
     let period_path = format!("{}/cpu.cfs_period_us", cgroup_path);
-    
+
     let quota_content = std::fs::read_to_string(&quota_path)?;
     let period_content = std::fs::read_to_string(&period_path)?;
 
@@ -189,17 +182,20 @@ fn parse_cgroup_v1_cpu_limit(quota_content: &str, period_content: &str) -> crate
             return Ok(cpus);
         }
     }
-    
+
     Err("No valid cgroups v1 CPU limit found".into())
 }
 
 fn get_cgroup_v1_cpu_path() -> crate::Result<String> {
     let cgroup_content = std::fs::read_to_string("/proc/self/cgroup")?;
-    
+    parse_cgroup_v1_cpu_path(&cgroup_content)
+}
+
+fn parse_cgroup_v1_cpu_path(cgroup_content: &str) -> crate::Result<String> {
     if let Some(path) = cgroup_content.lines().find_map(|line| {
         let mut parts = line.split(':');
         if let (Some(_), Some(controllers), Some(path)) = (parts.next(), parts.next(), parts.next()) {
-            if controllers.contains("cpu") && !controllers.contains("cpuacct") && !controllers.contains("cpuset") {
+            if controllers.split(',').any(|c| c == "cpu") {
                 return Some(format!("/sys/fs/cgroup/cpu{}", path));
             }
         }
@@ -207,7 +203,7 @@ fn get_cgroup_v1_cpu_path() -> crate::Result<String> {
     }) {
         return Ok(path);
     }
-    
+
     if std::path::Path::new("/sys/fs/cgroup/cpu").exists() {
         Ok("/sys/fs/cgroup/cpu".to_string())
     } else {
@@ -308,7 +304,7 @@ mod tests {
         let content = "200000 100000\n";
         let result = parse_cgroup_v2_cpu_max(content);
         assert_eq!(result.unwrap(), 2);
-        
+
         // Test max case (no limit)
         let content = "max 100000\n";
         let result = parse_cgroup_v2_cpu_max(content);
@@ -331,7 +327,7 @@ mod tests {
     #[test]
     fn test_runtime_env_override() {
         std::env::set_var("ORION_GATEWAY_CORES", "4");
-        
+
         let runtime = Runtime::default();
         let options = crate::options::Options {
             config_files: crate::options::ConfigFiles {
@@ -341,6 +337,7 @@ mod tests {
             },
             num_cpus: None,
             num_runtimes: None,
+            num_service_threads: None,
             global_queue_interval: None,
             event_interval: None,
             max_io_events_per_tick: None,
@@ -348,7 +345,7 @@ mod tests {
             core_ids: None,
         };
         let updated_runtime = runtime.update_from_env_and_options(&options);
-        
+
         assert_eq!(updated_runtime.num_cpus(), 4);
         std::env::remove_var("ORION_GATEWAY_CORES");
     }

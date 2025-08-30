@@ -28,6 +28,37 @@ Orion Proxy configuration is generated from Envoy's xDS protobuf definitions. Or
 
 ## Quick Start
 
+**Note:** To control how many CPU cores/threads Orion uses (especially in containers), set the `ORION_CPU_LIMIT` environment variable. In Kubernetes, use the Downward API:
+
+```yaml
+env:
+    - name: ORION_CPU_LIMIT
+        valueFrom:
+            resourceFieldRef:
+                resource: limits.cpu
+                divisor: "1"
+```
+
+## CPU/Thread Limit Configuration
+
+Orion can be configured to use a specific number of CPU cores/threads by setting the `ORION_CPU_LIMIT` environment variable. This is especially useful in containerized environments where access to `/sys/fs` may be restricted.
+
+### Kubernetes Example (Downward API)
+
+Add the following to your container spec to set `ORION_CPU_LIMIT` to the container's CPU limit:
+
+```yaml
+env:
+    - name: ORION_CPU_LIMIT
+        valueFrom:
+            resourceFieldRef:
+                resource: limits.cpu
+                divisor: "1"
+```
+
+Orion will automatically use this value to determine the number of threads/cores.
+
+
 ### Building
 ```console
 git clone https://github.com/kmesh-net/orion

@@ -985,6 +985,7 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 request_mirror_policies,
                 metadata,
+                ..
             } = envoy;
             unsupported_field!(
                 // name,
@@ -1160,6 +1161,7 @@ mod envoy_conversions {
                 per_request_buffer_limit_bytes,
                 stat_prefix,
                 action,
+                ..
             } = envoy;
             unsupported_field!(
                 //name,

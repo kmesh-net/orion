@@ -68,6 +68,7 @@ mod envoy_conversions {
                 use_tag_extracted_name,
                 prefix,
                 protocol_specifier,
+                ..
             } = value;
             unsupported_field!(
                 // prefix,
