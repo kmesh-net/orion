@@ -158,6 +158,43 @@ pub struct FilterChain {
     pub terminal_filter: MainFilter,
 }
 
+impl FilterChain {
+    pub fn get_http_connection_manager(&self) -> Option<&HttpConnectionManager> {
+        match &self.terminal_filter {
+            MainFilter::Http(hcm) => Some(hcm),
+            MainFilter::Tcp(_) => None,
+        }
+    }
+
+    pub fn get_tls_secret_names(&self) -> Option<Vec<String>> {
+        self.tls_config.as_ref().and_then(|tls| {
+            let mut secret_names = Vec::new();
+
+            match &tls.common_tls_context.secrets {
+                crate::config::transport::Secrets::SdsConfig(sds_names) => {
+                    secret_names.extend(sds_names.iter().map(|name| name.to_string()));
+                },
+                crate::config::transport::Secrets::Certificates(_) => {},
+            }
+
+            if let Some(validation_context) = &tls.common_tls_context.validation_context {
+                match validation_context {
+                    crate::config::transport::CommonTlsValidationContext::SdsConfig(sds_name) => {
+                        secret_names.push(sds_name.to_string());
+                    },
+                    crate::config::transport::CommonTlsValidationContext::ValidationContext(_) => {},
+                }
+            }
+
+            if secret_names.is_empty() {
+                None
+            } else {
+                Some(secret_names)
+            }
+        })
+    }
+}
+
 //todo(hayley): neater serialize/deserialize
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ServerNameMatch {
