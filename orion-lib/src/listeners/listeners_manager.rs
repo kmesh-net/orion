@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use orion_configuration::config::{
     network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
@@ -122,19 +122,18 @@ impl ListenersManager {
         let listener_name = listener.get_name();
         let (addr, dev) = listener.get_socket();
         info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+
+        // Stop existing listener if one exists with the same name to prevent mixed responses
+        if self.listener_handles.contains_key(&listener_name) {
+            info!("Listener {listener_name} already exists, stopping existing listener before starting new one");
+            self.stop_listener(&listener_name)?;
+        }
+
         // spawn the task for this listener address, this will spawn additional task per connection
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
             warn!("Listener {listener_name} exited: {error}");
         });
-        #[cfg(debug_assertions)]
-        if self.listener_handles.contains_key(&listener_name) {
-            debug!("Listener {listener_name} already exists, replacing it");
-        }
-        // note: join handle gets overwritten here if it already exists.
-        // handles are abort on drop so will be aborted, closing the socket
-        // but the any tasks spawned within this task, which happens on a per-connection basis,
-        // will survive past this point and only get dropped when their session ends
         self.listener_handles.insert(listener_name, ListenerInfo::new(join_handle, listener_conf));
 
         Ok(())
@@ -193,10 +192,8 @@ mod tests {
         man.start_listener(l2, l2_info).unwrap();
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
-
-        // This should fail because the old listener exited already dropping the rx
+        // The first listener should now be stopped, so this should fail
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_err());
-        // Yield once more just in case more logs can be seen
         tokio::task::yield_now().await;
     }
 
