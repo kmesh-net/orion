@@ -22,7 +22,6 @@ use crate::{
     transport::connector::TcpErrorContext,
     AsyncStream, Result,
 };
-use compact_str::ToCompactString;
 use orion_configuration::config::{
     cluster::ClusterSpecifier as ClusterSpecifierConfig,
     network_filters::{access_log::AccessLog, tcp_proxy::TcpProxy as TcpProxyConfig},
@@ -32,6 +31,7 @@ use orion_format::{
     types::ResponseFlags,
     LogFormatterLocal,
 };
+use smol_str::ToSmolStr;
 use std::{fmt, net::SocketAddr, sync::Arc, time::Instant};
 use tracing::{debug, error};
 
@@ -175,7 +175,7 @@ impl TcpProxy {
         });
         let permit = log_access_reserve_balanced().await;
         let messages = access_loggers.into_iter().map(LogFormatterLocal::into_message).collect::<Vec<_>>();
-        log_access(permit, Target::Listener(self.listener_name.to_compact_string()), messages);
+        log_access(permit, Target::Listener(self.listener_name.to_smolstr()), messages);
         res
     }
 }

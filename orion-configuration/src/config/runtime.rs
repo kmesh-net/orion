@@ -22,7 +22,6 @@ use std::{
     num::{NonZeroU32, NonZeroUsize},
     ops::Deref,
 };
-use tracing;
 
 use crate::options::Options;
 
@@ -144,7 +143,7 @@ fn get_cgroup_v2_cpu_limit() -> crate::Result<usize> {
 }
 
 fn parse_cgroup_v2_cpu_max(content: &str) -> crate::Result<usize> {
-    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() == 2 && parts[0] != "max" {
         let quota: i64 = parts[0].parse()?;
         let period: i64 = parts[1].parse()?;
@@ -160,7 +159,7 @@ fn parse_cgroup_v2_cpu_max(content: &str) -> crate::Result<usize> {
 
 fn get_cgroup_v1_cpu_limit() -> crate::Result<usize> {
     let cgroup_path = get_cgroup_v1_cpu_path()?;
-    let quota_path = format!("{}/cpu.cfs_quota_us", cgroup_path);
+    let quota_path = format!("{cgroup_path}/cpu.cfs_quota_us");
     let period_path = format!("{}/cpu.cfs_period_us", cgroup_path);
 
     let quota_content = std::fs::read_to_string(&quota_path)?;

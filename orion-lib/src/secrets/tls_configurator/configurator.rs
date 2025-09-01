@@ -24,7 +24,6 @@ use crate::{
     },
     Result, SecretManager,
 };
-use compact_str::CompactString;
 use orion_configuration::config::{
     cluster::{TlsConfig as TlsClientConfig, TlsSecret},
     listener::TlsConfig as TlsServerConfig,
@@ -39,6 +38,7 @@ use rustls::{
     ClientConfig, RootCertStore, ServerConfig,
 };
 use rustls_platform_verifier::Verifier;
+use smol_str::SmolStr;
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 use tracing::{debug, warn};
 use webpki::types::ServerName;
@@ -181,7 +181,7 @@ impl TryFrom<TlsCertificateConfig> for ClientCert {
 
 #[derive(Clone)]
 pub struct ServerCert {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub key: Arc<PrivateKeyDer<'static>>,
     pub certs: Arc<Vec<CertificateDer<'static>>>,
 }
@@ -325,7 +325,7 @@ impl TryFrom<(TlsServerConfig, &SecretManager)> for TlsConfigurator<ServerConfig
                 let mut certs_and_secret_ids = vec![];
                 for certificate in certs {
                     certs_and_secret_ids.push(SecretHolder::new(
-                        CompactString::default(),
+                        SmolStr::default(),
                         ServerCert::try_from(CertificateSecret::try_from(&certificate)?)?,
                     ));
                 }
@@ -351,10 +351,7 @@ impl TryFrom<(TlsServerConfig, &SecretManager)> for TlsConfigurator<ServerConfig
 
         let ctx_builder = TlsContextBuilder::with_supported_versions(supported_versions);
         let ctx_builder = if let Some(certificate_store) = certificate_store {
-            ctx_builder.with_server_certificate_store(
-                certificate_store_secret_id.map(CompactString::into_string),
-                certificate_store,
-            )
+            ctx_builder.with_server_certificate_store(certificate_store_secret_id.map(SmolStr::into), certificate_store)
         } else {
             ctx_builder.with_no_client_auth()
         }
@@ -400,17 +397,15 @@ impl TryFrom<(TlsClientConfig, &SecretManager)> for TlsConfigurator<ClientConfig
         let Some(certificate_store) = certificate_store else {
             return Err("UpstreamContext : no TLS validation options found".into());
         };
-        let ctx_builder = TlsContextBuilder::with_supported_versions(supported_versions).with_client_certificate_store(
-            certificate_store_secret_id.map(CompactString::into_string),
-            certificate_store,
-        );
+        let ctx_builder = TlsContextBuilder::with_supported_versions(supported_versions)
+            .with_client_certificate_store(certificate_store_secret_id.map(SmolStr::into), certificate_store);
 
         let ctx_builder = if let Some(client_certificate) = client_certificate {
-            ctx_builder.with_client_certificate(secret_id.map(CompactString::into_string), Arc::new(client_certificate))
+            ctx_builder.with_client_certificate(secret_id.map(SmolStr::into), Arc::new(client_certificate))
         } else {
             ctx_builder.with_no_client_auth()
         }
-        .with_sni(sni.into_string());
+        .with_sni(sni.into());
 
         let config = ctx_builder.build()?;
 
@@ -429,7 +424,7 @@ impl TlsConfigurator<(), ()> {
     fn create_certificate_store(
         secret_manager: &SecretManager,
         validation_options: Option<CommonTlsValidationContext>,
-    ) -> Result<(Option<CompactString>, Option<Arc<RootCertStore>>)> {
+    ) -> Result<(Option<SmolStr>, Option<Arc<RootCertStore>>)> {
         match validation_options {
             Some(CommonTlsValidationContext::ValidationContext(validation_context)) => {
                 Ok((None, Some(CertStore::try_from(&validation_context)?.into())))

@@ -16,13 +16,13 @@
 //
 
 use crate::config::core::DataSource;
-use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Secret {
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(flatten)]
     pub kind: Type,
 }
@@ -100,19 +100,19 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{Secret, TlsCertificate, Type, ValidationContext};
     use crate::config::common::*;
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::{
         secret::Type as EnvoyType, CertificateValidationContext as EnvoyCertificateValidationContext,
         Secret as EnvoySecret, TlsCertificate as EnvoyTlsCertificate,
     };
+    use smol_str::SmolStr;
 
     impl TryFrom<EnvoySecret> for Secret {
         type Error = GenericError;
         fn try_from(envoy: EnvoySecret) -> Result<Self, Self::Error> {
             let EnvoySecret { name, r#type } = envoy;
-            let name: CompactString = required!(name)?.into();
+            let name = required!(name)?;
             let kind = convert_opt!(r#type, "type").with_name(name.clone())?;
-            Ok(Self { name, kind })
+            Ok(Self { name: SmolStr::from(name), kind })
         }
     }
     impl TryFrom<EnvoyType> for Type {

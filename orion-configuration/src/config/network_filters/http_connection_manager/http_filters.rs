@@ -16,8 +16,8 @@
 //
 
 pub mod http_rbac;
-use compact_str::CompactString;
 use http_rbac::HttpRbac;
+use smol_str::SmolStr;
 pub mod local_rate_limit;
 use local_rate_limit::LocalRateLimit;
 pub mod router;
@@ -48,7 +48,7 @@ impl From<FilterConfigOverride> for FilterOverride {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct HttpFilter {
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(skip_serializing_if = "is_default", default)]
     pub disabled: bool,
     #[serde(flatten)]
@@ -72,7 +72,6 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, HttpRbac};
     use crate::config::common::*;
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::route::v3::FilterConfig as EnvoyFilterConfig,
@@ -90,10 +89,11 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use smol_str::SmolStr;
 
     #[derive(Debug, Clone)]
     pub(crate) struct SupportedEnvoyHttpFilter {
-        pub name: CompactString,
+        pub name: SmolStr,
         pub disabled: bool,
         pub filter: SupportedEnvoyFilter,
     }
@@ -103,14 +103,14 @@ mod envoy_conversions {
         fn try_from(envoy: EnvoyHttpFilter) -> Result<Self, Self::Error> {
             let EnvoyHttpFilter { name, is_optional, disabled, config_type } = envoy;
             unsupported_field!(is_optional)?;
-            let name: CompactString = required!(name)?.into();
+            let name = required!(name)?;
             match required!(config_type).map(|x| match x {
                 EnvoyConfigType::ConfigDiscovery(_) => {
                     Err(GenericError::unsupported_variant("ConfigDiscovery")).with_node(name.clone())
                 },
                 EnvoyConfigType::TypedConfig(typed_config) => SupportedEnvoyFilter::try_from(typed_config),
             }) {
-                Ok(Ok(filter)) => Ok(Self { name, filter, disabled }),
+                Ok(Ok(filter)) => Ok(Self { name: SmolStr::from(name), filter, disabled }),
                 Err(e) | Ok(Err(e)) => Err(e.with_name(name)),
             }
         }

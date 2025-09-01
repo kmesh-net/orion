@@ -104,7 +104,6 @@ pub async fn get_config_dump(State(admin_state): State<AdminState>) -> Json<Valu
 mod config_dump_tests {
     use super::{super::*, *};
     use axum_test::TestServer;
-    use compact_str::CompactString;
     use orion_configuration::config::{
         core::DataSource,
         network_filters::http_connection_manager::header_modifer::HeaderModifier,
@@ -114,6 +113,7 @@ mod config_dump_tests {
     use orion_lib::{ConfigDump, ListenerConfigurationChange};
     use parking_lot::RwLock;
     use serde_json::json;
+    use smol_str::SmolStr;
     use std::{sync::Arc, time::Instant};
     use tokio::sync::mpsc;
 
@@ -142,7 +142,7 @@ mod config_dump_tests {
     #[test]
     fn test_redact_secrets_tls_certificate() {
         let secret = Secret {
-            name: CompactString::from("test_tls"),
+            name: SmolStr::new_static("test_tls"),
             kind: Type::TlsCertificate(
                 TlsCertificate::try_from(EnvoyTlsCertificate {
                     certificate_chain: Some(EnvoyDataSource {
@@ -171,7 +171,7 @@ mod config_dump_tests {
     #[test]
     fn test_redact_secrets_validation_context() {
         let secret = Secret {
-            name: CompactString::from("test_validation"),
+            name: SmolStr::new_static("test_validation"),
             kind: Type::ValidationContext(
                 ValidationContext::try_from(EnvoyCertificateValidationContext {
                     trusted_ca: Some(EnvoyDataSource {
@@ -231,7 +231,6 @@ mod config_dump_tests {
 
     #[tokio::test]
     async fn config_dump_listeners_and_routes() {
-        use compact_str::CompactString;
         use orion_configuration::config::{
             listener::{FilterChain, FilterChainMatch, Listener, MainFilter},
             network_filters::http_connection_manager::{
@@ -239,20 +238,21 @@ mod config_dump_tests {
                 CodecType, HttpConnectionManager, Route, RouteConfiguration, RouteSpecifier, VirtualHost, XffSettings,
             },
         };
+        use smol_str::SmolStr;
         use std::{
             collections::HashMap,
             net::{IpAddr, Ipv4Addr, SocketAddr},
             time::Duration,
         };
         let listener = Listener {
-            name: CompactString::from("listener1"),
+            name: SmolStr::new_static("listener1"),
             address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080),
             filter_chains: {
                 let mut map = HashMap::new();
                 map.insert(
                     FilterChainMatch::default(),
                     FilterChain {
-                        name: CompactString::from("fc1"),
+                        name: SmolStr::new_static("fc1"),
                         filter_chain_match_hash: 0,
                         tls_config: None,
                         rbac: vec![],
@@ -262,13 +262,13 @@ mod config_dump_tests {
                             http_filters: vec![],
                             enabled_upgrades: vec![],
                             route_specifier: RouteSpecifier::RouteConfig(RouteConfiguration {
-                                name: CompactString::from("route_config1"),
+                                name: SmolStr::new_static("route_config1"),
                                 most_specific_header_mutations_wins: false,
                                 response_header_modifier: HeaderModifier::default(),
                                 request_headers_to_add: vec![],
                                 request_headers_to_remove: vec![],
                                 virtual_hosts: vec![VirtualHost {
-                                    name: CompactString::from("vh1"),
+                                    name: SmolStr::new_static("vh1"),
                                     domains: vec![],
                                     routes: vec![Route {
                                         name: "test_route".to_owned(),
@@ -325,7 +325,6 @@ mod config_dump_tests {
 
     #[tokio::test]
     async fn config_dump_clusters() {
-        use compact_str::CompactString;
         use orion_configuration::config::{
             cluster::{
                 Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
@@ -333,10 +332,11 @@ mod config_dump_tests {
             },
             core::envoy_conversions::Address,
         };
+        use smol_str::SmolStr;
         use std::{num::NonZeroU32, time::Duration};
         let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
-            name: CompactString::from("cluster1"),
+            name: SmolStr::new_static("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
@@ -378,7 +378,6 @@ mod config_dump_tests {
 
     #[tokio::test]
     async fn config_dump_endpoints() {
-        use compact_str::CompactString;
         use orion_configuration::config::{
             cluster::{
                 Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
@@ -386,10 +385,11 @@ mod config_dump_tests {
             },
             core::envoy_conversions::Address,
         };
+        use smol_str::SmolStr;
         use std::{num::NonZeroU32, time::Duration};
         let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
-            name: CompactString::from("cluster1"),
+            name: SmolStr::new_static("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
@@ -432,8 +432,8 @@ mod config_dump_tests {
 
     #[tokio::test]
     async fn config_dump_secrets() {
-        use compact_str::CompactString;
         use orion_configuration::config::secret::{Secret, TlsCertificate, Type, ValidationContext};
+        use smol_str::SmolStr;
         use std::fs;
         let mut secret_manager = orion_lib::SecretManager::new();
 
@@ -454,7 +454,7 @@ mod config_dump_tests {
         .unwrap();
 
         let tls_secret = Secret {
-            name: CompactString::from("beefcake_dublin"),
+            name: SmolStr::new_static("beefcake_dublin"),
             kind: Type::TlsCertificate(
                 TlsCertificate::try_from(
                     orion_data_plane_api::envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::TlsCertificate {
@@ -481,7 +481,7 @@ mod config_dump_tests {
             ),
         };
         let validation_secret = Secret {
-            name: CompactString::from("beefcake_ca"),
+            name: SmolStr::new_static("beefcake_ca"),
             kind: Type::ValidationContext(
                 ValidationContext::try_from(
                     orion_data_plane_api::envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::CertificateValidationContext {

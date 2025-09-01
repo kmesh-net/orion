@@ -16,7 +16,6 @@
 //
 
 use crate::Result;
-use compact_str::{CompactString, ToCompactString};
 use orion_configuration::{
     config::secret::{Secret, TlsCertificate, Type, ValidationContext},
     VerifySingleIter,
@@ -27,6 +26,7 @@ use rustls::{
     RootCertStore,
 };
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use smol_str::{SmolStr, ToSmolStr};
 use std::sync::Arc;
 use tracing::{debug, warn};
 use webpki::types::ServerName;
@@ -76,7 +76,7 @@ pub struct SecretManager {
 
 #[derive(Debug, Clone)]
 pub struct CertificateSecret {
-    pub name: Option<CompactString>,
+    pub name: Option<SmolStr>,
     pub key: Arc<PrivateKeyDer<'static>>,
     pub certs: Arc<Vec<CertificateDer<'static>>>,
     pub config: TlsCertificate,
@@ -120,7 +120,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
                 let is_server_name = ServerName::try_from(name.clone()).is_ok();
                 debug!("Certificate SAN name {san_name} {name } is server name {is_server_name}");
                 if is_server_name {
-                    server_name = Some(name.to_compact_string());
+                    server_name = Some(name.to_smolstr());
                 }
             }
         }

@@ -36,7 +36,7 @@ tower.workspace                = true
 tracing.workspace              = true
 
 axum = "0.8.1"
-compact_str.workspace = true
+smol_str.workspace = true
 http.workspace = true
 opentelemetry = "0.29.0"
 prometheus = { version = "0.14.0", features = ["process"] }

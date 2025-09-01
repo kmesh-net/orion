@@ -18,9 +18,9 @@
 use crate::config::common::*;
 use base64::engine::general_purpose::STANDARD;
 use base64_serde::base64_serde_type;
-use compact_str::CompactString;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -31,18 +31,18 @@ base64_serde_type!(Base64Standard, STANDARD);
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DataSource {
-    Path(CompactString),
+    Path(SmolStr),
     InlineBytes(#[serde(with = "Base64Standard")] Vec<u8>),
-    InlineString(CompactString),
-    EnvironmentVariable(CompactString),
+    InlineString(SmolStr),
+    EnvironmentVariable(SmolStr),
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataSourceReadError {
     #[error("failed to read file \"{0}\"")]
-    IoError(CompactString, #[source] std::io::Error),
+    IoError(SmolStr, #[source] std::io::Error),
     #[error("failed to read environment variable \"{0}\"")]
-    EnvError(CompactString, #[source] std::env::VarError),
+    EnvError(SmolStr, #[source] std::env::VarError),
 }
 
 impl DataSource {
@@ -199,10 +199,10 @@ impl StringMatcher {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StringMatcherPattern {
-    Exact(CompactString),
-    Prefix(CompactString),
-    Suffix(CompactString),
-    Contains(CompactString),
+    Exact(SmolStr),
+    Prefix(SmolStr),
+    Suffix(SmolStr),
+    Contains(SmolStr),
     Regex(#[serde(with = "serde_regex")] Regex),
 }
 

@@ -22,13 +22,13 @@ mod log_writer;
 pub mod logger;
 mod pool;
 
-use compact_str::CompactString;
 use logger::AccessLogger;
 use once_cell::sync::OnceCell;
 use orion_configuration::config::network_filters::access_log::AccessLogConf;
 use orion_format::FormattedMessage;
 use parking_lot::Mutex;
 use pool::LoggerPool;
+use smol_str::SmolStr;
 use tracing_appender::rolling::Rotation;
 
 use std::{fmt::Display, hash::Hash, sync::Arc};
@@ -44,7 +44,7 @@ use tracing::{error, info};
 /// - `Admin`: Refers to the Envoy admin interface.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Target {
-    Listener(CompactString),
+    Listener(SmolStr),
     Admin,
 }
 

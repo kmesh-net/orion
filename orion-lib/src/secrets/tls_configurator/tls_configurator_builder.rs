@@ -17,11 +17,11 @@
 
 use std::sync::Arc;
 
-use compact_str::CompactString;
 use rustls::{
     client::WebPkiServerVerifier, server::WebPkiClientVerifier, sign::CertifiedKey, ClientConfig, RootCertStore,
     ServerConfig, SupportedProtocolVersion,
 };
+use smol_str::SmolStr;
 use tracing::{debug, warn};
 
 use super::configurator::{get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert};
@@ -47,7 +47,7 @@ pub struct WantsClientCert {
 
 #[derive(Debug, Clone)]
 pub struct SecretHolder {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub server_cert: ServerCert,
 }
 
@@ -71,7 +71,7 @@ impl Ord for SecretHolder {
     }
 }
 impl SecretHolder {
-    pub fn new(name: CompactString, server_cert: ServerCert) -> Self {
+    pub fn new(name: SmolStr, server_cert: ServerCert) -> Self {
         Self { name, server_cert }
     }
 }
