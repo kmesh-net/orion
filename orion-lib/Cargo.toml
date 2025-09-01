@@ -26,6 +26,7 @@ http-body-util.workspace = true
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
 ipnet = "2.9"
+lru = "0.12.3"
 once_cell = { version = "1.19" }
 opentelemetry = "0.29.0"
 hyper-util.workspace = true
