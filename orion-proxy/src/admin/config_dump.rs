@@ -307,6 +307,8 @@ mod config_dump_tests {
             bind_device: None,
             proxy_protocol_config: None,
             with_tls_inspector: false,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         let (configuration_senders, handle) = spawn_mock_listener_manager(Some(vec![listener]));
         let admin_state = AdminState {

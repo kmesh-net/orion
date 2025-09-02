@@ -2122,6 +2122,7 @@ dependencies = [
  "orion-error",
  "orion-format",
  "orion-interner",
+ "prost",
  "regex",
  "serde",
  "serde_json",

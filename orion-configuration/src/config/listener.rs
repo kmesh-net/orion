@@ -52,6 +52,10 @@ pub struct Listener {
     pub with_tls_inspector: bool,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub proxy_protocol_config: Option<super::listener_filters::DownstreamProxyProtocolConfig>,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub with_tlv_listener_filter: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub tlv_listener_filter_config: Option<super::listener_filters::TlvListenerFilterConfig>,
 }
 
 impl Listener {
@@ -440,6 +444,8 @@ mod envoy_conversions {
                 let listener_filters: Vec<ListenerFilter> = convert_vec!(listener_filters)?;
                 let mut with_tls_inspector = false;
                 let mut proxy_protocol_config = None;
+                let mut with_tlv_listener_filter = false;
+                let mut tlv_listener_filter_config = None;
 
                 for filter in listener_filters {
                     match filter.config {
@@ -457,6 +463,14 @@ mod envoy_conversions {
                             }
                             proxy_protocol_config = Some(config);
                         },
+                        ListenerFilterConfig::TlvListenerFilter(config) => {
+                            if with_tlv_listener_filter {
+                                return Err(GenericError::from_msg("duplicate TLV listener filter"))
+                                    .with_node("listener_filters");
+                            }
+                            with_tlv_listener_filter = true;
+                            tlv_listener_filter_config = Some(config);
+                        },
                     }
                 }
                 let bind_device = convert_vec!(socket_options)?;
@@ -465,7 +479,16 @@ mod envoy_conversions {
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
-                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector, proxy_protocol_config })
+                Ok(Self {
+                    name,
+                    address,
+                    filter_chains,
+                    bind_device,
+                    with_tls_inspector,
+                    proxy_protocol_config,
+                    with_tlv_listener_filter,
+                    tlv_listener_filter_config,
+                })
             }())
             .with_name(name)
         }
