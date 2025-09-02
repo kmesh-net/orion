@@ -191,7 +191,10 @@ pub fn update_tls_context(secret_id: &str, secret: &TransportSecret) -> Result<V
 }
 
 pub fn add_cluster(partial_cluster: PartialClusterType) -> Result<ClusterType> {
-    let cluster = partial_cluster.build()?;
+    let cluster = partial_cluster.build();
+    dbg!(&cluster);
+    let cluster = cluster?;
+
     let cluster_name = cluster.get_name();
 
     CLUSTERS_MAP.update(|current| match current.entry(cluster_name) {

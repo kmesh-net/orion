@@ -1,0 +1,17 @@
+[package]
+name = "hyper_unix_listener"
+description.workspace = true
+edition.workspace = true
+license-file.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+tokio.workspace = true
+hyper = { version = "1", features = ["full"] }
+clap = { version = "4.5.46", features = ["derive"] }
+
+hyperlocal = "0.9.1"
+
+[lints]
+workspace = true

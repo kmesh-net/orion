@@ -67,7 +67,7 @@ use std::{
     thread::ThreadId,
     time::{Duration, Instant},
 };
-use tracing::debug;
+use tracing::{debug, warn};
 use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
@@ -112,7 +112,7 @@ pub struct HttpChannel {
 pub enum HttpChannelClient {
     Plain(Arc<LocalObject<Arc<HttpClient>, Builder, LocalConnectorWithDNSResolver>>),
     Tls(ClientContext),
-    Unix(hyperlocal::Uri, Arc<Client<UnixConnector, BodyWithMetrics<PolyBody>>>),
+    Unix(hyper::Uri, Arc<Client<UnixConnector, BodyWithMetrics<PolyBody>>>),
 }
 
 impl HttpChannelClient {
@@ -286,12 +286,14 @@ impl HttpChannelBuilder {
 
         match self.address {
             Some(Address::Pipe(name, _)) => {
-                let uri = Uri::new(name.clone(), "/");
-
+                warn!("Building address from a pipe {name}");
+                let uri: hyper::Uri = Uri::new(name.clone(), "/").into();
+                let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
+                warn!("Building address from a pipe {uri:?}");
                 Ok(HttpChannel {
                     client: HttpChannelClient::Unix(uri, Arc::new(Client::unix())),
                     http_version: self.http_protocol_options.codec,
-                    upstream_authority: Authority::try_from(name.as_bytes())?,
+                    upstream_authority: authority,
                     cluster_name: self.cluster_name.unwrap_or_default(),
                 })
             },

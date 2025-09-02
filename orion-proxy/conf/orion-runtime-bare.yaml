@@ -1,0 +1,25 @@
+#                                       /proxy/    ---> (cluster1) 192.168.2.10:80
+#                                      |
+#  http request ---> 192.168.1.1:8080 -|
+#                                      |
+#                                       (default)  ---> (cluster2) 127.0.0.1:80
+#
+#                                       /proxy/    ---> (cluster3) 192.168.2.10:81 (h2)
+#                                      |
+#  http request ---> 192.168.1.1:8081 -|
+#                                      |
+#                                      / 404
+#
+
+runtime:
+  num_cpus: 2
+  num_runtimes: 2
+  event_interval: 31          # estimated optimal value
+  global_queue_interval: null   # default
+  max_io_events_per_tick: null  # default
+
+logging:
+  log_level: "debug"
+  # log_directory: "."
+  # log_file: "orion.log"
+

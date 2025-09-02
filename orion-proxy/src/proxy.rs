@@ -49,7 +49,10 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+pub fn run_orion(
+    bootstrap: Bootstrap,
+    access_log_config: Option<AccessLogConfig>,
+) -> Result<Vec<ConfigurationSenders>> {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
     // launch the runtimes...
@@ -95,7 +98,10 @@ struct ServiceInfo {
     metrics: Vec<Metrics>,
 }
 
-fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+fn launch_runtimes(
+    bootstrap: Bootstrap,
+    access_log_config: Option<AccessLogConfig>,
+) -> Result<Vec<ConfigurationSenders>> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -119,16 +125,6 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         .flat_map(orion_configuration::config::Listener::get_tracing_configurations)
         .collect::<HashMap<_, _>>();
 
-    // The xDS runtime always runs - this is necessary for initialization even if we do not
-    // use dynamic updates from remote xDS servers. The decision on whether dynamic updates
-    // are used is based on:
-    // - The bootstrap loader from orion-data-plane-api gets the list of cluster names used
-    //   in dynamic_resources/ads_config (for grpc_services)
-    // - resolve ads clusters into endpoints, to be used as xDS address
-    // TODO: the xDS client could receive updates for endpoints too i.e. dynamic clusters. We
-    // should replace this with passing a configuration receiver. For now endpoints from
-    // static clusters.
-
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
     let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into() });
 
@@ -142,7 +138,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
 
     let service_info = ServiceInfo {
         node,
-        configuration_senders: config_senders,
+        configuration_senders: config_senders.clone(),
         secret_manager,
         listener_factories,
         bootstrap,
@@ -200,7 +196,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
             warn!("Closing handler with error {err:?}");
         }
     }
-    Ok(())
+    Ok(config_senders)
 }
 
 type RuntimeHandle = JoinHandle<Result<()>>;

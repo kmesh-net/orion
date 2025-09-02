@@ -1432,6 +1432,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper_unix_listener"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "hyper",
+ "hyperlocal",
+ "tokio",
+]
+
+[[package]]
 name = "hyperlocal"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

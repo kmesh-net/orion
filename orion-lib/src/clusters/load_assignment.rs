@@ -28,7 +28,7 @@ use orion_configuration::config::{
     },
     core::envoy_conversions::Address,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 use typed_builder::TypedBuilder;
 use webpki::types::ServerName;
 
@@ -171,6 +171,7 @@ impl LbEndpointBuilder {
             builder.with_tls(maybe_tls_conf.cloned())
         };
         let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
+
         let tcp_channel = TcpChannelConnector::new(
             &authority,
             cluster_name,
@@ -198,9 +199,12 @@ impl TryFrom<LbEndpointConfig> for PartialLbEndpoint {
     fn try_from(lb_endpoint: LbEndpointConfig) -> Result<Self> {
         let health_status = lb_endpoint.health_status;
         let address = lb_endpoint.address;
-        let authority = http::uri::Authority::try_from(format!("{address}"))?;
+        let authority = match &address {
+            Address::Socket(_, _) => http::uri::Authority::try_from(format!("{address}"))?,
+            Address::Pipe(_, _) => http::uri::Authority::from_static("pipe_dream"),
+        };
         let weight = lb_endpoint.load_balancing_weight.into();
-        Ok(PartialLbEndpoint { authority, address, bind_device: None, weight, health_status })
+        Ok(PartialLbEndpoint { address, authority, bind_device: None, weight, health_status })
     }
 }
 

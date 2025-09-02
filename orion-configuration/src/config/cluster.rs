@@ -67,6 +67,7 @@ pub struct ClusterLoadAssignment {
         deserialize_with = "deser_through::<LocalityLbEndpointsDeser,_,_>"
     )]
     pub endpoints: Vec<LocalityLbEndpoints>,
+    pub cluster_name: String,
 }
 
 fn simplify_locality_lb_endpoints<S: Serializer>(
@@ -605,7 +606,7 @@ mod envoy_conversions {
                         .with_node("endpoints");
                     }
                 }
-                Ok(Self { endpoints })
+                Ok(Self { cluster_name: cluster_name.clone(), endpoints })
             })();
             if !cluster_name.is_empty() {
                 return ret.with_name(cluster_name);
