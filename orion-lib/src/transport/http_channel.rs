@@ -45,9 +45,11 @@ use hyper_util::{
     client::legacy::{connect::Connect, Builder, Client},
     rt::tokio::{TokioExecutor, TokioTimer},
 };
+use hyperlocal::UnixConnector;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
+    core::envoy_conversions::Address,
     network_filters::http_connection_manager::RetryPolicy,
 };
 use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
@@ -110,6 +112,7 @@ pub struct HttpChannel {
 pub enum HttpChannelClient {
     Plain(Arc<LocalObject<Arc<HttpClient>, Builder, LocalConnectorWithDNSResolver>>),
     Tls(ClientContext),
+    Unix(hyperlocal::Uri, Arc<Client<UnixConnector, BodyWithMetrics<PolyBody>>>),
 }
 
 impl HttpChannelClient {
@@ -121,6 +124,7 @@ impl HttpChannelClient {
 #[derive(Default)]
 pub struct HttpChannelBuilder {
     tls: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    address: Option<Address>,
     authority: Option<Authority>,
     bind_device: Option<BindDevice>,
     server_name: Option<ServerName<'static>>,
@@ -158,6 +162,10 @@ impl HttpChannelBuilder {
         Self { authority: Some(authority), ..self }
     }
 
+    pub fn with_address(self, address: Address) -> Self {
+        Self { address: Some(address), ..self }
+    }
+
     pub fn with_cluster_name(self, cluster_name: &'static str) -> Self {
         Self { cluster_name: Some(cluster_name), ..self }
     }
@@ -172,6 +180,52 @@ impl HttpChannelBuilder {
 
     #[allow(clippy::cast_sign_loss)]
     pub fn build(self) -> crate::Result<HttpChannel> {
+        match self.address {
+            Some(Address::Socket(_, _)) => self.build_channel_from_address(),
+            Some(Address::Pipe(_, _)) => self.build_channel_from_pipe(),
+            None => Err(Error::from("Address is mandatory")),
+        }
+    }
+
+    fn configure_hyper_client(&self) -> Builder {
+        let mut client_builder = Client::builder(TokioExecutor::new());
+        client_builder
+            .timer(TokioTimer::new())
+            .pool_idle_timeout(self.http_protocol_options.common.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT))
+            .pool_timer(TokioTimer::new())
+            .pool_max_idle_per_host(usize::MAX)
+            .set_host(false);
+
+        let configured_upstream_http_version = self.http_protocol_options.codec;
+
+        self.configure_http2_if_needed(&mut client_builder, configured_upstream_http_version);
+
+        client_builder
+    }
+
+    fn configure_http2_if_needed(&self, client_builder: &mut Builder, version: Codec) {
+        if matches!(version, Codec::Http2) {
+            client_builder.http2_only(true);
+            let http2_options = &self.http_protocol_options.http2_options;
+
+            if let Some(settings) = &http2_options.keep_alive_settings {
+                client_builder.http2_keep_alive_interval(settings.keep_alive_interval);
+                if let Some(timeout) = settings.keep_alive_timeout {
+                    client_builder.http2_keep_alive_timeout(timeout);
+                }
+                client_builder.http2_keep_alive_while_idle(true);
+            }
+
+            client_builder.http2_initial_connection_window_size(http2_options.initial_connection_window_size());
+            client_builder.http2_initial_stream_window_size(http2_options.initial_stream_window_size());
+
+            if let Some(max) = http2_options.max_concurrent_streams() {
+                client_builder.http2_max_concurrent_reset_streams(max);
+            }
+        }
+    }
+
+    fn build_channel_from_address(self) -> crate::Result<HttpChannel> {
         let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
         let client_builder = self.configure_hyper_client();
 
@@ -227,91 +281,83 @@ impl HttpChannelBuilder {
         }
     }
 
-    fn configure_hyper_client(&self) -> Builder {
-        let mut client_builder = Client::builder(TokioExecutor::new());
-        client_builder
-            .timer(TokioTimer::new())
-            .pool_idle_timeout(self.http_protocol_options.common.idle_timeout.unwrap_or(DEFAULT_IDLE_TIMEOUT))
-            .pool_timer(TokioTimer::new())
-            .pool_max_idle_per_host(usize::MAX)
-            .set_host(false);
+    fn build_channel_from_pipe(self) -> crate::Result<HttpChannel> {
+        use hyperlocal::{UnixClientExt, Uri};
 
-        let configured_upstream_http_version = self.http_protocol_options.codec;
+        match self.address {
+            Some(Address::Pipe(name, _)) => {
+                let uri = Uri::new(name.clone(), "/");
 
-        self.configure_http2_if_needed(&mut client_builder, configured_upstream_http_version);
-
-        client_builder
-    }
-
-    fn configure_http2_if_needed(&self, client_builder: &mut Builder, version: Codec) {
-        if matches!(version, Codec::Http2) {
-            client_builder.http2_only(true);
-            let http2_options = &self.http_protocol_options.http2_options;
-
-            if let Some(settings) = &http2_options.keep_alive_settings {
-                client_builder.http2_keep_alive_interval(settings.keep_alive_interval);
-                if let Some(timeout) = settings.keep_alive_timeout {
-                    client_builder.http2_keep_alive_timeout(timeout);
-                }
-                client_builder.http2_keep_alive_while_idle(true);
-            }
-
-            client_builder.http2_initial_connection_window_size(http2_options.initial_connection_window_size());
-            client_builder.http2_initial_stream_window_size(http2_options.initial_stream_window_size());
-
-            if let Some(max) = http2_options.max_concurrent_streams() {
-                client_builder.http2_max_concurrent_reset_streams(max);
-            }
+                Ok(HttpChannel {
+                    client: HttpChannelClient::Unix(uri, Arc::new(Client::unix())),
+                    http_version: self.http_protocol_options.codec,
+                    upstream_authority: Authority::try_from(name.as_bytes())?,
+                    cluster_name: self.cluster_name.unwrap_or_default(),
+                })
+            },
+            _ => Err(Error::from("Trying to build a pipe address from invalid address")),
         }
     }
-}
 
-#[cfg(feature = "metrics")]
-fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
-    use tracing::info;
-    let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
-    let shard_id = std::thread::current().id();
-    if let Some(pk) = key.downcast_ref::<PoolKey>() {
-        info!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
-    }
-    match event {
-        ConnectionEvent::NewConnection => {
-            with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-        },
-        ConnectionEvent::IdleConnectionClosed => {
-            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            with_metric!(
-                clusters::UPSTREAM_CX_IDLE_TIMEOUT,
-                add,
-                1,
-                shard_id,
-                &[KeyValue::new("cluster", cluster_name)]
-            );
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-        },
-        ConnectionEvent::ConnectionError => {
-            with_metric!(
-                clusters::UPSTREAM_CX_CONNECT_FAIL,
-                add,
-                1,
-                shard_id,
-                &[KeyValue::new("cluster", cluster_name)]
-            );
-        },
-        ConnectionEvent::ConnectionTimeout => {
-            with_metric!(
-                clusters::UPSTREAM_CX_CONNECT_TIMEOUT,
-                add,
-                1,
-                shard_id,
-                &[KeyValue::new("cluster", cluster_name)]
-            );
-        },
-        ConnectionEvent::ConnectionClosed => {
-            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-        },
+    #[cfg(feature = "metrics")]
+    fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
+        use tracing::info;
+        let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
+        let shard_id = std::thread::current().id();
+        if let Some(pk) = key.downcast_ref::<PoolKey>() {
+            info!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
+        }
+        match event {
+            ConnectionEvent::NewConnection => {
+                with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+                with_metric!(clusters::UPSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            },
+            ConnectionEvent::IdleConnectionClosed => {
+                with_metric!(
+                    clusters::UPSTREAM_CX_DESTROY,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("cluster", cluster_name)]
+                );
+                with_metric!(
+                    clusters::UPSTREAM_CX_IDLE_TIMEOUT,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("cluster", cluster_name)]
+                );
+                with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            },
+            ConnectionEvent::ConnectionError => {
+                with_metric!(
+                    clusters::UPSTREAM_CX_CONNECT_FAIL,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("cluster", cluster_name)]
+                );
+            },
+            ConnectionEvent::ConnectionTimeout => {
+                with_metric!(
+                    clusters::UPSTREAM_CX_CONNECT_TIMEOUT,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("cluster", cluster_name)]
+                );
+            },
+            ConnectionEvent::ConnectionClosed => {
+                with_metric!(
+                    clusters::UPSTREAM_CX_DESTROY,
+                    add,
+                    1,
+                    shard_id,
+                    &[KeyValue::new("cluster", cluster_name)]
+                );
+                with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            },
+        }
     }
 }
 
@@ -358,6 +404,21 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
                     self.send_request(retry_policy, client, req, cluster_name).await
                 };
 
+                HttpChannel::handle_response(result, route_timeout, version)
+            },
+            HttpChannelClient::Unix(_, sender) => {
+                let RequestContext { route_timeout, retry_policy } = request.ctx.clone();
+                let client = sender;
+                let req = maybe_normalize_uri(request.req, false)?;
+
+                let result = if let Some(t) = route_timeout {
+                    match fast_timeout(t, self.send_request(retry_policy, client, req, cluster_name)).await {
+                        Ok(result) => result,
+                        Err(_) => (Err(EventError::RouteTimeout.into()), t),
+                    }
+                } else {
+                    self.send_request(retry_policy, client, req, cluster_name).await
+                };
                 HttpChannel::handle_response(result, route_timeout, version)
             },
         }
@@ -570,6 +631,7 @@ impl HttpChannel {
     pub fn is_https(&self) -> bool {
         match &self.client {
             HttpChannelClient::Plain(_) => false,
+            HttpChannelClient::Unix(_, _) => false,
             HttpChannelClient::Tls(_) => true,
         }
     }
@@ -581,6 +643,7 @@ impl HttpChannel {
     pub fn load(&self) -> u32 {
         let load = match &self.client {
             HttpChannelClient::Plain(sender) => Arc::strong_count(sender.get_or_build()),
+            HttpChannelClient::Unix(_, sender) => Arc::strong_count(sender),
             HttpChannelClient::Tls(sender) => Arc::strong_count(sender.client.get_or_build()),
         };
         u32::try_from(load).unwrap_or(u32::MAX)

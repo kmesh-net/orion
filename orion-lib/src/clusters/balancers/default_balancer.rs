@@ -152,7 +152,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use orion_configuration::config::cluster::HttpProtocolOptions;
+    use orion_configuration::config::{cluster::HttpProtocolOptions, core::envoy_conversions::Address};
     use std::sync::Arc;
 
     use super::DefaultBalancer;
@@ -176,7 +176,15 @@ mod test {
                 if health_status == HealthStatus::Healthy {
                     healthy += 1;
                 }
-                lb_endpoints.push(Arc::new(LbEndpoint::new(auth, "test_cluster", None, weight, health_status)));
+                let address = Address::Socket(auth.host().to_owned(), auth.port_u16().unwrap());
+                lb_endpoints.push(Arc::new(LbEndpoint::new(
+                    auth,
+                    address,
+                    "test_cluster",
+                    None,
+                    weight,
+                    health_status,
+                )));
             }
 
             loc_lb_endpoints.push(LocalityLbEndpoints {
