@@ -91,15 +91,15 @@ impl ClusterOps for DynamicCluster {
         self.health_check
     }
 
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
+    fn all_http_channels(&mut self) -> Vec<(Authority, HttpChannel)> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_http_channels)
     }
 
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)> {
+    fn all_tcp_channels(&mut self) -> Vec<(Authority, TcpChannelConnector)> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_tcp_channels)
     }
 
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
+    fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::try_all_grpc_channels)
     }
 

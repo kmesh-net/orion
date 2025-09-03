@@ -15,13 +15,9 @@
 //
 //
 
-use std::{
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+use std::time::Duration;
 
-use atomic_time::AtomicInstant;
-use lru::LruCache;
+use lru_time_cache::LruCache;
 use rustls::ClientConfig;
 
 use orion_configuration::config::{
@@ -101,11 +97,12 @@ impl OriginalDstClusterBuilder {
             http_config,
             transport_socket,
             bind_device,
-            cleanup_interval: config.cleanup_interval.unwrap_or(DEFAULT_CLEANUP_INTERVAL),
-            endpoints: TimedLruCache::new(),
+            endpoints: LruCache::with_expiry_duration_and_capacity(
+                config.cleanup_interval.unwrap_or(DEFAULT_CLEANUP_INTERVAL),
+                MAXIMUM_ENDPOINTS,
+            ),
             routing_requirements,
             upstream_port_override,
-            last_cleanup_time: Instant::now(),
             config,
         })
     }
@@ -119,17 +116,15 @@ struct HttpChannelConfig {
     http_protocol_options: HttpProtocolOptions,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OriginalDstCluster {
     pub name: &'static str,
     http_config: HttpChannelConfig,
     transport_socket: UpstreamTransportSocketConfigurator,
     bind_device: Option<BindDevice>,
-    cleanup_interval: Duration,
-    endpoints: TimedLruCache<EndpointAddress, Endpoint>,
+    endpoints: LruCache<EndpointAddress, Endpoint>,
     routing_requirements: RoutingRequirement,
     upstream_port_override: Option<u16>,
-    last_cleanup_time: Instant,
     pub config: orion_configuration::config::cluster::Cluster,
 }
 
@@ -142,18 +137,18 @@ impl ClusterOps for OriginalDstCluster {
         None
     }
 
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
-        self.endpoints.iter().map(|(addr, endpoint)| (addr.0.clone(), endpoint.1.http_channel.clone())).collect()
+    fn all_http_channels(&mut self) -> Vec<(Authority, HttpChannel)> {
+        self.endpoints.iter().map(|(addr, endpoint)| (addr.0.clone(), endpoint.http_channel.clone())).collect()
     }
 
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)> {
-        self.endpoints.iter().map(|(addr, endpoint)| (addr.0.clone(), endpoint.1.tcp_channel.clone())).collect()
+    fn all_tcp_channels(&mut self) -> Vec<(Authority, TcpChannelConnector)> {
+        self.endpoints.iter().map(|(addr, endpoint)| (addr.0.clone(), endpoint.tcp_channel.clone())).collect()
     }
 
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
+    fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>> {
         self.endpoints
             .iter()
-            .map(|(addr, endpoint)| endpoint.1.grpc_service().map(|service| (addr.0.clone(), service)))
+            .map(|(addr, endpoint)| endpoint.grpc_service().map(|service| (addr.0.clone(), service)))
             .collect()
     }
 
@@ -214,16 +209,15 @@ impl OriginalDstCluster {
         let authority = self.apply_port_override(authority)?;
 
         let endpoint_addr = EndpointAddress(authority.clone());
-        if let Some(endpoint) = self.endpoints.touch(&endpoint_addr) {
+        if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return endpoint.grpc_service();
         }
 
-        self.cleanup_if_needed();
-
         let endpoint =
             Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
+
         let grpc_service = endpoint.grpc_service()?;
-        self.endpoints.insert(&endpoint_addr, endpoint);
+        self.endpoints.insert(endpoint_addr, endpoint);
         Ok(grpc_service)
     }
 
@@ -231,16 +225,14 @@ impl OriginalDstCluster {
         let authority = self.apply_port_override(authority)?;
 
         let endpoint_addr = EndpointAddress(authority.clone());
-        if let Some(endpoint) = self.endpoints.touch(&endpoint_addr) {
+        if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return Ok(endpoint.tcp_channel.clone());
         }
-
-        self.cleanup_if_needed();
 
         let endpoint =
             Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
         let tcp_connector = endpoint.tcp_channel.clone();
-        self.endpoints.insert(&endpoint_addr, endpoint);
+        self.endpoints.insert(endpoint_addr, endpoint);
         Ok(tcp_connector)
     }
 
@@ -254,46 +246,32 @@ impl OriginalDstCluster {
         let authority = self.apply_port_override(authority)?;
 
         let endpoint_addr = EndpointAddress(authority.clone());
-        if let Some(endpoint) = self.endpoints.touch(&endpoint_addr) {
+        if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return Ok(endpoint.http_channel.clone());
         }
-
-        self.cleanup_if_needed();
 
         let endpoint =
             Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
         let http_channel = endpoint.http_channel.clone();
-        self.endpoints.insert(&endpoint_addr, endpoint);
+        self.endpoints.insert(endpoint_addr, endpoint);
         Ok(http_channel)
-    }
-
-    fn cleanup_if_needed(&mut self) {
-        let now = Instant::now();
-
-        let time_since_last_cleanup = now.duration_since(self.last_cleanup_time);
-        let should_cleanup =
-            self.endpoints.len() >= MAXIMUM_ENDPOINTS || time_since_last_cleanup >= self.cleanup_interval;
-
-        if should_cleanup {
-            self.cleanup();
-
-            if self.endpoints.len() >= MAXIMUM_ENDPOINTS {
-                warn!(
-                    "ORIGINAL_DST cluster {} is running over its connection (pool) limit with {} dynamic endpoints",
-                    self.name,
-                    self.endpoints.len()
-                );
-            }
-        }
-    }
-
-    pub fn cleanup(&mut self) {
-        self.endpoints.cleanup_expired(self.cleanup_interval);
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct EndpointAddress(Authority);
+
+impl PartialOrd for EndpointAddress {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for EndpointAddress {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.as_str().cmp(other.0.as_str())
+    }
+}
 
 #[derive(Debug, Clone)]
 struct Endpoint {
@@ -337,144 +315,46 @@ impl Endpoint {
     }
 }
 
-struct TimedValue<V>(AtomicInstant, V);
-
-impl<V> Clone for TimedValue<V>
-where
-    V: Clone,
-{
-    fn clone(&self) -> Self {
-        TimedValue(AtomicInstant::new(self.0.load(std::sync::atomic::Ordering::Relaxed)), self.1.clone())
-    }
-}
-
-impl<V> std::fmt::Debug for TimedValue<V>
-where
-    V: std::fmt::Debug,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("TimedValue").field(&self.0.load(std::sync::atomic::Ordering::Relaxed)).field(&self.1).finish()
-    }
-}
-
-// TimededLruCache: a lru cache with explicit timestamps
-#[derive(Debug, Clone)]
-struct TimedLruCache<K, V>
-where
-    K: Eq + Clone + std::hash::Hash,
-{
-    cache: LruCache<K, TimedValue<V>>,
-}
-
-impl<K, V> TimedLruCache<K, V>
-where
-    K: Eq + Clone + std::hash::Hash,
-{
-    fn new() -> Self {
-        Self { cache: LruCache::new(unsafe { NonZeroUsize::new_unchecked(MAXIMUM_ENDPOINTS) }) }
-    }
-
-    /// Touch: get and update the timestamp...
-    pub fn touch(&mut self, key: &K) -> Option<&V> {
-        self.cache.get(key).map(|TimedValue(tstamp, value)| {
-            tstamp.store(Instant::now(), std::sync::atomic::Ordering::Relaxed);
-            value
-        })
-    }
-
-    /// Get method without updating access time
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.cache.peek(key).map(|TimedValue(_, value)| value)
-    }
-
-    /// Insert element (or update existing) and update timestamp
-    pub fn insert(&mut self, key: &K, value: V) -> bool {
-        self.cache.put(key.clone(), TimedValue(AtomicInstant::new(Instant::now()), value)).is_none()
-    }
-
-    /// Remove element by key
-    pub fn remove(&mut self, key: &K) -> bool {
-        self.cache.pop(key).is_some()
-    }
-
-    /// Return the number of elements in the cache
-    pub fn len(&self) -> usize {
-        self.cache.len()
-    }
-
-    /// Iterate over keys, from the least recently used to the most recently used
-    pub fn iter(&self) -> impl Iterator<Item = (&K, &TimedValue<V>)> {
-        self.cache.iter().rev()
-    }
-
-    /// Iterate over keys, from the most recently used to the least recently used
-    pub fn iter_mru(&self) -> impl Iterator<Item = (&K, &TimedValue<V>)> {
-        self.cache.iter()
-    }
-
-    /// Cleanup expired elements based on `max_idle` duration...
-    pub fn cleanup_expired(&mut self, max_idle: Duration) -> usize {
-        let Some(cutoff) = Instant::now().checked_sub(max_idle) else {
-            warn!("Invalid ORIGINAL_DST cluster cleanup interval");
-            return 0;
-        };
-
-        let expired = self
-            .cache
-            .iter()
-            .filter(|(_, TimedValue(tstamp, _))| tstamp.load(std::sync::atomic::Ordering::Relaxed) < cutoff)
-            .map(|(k, _)| k.clone())
-            .collect::<Vec<_>>();
-
-        let count = expired.len();
-        for key in expired {
-            self.remove(&key);
-        }
-
-        count
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::{collections::HashMap, time::Duration};
 
-    use super::TimedLruCache;
+    use super::LruCache;
 
     struct LruMapFixture {
-        map: TimedLruCache<usize, &'static str>,
+        map: LruCache<usize, &'static str>,
         control_map: HashMap<usize, &'static str>,
     }
 
     impl LruMapFixture {
         fn new() -> Self {
-            LruMapFixture { map: TimedLruCache::new(), control_map: HashMap::new() }
+            LruMapFixture { map: LruCache::with_capacity(100), control_map: HashMap::new() }
         }
 
         fn insert(&mut self, key: usize, value: &'static str) -> bool {
-            let insert_expectation = self.control_map.insert(key, value).is_none();
-            let insert_result = self.map.insert(&key, value);
+            let insert_expectation = self.control_map.insert(key, value);
+            let insert_result = self.map.insert(key, value);
 
             assert_eq!(insert_result, insert_expectation, "control map expectation unfulfilled");
             assert_eq!(self.map.len(), self.control_map.len(), "control map expectation unfulfilled");
 
-            insert_result
+            insert_result.is_none()
         }
 
         fn remove(&mut self, key: usize) -> bool {
-            let removal_expectation = self.control_map.remove(&key).is_some();
+            let removal_expectation = self.control_map.remove(&key);
             let removal_result = self.map.remove(&key);
             assert_eq!(removal_result, removal_expectation, "control map expectation unfulfilled");
             assert_eq!(self.map.len(), self.control_map.len(), "control map expectation unfulfilled");
 
-            removal_result
+            removal_result.is_some()
         }
 
         fn touch(&mut self, key: usize) -> Option<&str> {
             let value_expectation = self.control_map.get(&key);
-            let value = self.map.touch(&key);
+            let value = self.map.get(&key);
             assert_eq!(value, value_expectation, "control map expectation unfulfilled");
             let value = value.copied(); // &&str -> &str
             assert_eq!(self.map.len(), self.control_map.len(), "control map expectation unfulfilled");
@@ -482,32 +362,27 @@ mod tests {
             value
         }
 
-        fn assert_ordered_values(&self, keys: &[usize], error_message: &str) {
+        fn assert_ordered_values(&mut self, keys: &[usize], error_message: &str) {
             assert_eq!(self.map.len(), keys.len(), "expected same map size");
 
-            let mut values_iter = self.map.iter();
+            let mut values_iter = self.map.peek_iter();
             let mut expected_iter = keys.iter();
             let mut i = 0;
             loop {
                 match (values_iter.next(), expected_iter.next()) {
-                    pair @ (Some((value, _)), Some(expected)) => {
+                    (Some((value, _)), Some(expected)) => {
                         assert_eq!(
                             value,
                             expected,
-                            "expected same map order: {} (index:{i}, map_len:{}, keys:{}, {:?})",
+                            "expected same map order: {} (index:{i}, keys:{})",
                             error_message,
-                            self.map.len(),
                             keys.len(),
-                            self.map
                         )
                     },
                     (None, None) => break,
-                    pair => panic!(
-                        "expected same map values: {} (index:{i}, map_len:{}, keys:{}, {pair:?})",
-                        error_message,
-                        self.map.len(),
-                        keys.len()
-                    ),
+                    pair => {
+                        panic!("expected same map values: {} (index:{i}, keys:{}, {pair:?})", error_message, keys.len())
+                    },
                 }
                 i += 1;
             }
@@ -540,23 +415,23 @@ mod tests {
 
         // Insert another
         assert!(map.insert(1, "1"));
-        map.assert_ordered_values(&[0, 1], "after inserting second element");
+        map.assert_ordered_values(&[1, 0], "after inserting second element");
 
         // Touch oldest element
         assert_eq!(map.touch(0), Some("0"));
-        map.assert_ordered_values(&[1, 0], "after touching oldest element");
+        map.assert_ordered_values(&[0, 1], "after touching oldest element");
 
         // Add another
         assert!(map.insert(2, "2"));
-        map.assert_ordered_values(&[1, 0, 2], "after inserting third element");
+        map.assert_ordered_values(&[2, 0, 1], "after inserting third element");
 
         // Touch oldest element
         assert_eq!(map.touch(1), Some("1"));
-        map.assert_ordered_values(&[0, 2, 1], "after touching oldest element");
+        map.assert_ordered_values(&[1, 2, 0], "after touching oldest element");
 
         // Remove elements
         assert!(map.remove(2));
-        map.assert_ordered_values(&[0, 1], "after removing middle element");
+        map.assert_ordered_values(&[1, 0], "after removing middle element");
 
         assert!(map.remove(1));
         map.assert_ordered_values(&[0], "after removing another element");
