@@ -6,6 +6,8 @@ use glob::glob;
 fn main() -> std::io::Result<()> {
     let descriptor_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("proto_descriptor.bin");
     let protos: Vec<PathBuf> = glob("data-plane-api/envoy/**/v3/*.proto").unwrap().filter_map(Result::ok).collect();
+    let istio_protos: Vec<PathBuf> = glob("udpa/udpa/type/v1/*.proto").unwrap().filter_map(Result::ok).collect();
+    let protos: Vec<PathBuf> = protos.into_iter().chain(istio_protos).collect();
 
     let include_paths = [
         "data-plane-api/",
@@ -17,6 +19,7 @@ fn main() -> std::io::Result<()> {
         "prometheus-client-model/",
         "cel-spec/proto",
         "protobuf/src/",
+        "udpa/udpa/type/v1",
     ];
 
     let mut config = prost_build::Config::new();

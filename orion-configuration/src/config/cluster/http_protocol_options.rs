@@ -195,7 +195,7 @@ mod envoy_conversions {
                 max_headers_count,
                 max_stream_duration,
                 headers_with_underscores_action,
-                max_requests_per_connection,
+                max_requests_per_connection: _,
                 max_response_headers_kb,
             } = value;
             unsupported_field!(
@@ -204,7 +204,7 @@ mod envoy_conversions {
                 max_headers_count,
                 max_stream_duration,
                 headers_with_underscores_action,
-                max_requests_per_connection,
+                //max_requests_per_connection,
                 max_response_headers_kb
             )?;
             let idle_timeout = idle_timeout

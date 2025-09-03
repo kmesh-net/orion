@@ -34,19 +34,18 @@ use crate::{
     thread_local::{LocalBuilder, LocalObject},
     Error, PolyBody, Result,
 };
-use bytes::Bytes;
 use http::{
     uri::{Authority, Parts},
     HeaderValue, Response, Version,
 };
-use http_body_util::{BodyExt, Full};
+use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Uri};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
 use hyper_util::{
     client::legacy::{connect::Connect, Builder, Client},
     rt::tokio::{TokioExecutor, TokioTimer},
 };
-use hyperlocal::{UnixClientExt, UnixConnector};
+use hyperlocal::UnixConnector;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},

@@ -126,13 +126,13 @@ mod envoy_conversions {
                 hds_config,
                 flags_path,
                 stats_sinks,
-                deferred_stat_options,
-                stats_config,
+                deferred_stat_options: _,
+                stats_config: _,
                 stats_flush_interval,
                 watchdog,
                 watchdogs,
                 tracing,
-                layered_runtime,
+                layered_runtime: _,
                 admin,
                 overload_manager,
                 enable_dispatcher_stats,
@@ -141,7 +141,7 @@ mod envoy_conversions {
                 use_tcp_for_dns_lookups,
                 dns_resolution_config,
                 typed_dns_resolver_config,
-                bootstrap_extensions,
+                bootstrap_extensions: _,
                 fatal_actions,
                 config_sources,
                 default_config_source,
@@ -153,7 +153,7 @@ mod envoy_conversions {
                 xds_delegate_extension,
                 xds_config_tracker_extension,
                 listener_manager,
-                application_log_config,
+                application_log_config: _,
                 grpc_async_client_manager_config,
                 stats_flush,
                 memory_allocator_manager,
@@ -168,13 +168,13 @@ mod envoy_conversions {
                 hds_config,
                 flags_path,
                 // stats_sinks,
-                deferred_stat_options,
-                stats_config,
+                //deferred_stat_options,
+                //stats_config,
                 // stats_flush_interval,
                 watchdog,
                 watchdogs,
                 tracing,
-                layered_runtime,
+                //layered_runtime,
                 //admin,
                 overload_manager,
                 enable_dispatcher_stats,
@@ -183,7 +183,7 @@ mod envoy_conversions {
                 use_tcp_for_dns_lookups,
                 dns_resolution_config,
                 typed_dns_resolver_config,
-                bootstrap_extensions,
+                //bootstrap_extensions,
                 fatal_actions,
                 config_sources,
                 default_config_source,
@@ -195,7 +195,7 @@ mod envoy_conversions {
                 xds_delegate_extension,
                 xds_config_tracker_extension,
                 listener_manager,
-                application_log_config,
+                //application_log_config,
                 grpc_async_client_manager_config,
                 stats_flush,
                 memory_allocator_manager
@@ -229,11 +229,11 @@ mod envoy_conversions {
             let EnvoyNode {
                 id,
                 cluster,
-                metadata,
+                metadata: _,
                 dynamic_parameters,
-                locality,
+                locality: _,
                 user_agent_name,
-                extensions,
+                extensions: _,
                 client_features,
                 listening_addresses,
                 user_agent_version_type,
@@ -241,15 +241,16 @@ mod envoy_conversions {
             unsupported_field!(
                 // id,
                 //cluster,
-                metadata,
+                //metadata,
                 dynamic_parameters,
-                locality,
+                //locality,
                 user_agent_name,
-                extensions,
+                //extensions,
                 client_features,
                 listening_addresses,
                 user_agent_version_type
             )?;
+
             let id = required!(id)?.into();
             let cluster = required!(cluster)?.into();
             Ok(Self { id, cluster_id: cluster })
@@ -259,35 +260,35 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyDynamicResources) -> Result<Self, Self::Error> {
             let EnvoyDynamicResources {
-                lds_config,
+                lds_config: _,
                 lds_resources_locator,
-                cds_config,
+                cds_config: _,
                 cds_resources_locator,
                 ads_config,
             } = value;
-            unsupported_field!(lds_config, lds_resources_locator, cds_config, cds_resources_locator)?;
+            unsupported_field!(lds_resources_locator, cds_resources_locator)?;
             let EnvoyApiConfigSource {
-                api_type,
-                transport_api_version,
-                cluster_names,
+                api_type: _,
+                transport_api_version: _,
+                cluster_names: _,
                 grpc_services,
                 refresh_delay,
                 request_timeout,
                 rate_limit_settings,
-                set_node_on_first_message_only,
+                set_node_on_first_message_only: _,
                 config_validators,
             } = required!(ads_config)?;
             let grpc_cluster_specifiers = (|| -> Result<_, GenericError> {
                 unsupported_field!(
                     //todo(hayley): are these required to be set?
-                    api_type,
-                    transport_api_version,
-                    cluster_names,
+                    // api_type,
+                    // transport_api_version,
+                    // cluster_names,
                     // grpc_services,
                     refresh_delay,
                     request_timeout,
                     rate_limit_settings,
-                    set_node_on_first_message_only,
+                    //set_node_on_first_message_only,
                     config_validators
                 )?;
                 (|| -> Result<_, GenericError> {
@@ -343,14 +344,14 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: EnvoyAdmin) -> Result<Self, Self::Error> {
             let EnvoyAdmin {
-                access_log,
+                access_log: _,
                 access_log_path,
-                profile_path,
+                profile_path: _,
                 address,
                 socket_options,
-                ignore_global_conn_limit,
+                ignore_global_conn_limit: _,
             } = envoy;
-            unsupported_field!(access_log, access_log_path, profile_path, socket_options, ignore_global_conn_limit)?;
+            unsupported_field!(access_log_path, socket_options)?;
             let address = match required!(address)?
                 .address
                 .ok_or(GenericError::MissingField("address is mandatory to setup admin interface"))?

@@ -28,7 +28,7 @@ use orion_configuration::config::{
     },
     core::envoy_conversions::Address,
 };
-use tracing::{debug, warn};
+use tracing::debug;
 use typed_builder::TypedBuilder;
 use webpki::types::ServerName;
 
@@ -442,7 +442,6 @@ impl ClusterLoadAssignmentBuilder {
         let protocol_options = self.protocol_options.unwrap_or_default();
 
         let PartialClusterLoadAssignment { endpoints } = self.cla;
-        dbg!(&endpoints);
         let endpoints = endpoints
             .into_iter()
             .map(|e| {

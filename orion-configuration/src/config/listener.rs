@@ -383,9 +383,9 @@ mod envoy_conversions {
                 max_connections_to_accept_per_socket_event,
                 bind_to_port,
                 enable_mptcp,
-                ignore_global_conn_limit,
+                ignore_global_conn_limit: _,
                 listener_specifier,
-                bypass_overload_manager,
+                bypass_overload_manager: _,
                 fcds_config,
             } = envoy;
             unsupported_field!(
@@ -419,9 +419,9 @@ mod envoy_conversions {
                 max_connections_to_accept_per_socket_event,
                 bind_to_port,
                 enable_mptcp,
-                ignore_global_conn_limit,
+                //                ignore_global_conn_limit,
                 listener_specifier,
-                bypass_overload_manager,
+                //bypass_overload_manager,
                 fcds_config
             )?;
             let name: CompactString = required!(name)?.into();

@@ -1407,8 +1407,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.15"
-source = "git+https://github.com/awgn/hyper-util.git?branch=event-handler#c62f9ad8ef929965899209832dbac5629d14764d"
+version = "0.1.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d9b05277c7e8da2c93a568989bb6207bef0112e8d17df7a6eda4a3cf143bc5e"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1422,7 +1423,6 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "scopeguard",
  "socket2 0.5.10",
  "system-configuration",
  "tokio",
@@ -4615,3 +4615,8 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[patch.unused]]
+name = "hyper-util"
+version = "0.1.15"
+source = "git+https://github.com/awgn/hyper-util.git?branch=event-handler#c62f9ad8ef929965899209832dbac5629d14764d"
