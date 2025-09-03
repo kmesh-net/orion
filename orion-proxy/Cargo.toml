@@ -35,7 +35,6 @@ tokio.workspace                = true
 tower.workspace                = true
 tracing.workspace              = true
 
-affinity = "0.1.2"
 axum = "0.8.1"
 compact_str.workspace = true
 http.workspace = true
@@ -59,6 +58,7 @@ tikv-jemallocator = { version = "0.6", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 caps = "0.5"
+affinity = "0.1.2"
 
 [dev-dependencies]
 axum-test              = "17.2.0"
