@@ -22,6 +22,7 @@ use futures::future::join_all;
 use orion_configuration::config::{bootstrap::Node, cluster::ClusterSpecifier, Listener};
 use orion_lib::{
     access_log::{update_configuration, Target},
+    clusters::cluster::ClusterType,
     ConfigurationSenders, ConversionContext, EndpointHealthUpdate, HealthCheckManager, ListenerConfigurationChange,
     ListenerFactory, PartialClusterLoadAssignment, PartialClusterType, Result, RouteConfigurationChange, SecretManager,
 };
@@ -114,13 +115,11 @@ impl XdsConfigurationHandler {
     pub async fn run_loop(
         &mut self,
         node: Node,
-        initial_clusters: Vec<PartialClusterType>,
+        initial_clusters: Vec<ClusterType>,
         ads_cluster_names: Vec<String>,
     ) -> Result<()> {
-        for partial_cluster in initial_clusters {
-            if let Err(err) = self.add_cluster(partial_cluster).await {
-                tracing::error!("Could not add cluster: {}", err);
-            }
+        for cluster in initial_clusters {
+            self.health_manager.restart_cluster(cluster).await;
         }
 
         let mut cluster_names = ads_cluster_names.into_iter().cycle();

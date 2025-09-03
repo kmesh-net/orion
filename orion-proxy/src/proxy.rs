@@ -33,8 +33,9 @@ use orion_configuration::config::{
 use orion_error::Context;
 use orion_lib::{
     access_log::{start_access_loggers, update_configuration, Target},
+    clusters::cluster::ClusterType,
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
-    ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
+    ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result, SecretManager,
 };
 use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
 use parking_lot::RwLock;
@@ -292,9 +293,17 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     let bootstrap_clone = bootstrap.clone();
     let secret_manager_clone = secret_manager.clone();
     set.spawn(async move {
-        configure_initial_resources(bootstrap_clone, listener_factories, configuration_senders_clone.clone()).await?;
-        let mut xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
-        _ = xds_handler.run_loop(node, clusters, ads_cluster_names).await;
+        let initial_clusters = configure_initial_resources(
+            bootstrap_clone,
+            listener_factories,
+            clusters,
+            configuration_senders_clone.clone(),
+        )
+        .await?;
+        if !ads_cluster_names.is_empty() {
+            let mut xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
+            _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
+        }
         Ok(())
     });
 
@@ -358,8 +367,9 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
 async fn configure_initial_resources(
     bootstrap: Bootstrap,
     listeners: Vec<orion_lib::ListenerFactory>,
+    clusters: Vec<PartialClusterType>,
     configuration_senders: Vec<ConfigurationSenders>,
-) -> Result<()> {
+) -> Result<Vec<ClusterType>> {
     let listeners_tx: Vec<_> = configuration_senders
         .into_iter()
         .map(|ConfigurationSenders { listener_configuration_sender, route_configuration_sender: _ }| {
@@ -377,7 +387,7 @@ async fn configure_initial_resources(
         .map_err(Into::<orion_error::Error>::into)?;
     }
 
-    Ok(())
+    clusters.into_iter().map(orion_lib::clusters::add_cluster).collect::<Result<_>>()
 }
 
 async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {
