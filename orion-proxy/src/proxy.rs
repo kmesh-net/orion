@@ -47,11 +47,11 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
     // launch the runtimes...
-    launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes")
+    _ = launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes");
 }
 
 fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result<usize> {
@@ -93,7 +93,9 @@ struct ServiceInfo {
     metrics: Vec<Metrics>,
 }
 
-fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+type SenderGuards = Vec<ConfigurationSenders>;
+
+fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<SenderGuards> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -107,7 +109,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
     // keep a copy of the senders to avoid them being dropped if no services are configured...
     //
 
-    let _sender_guards = config_senders.clone();
+    let sender_guards = config_senders.clone();
 
     // launch services runtime...
     //
@@ -203,7 +205,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
             warn!("Closing handler with error {err:?}");
         }
     }
-    Ok(())
+    Ok(sender_guards)
 }
 
 type RuntimeHandle = JoinHandle<Result<()>>;
