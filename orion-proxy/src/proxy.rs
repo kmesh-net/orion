@@ -103,6 +103,11 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
     let (config_senders, config_receivers): (Vec<ConfigurationSenders>, Vec<ConfigurationReceivers>) =
         (0..num_runtimes).map(|_| new_configuration_channel(100)).collect::<Vec<_>>().into_iter().unzip();
 
+    // keep a copy of the senders to avoid them being dropped if no services are configured...
+    //
+
+    let _sender_guards = config_senders.clone();
+
     // launch services runtime...
     //
 
@@ -288,8 +293,8 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     let secret_manager_clone = secret_manager.clone();
     set.spawn(async move {
         configure_initial_resources(bootstrap_clone, listener_factories, configuration_senders_clone.clone()).await?;
-        let xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
-        _ = xds_handler.xds_run(node, clusters, ads_cluster_names).await;
+        let mut xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
+        _ = xds_handler.run_loop(node, clusters, ads_cluster_names).await;
         Ok(())
     });
 
@@ -334,15 +339,15 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     if metrics.is_empty() {
         info!("OTEL metrics: stats_sink not configured (skipped)");
     } else {
-        #[cfg(feature = "tracing")]
+        #[cfg(feature = "metrics")]
         orion_metrics::otel_launch_exporter(&metrics).await?;
     }
 
     // spawn tracing exporters...
-    #[cfg(feature = "tracing")]
     if tracing.is_empty() {
         info!("OTEL tracing: no tracers configured (skipped)");
     } else {
+        #[cfg(feature = "tracing")]
         orion_tracing::otel_update_tracers(tracing)?;
     }
 
