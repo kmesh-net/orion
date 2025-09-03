@@ -34,18 +34,19 @@ use crate::{
     thread_local::{LocalBuilder, LocalObject},
     Error, PolyBody, Result,
 };
+use bytes::Bytes;
 use http::{
     uri::{Authority, Parts},
     HeaderValue, Response, Version,
 };
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use hyper::{body::Incoming, Request, Uri};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
 use hyper_util::{
     client::legacy::{connect::Connect, Builder, Client},
     rt::tokio::{TokioExecutor, TokioTimer},
 };
-use hyperlocal::UnixConnector;
+use hyperlocal::{UnixClientExt, UnixConnector};
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
@@ -408,10 +409,11 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
 
                 HttpChannel::handle_response(result, route_timeout, version)
             },
-            HttpChannelClient::Unix(_, sender) => {
+            HttpChannelClient::Unix(uri, sender) => {
                 let RequestContext { route_timeout, retry_policy } = request.ctx.clone();
                 let client = sender;
-                let req = maybe_normalize_uri(request.req, false)?;
+                let mut req = request.req;
+                *req.uri_mut() = uri.clone();
 
                 let result = if let Some(t) = route_timeout {
                     match fast_timeout(t, self.send_request(retry_policy, client, req, cluster_name)).await {
