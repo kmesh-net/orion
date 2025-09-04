@@ -145,9 +145,9 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 pub trait ClusterOps {
     fn get_name(&self) -> &'static str;
     fn into_health_check(self) -> Option<HealthCheck>;
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)>;
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)>;
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>>;
+    fn all_http_channels(&mut self) -> Vec<(Authority, HttpChannel)>;
+    fn all_tcp_channels(&mut self) -> Vec<(Authority, TcpChannelConnector)>;
+    fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>>;
     fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()>;
     fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus);
     fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel>;
@@ -156,7 +156,7 @@ pub trait ClusterOps {
     fn get_routing_requirements(&self) -> RoutingRequirement;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 #[enum_dispatch(ClusterOps)]
 pub enum ClusterType {
     Static(StaticCluster),
