@@ -237,6 +237,12 @@ impl HttpChannelBuilder {
 
         self.configure_http2_if_needed(&mut client_builder, configured_upstream_http_version);
 
+        #[cfg(feature = "metrics")]
+        {
+            let cluster_name = self.cluster_name.unwrap_or_default();
+            client_builder.event_handler(EventHandler::new(update_upstream_stats, cluster_name));
+        }
+
         client_builder
     }
 
@@ -264,13 +270,15 @@ impl HttpChannelBuilder {
 }
 
 #[cfg(feature = "metrics")]
+#[allow(clippy::needless_pass_by_value)]
 fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
-    use tracing::info;
+    use tracing::debug;
     let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
     let shard_id = std::thread::current().id();
     if let Some(pk) = key.downcast_ref::<PoolKey>() {
-        info!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
+        debug!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
     }
+
     match event {
         ConnectionEvent::NewConnection => {
             with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
