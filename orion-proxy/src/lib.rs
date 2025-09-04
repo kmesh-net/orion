@@ -40,7 +40,8 @@ pub fn run() -> Result<()> {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
     }
 
-    proxy::run_orion(bootstrap, access_logging)
+    proxy::run_orion(bootstrap, access_logging);
+    Ok(())
 }
 
 mod proxy_tracing {

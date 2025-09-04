@@ -33,8 +33,9 @@ use orion_configuration::config::{
 use orion_error::Context;
 use orion_lib::{
     access_log::{start_access_loggers, update_configuration, Target},
+    clusters::cluster::ClusterType,
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
-    ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
+    ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result, SecretManager,
 };
 use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
 use parking_lot::RwLock;
@@ -46,11 +47,11 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
     // launch the runtimes...
-    launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes")
+    _ = launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes");
 }
 
 fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result<usize> {
@@ -92,7 +93,9 @@ struct ServiceInfo {
     metrics: Vec<Metrics>,
 }
 
-fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<()> {
+type SenderGuards = Vec<ConfigurationSenders>;
+
+fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<SenderGuards> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -102,6 +105,11 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
 
     let (config_senders, config_receivers): (Vec<ConfigurationSenders>, Vec<ConfigurationReceivers>) =
         (0..num_runtimes).map(|_| new_configuration_channel(100)).collect::<Vec<_>>().into_iter().unzip();
+
+    // keep a copy of the senders to avoid them being dropped if no services are configured...
+    //
+
+    let sender_guards = config_senders.clone();
 
     // launch services runtime...
     //
@@ -197,7 +205,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
             warn!("Closing handler with error {err:?}");
         }
     }
-    Ok(())
+    Ok(sender_guards)
 }
 
 type RuntimeHandle = JoinHandle<Result<()>>;
@@ -287,9 +295,17 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     let bootstrap_clone = bootstrap.clone();
     let secret_manager_clone = secret_manager.clone();
     set.spawn(async move {
-        configure_initial_resources(bootstrap_clone, listener_factories, configuration_senders_clone.clone()).await?;
-        let xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
-        _ = xds_handler.xds_run(node, clusters, ads_cluster_names).await;
+        let initial_clusters = configure_initial_resources(
+            bootstrap_clone,
+            listener_factories,
+            clusters,
+            configuration_senders_clone.clone(),
+        )
+        .await?;
+        if !ads_cluster_names.is_empty() {
+            let mut xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
+            _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
+        }
         Ok(())
     });
 
@@ -334,15 +350,15 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     if metrics.is_empty() {
         info!("OTEL metrics: stats_sink not configured (skipped)");
     } else {
-        #[cfg(feature = "tracing")]
+        #[cfg(feature = "metrics")]
         orion_metrics::otel_launch_exporter(&metrics).await?;
     }
 
     // spawn tracing exporters...
-    #[cfg(feature = "tracing")]
     if tracing.is_empty() {
         info!("OTEL tracing: no tracers configured (skipped)");
     } else {
+        #[cfg(feature = "tracing")]
         orion_tracing::otel_update_tracers(tracing)?;
     }
 
@@ -353,8 +369,9 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
 async fn configure_initial_resources(
     bootstrap: Bootstrap,
     listeners: Vec<orion_lib::ListenerFactory>,
+    clusters: Vec<PartialClusterType>,
     configuration_senders: Vec<ConfigurationSenders>,
-) -> Result<()> {
+) -> Result<Vec<ClusterType>> {
     let listeners_tx: Vec<_> = configuration_senders
         .into_iter()
         .map(|ConfigurationSenders { listener_configuration_sender, route_configuration_sender: _ }| {
@@ -372,7 +389,7 @@ async fn configure_initial_resources(
         .map_err(Into::<orion_error::Error>::into)?;
     }
 
-    Ok(())
+    clusters.into_iter().map(orion_lib::clusters::add_cluster).collect::<Result<_>>()
 }
 
 async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {
