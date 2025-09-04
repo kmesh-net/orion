@@ -70,7 +70,7 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
     // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_RECEIVED", Operator::DownstreamHeaderBytesReceived);
     trie_mapstr!(trie, "PROTOCOL", Operator::Protocol, Category::DOWNSTREAM_REQUEST);
     trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Operator::UpstreamProtocol, Category::UPSTREAM_REQUEST);
-    trie_mapstr!(trie, "RESPONSE_CODE", Operator::ResponseCode, Category::DOWNSTREAM_RESPONSE);
+    //trie_mapstr!(trie, "RESPONSE_CODE", Operator::ResponseCode, Category::DOWNSTREAM_RESPONSE);
     // trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Operator::ResponseCodeDetails);
     // trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Operator::ConnectionTerminationDetails);
     trie_mapstr!(trie, "BYTES_SENT", Operator::BytesSent, Category::FINISH_CONTEXT);
@@ -250,6 +250,8 @@ impl EnvoyGrammar {
 impl Grammar for EnvoyGrammar {
     #[allow(clippy::too_many_lines)]
     fn parse(input: &str) -> Result<Vec<Template>, FormatError> {
+        dbg!("Dawid parsing input");
+        dbg!(input);
         let mut parts = Vec::new();
         let mut literal_start = 0;
         let mut i = 0;

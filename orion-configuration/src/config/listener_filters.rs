@@ -30,6 +30,7 @@ pub struct ListenerFilter {
 pub enum ListenerFilterConfig {
     TlsInspector,
     ProxyProtocol(DownstreamProxyProtocolConfig),
+    Ignored,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
@@ -66,10 +67,12 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use tracing::warn;
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
         ProxyProtocol(EnvoyProxyProtocol),
+        Ignored,
     }
 
     impl TryFrom<Any> for SupportedEnvoyListenerFilter {
@@ -82,8 +85,15 @@ mod envoy_conversions {
                 "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol" => {
                     EnvoyProxyProtocol::decode(typed_config.value.as_slice()).map(Self::ProxyProtocol)
                 },
+                "type.googleapis.com/udpa.type.v1.TypedStruct" | "type.googleapis.com/stats.PluginConfig" => {
+                    warn!("Ignored Istio type {}", typed_config.type_url);
+                    Ok(SupportedEnvoyListenerFilter::Ignored)
+                },
                 _ => {
-                    return Err(GenericError::unsupported_variant(typed_config.type_url));
+                    return Err(GenericError::unsupported_variant(format!(
+                        "Listener filter unsupported variant {}",
+                        typed_config.type_url
+                    )));
                 },
             }
             .map_err(|e| {
@@ -145,6 +155,7 @@ mod envoy_conversions {
                     let config = DownstreamProxyProtocolConfig::try_from(envoy_proxy_protocol)?;
                     Ok(Self::ProxyProtocol(config))
                 },
+                SupportedEnvoyListenerFilter::Ignored => Ok(Self::Ignored),
             }
         }
     }

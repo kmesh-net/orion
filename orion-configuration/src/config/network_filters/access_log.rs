@@ -44,8 +44,9 @@ use orion_data_plane_api::envoy_data_plane_api::{
     prost::Message,
 };
 
-use orion_format::{LogFormatter, DEFAULT_ACCESS_LOG_FORMAT};
+use orion_format::{LogFormatter, DEFAULT_ACCESS_LOG_FORMAT, DEFAULT_ISTIO_ACCESS_LOG_FORMAT};
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::config::{common::*, core::DataSource};
 
@@ -154,13 +155,14 @@ impl TryFrom<EnvoyAccessLog> for AccessLog {
                     let ConfigType::TypedConfig(typed_config) = x;
                     match SupportedAccessLog::try_from(typed_config)? {
                         SupportedAccessLog::File(file_access_log) => {
+                            warn!("Dawid {:?}", &file_access_log);
                             let fmt = file_access_log
                                 .access_log_format
                                 .map(|fmt| -> Result<SubstitutionFormatString, GenericError> {
                                     let FileAccessLogFormat::LogFormat(substitution_format_string) = fmt else {
                                         return Err(GenericError::unsupported_variant("only LogFormat is supported"));
                                     };
-
+                                    warn!("Dawid {:?}", &substitution_format_string);
                                     SubstitutionFormatString::try_from(substitution_format_string)
                                 })
                                 .transpose()?;
@@ -224,10 +226,12 @@ impl TryFrom<EnvoyAccessLog> for AccessLog {
         }?;
 
         let logger = match fmt.flatten() {
-            Some(SubstitutionFormatString { format, omit_empty_values }) => orion_format::LogFormatter::try_new(
-                format.as_ref().map(AsRef::as_ref).unwrap_or(DEFAULT_ACCESS_LOG_FORMAT),
-                omit_empty_values,
-            ),
+            Some(SubstitutionFormatString { format, omit_empty_values }) => {
+                // let format = format.map(|f| f.replace("\"", ""));
+                // let format = format.as_ref().map(AsRef::as_ref);
+                warn!("Using format {:?}", DEFAULT_ISTIO_ACCESS_LOG_FORMAT);
+                orion_format::LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, omit_empty_values)
+            },
             None => orion_format::LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false),
         }
         .map_err(|e| GenericError::from_msg(format!("Error: failed to create log formatter: {e}")))?;

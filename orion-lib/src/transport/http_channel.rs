@@ -284,14 +284,17 @@ impl HttpChannelBuilder {
     fn build_channel_from_pipe(self) -> crate::Result<HttpChannel> {
         use hyperlocal::{UnixClientExt, Uri};
 
-        match self.address {
+        match &self.address {
             Some(Address::Pipe(name, _)) => {
+                let client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
                 let uri: hyper::Uri = Uri::new(name.clone(), "/").into();
                 let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
                 warn!("Building address from a pipe {uri:?}");
+
                 Ok(HttpChannel {
-                    client: HttpChannelClient::Unix(uri, Arc::new(Client::unix())),
+                    client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
+                    //client: HttpChannelClient::Unix(uri, Arc::new(Client::unix())),
                     http_version: self.http_protocol_options.codec,
                     upstream_authority: authority,
                     cluster_name: self.cluster_name.unwrap_or_default(),
