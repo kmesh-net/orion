@@ -109,6 +109,29 @@ docker rm -f backend1 backend2 orion-proxy
 
 For detailed Docker configuration options, see [docker/README.md](docker/README.md).
 
+## Examples and Demos
+
+### TLV Listener Filter Demo
+
+Orion includes a comprehensive TLV (Type-Length-Value) listener filter demo compatible with the Kmesh project for service mesh integration. This demo provides end-to-end testing of the TLV filter functionality.
+
+To test the TLV filter:
+
+```bash
+cd examples/tlv-filter-demo
+./test_tlv_config.sh
+```
+
+This demo will:
+- Start Orion with TLV filter configuration matching Kmesh format
+- Load the TLV listener filter using TypedStruct configuration
+- Send actual TLV packets to test the filter functionality
+- Extract and verify original destination information from TLV data
+- Show debug logs confirming successful TLV processing
+- Verify compatibility with Kmesh TLV configuration format
+
+
+For detailed information, see [examples/tlv-filter-demo/README.md](examples/tlv-filter-demo/README.md).
 
 <!-- ## Contributing -->
 <!-- If you're interested in being a contributor and want to get involved in developing Orion Proxy, please see [CONTRIBUTING](CONTRIBUTING.md) for more details on submitting patches and the contribution workflow. -->

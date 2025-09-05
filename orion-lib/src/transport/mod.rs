@@ -27,6 +27,7 @@ pub use resolver::resolve;
 pub mod policy;
 pub mod proxy_protocol;
 pub mod tls_inspector;
+pub mod tlv_listener_filter;
 pub mod transport_socket;
 
 pub use self::{
@@ -34,6 +35,7 @@ pub use self::{
     http_channel::{HttpChannel, HttpChannelBuilder},
     proxy_protocol::ProxyProtocolReader,
     tcp_channel::TcpChannelConnector,
+    tlv_listener_filter::TlvListenerFilter,
     transport_socket::UpstreamTransportSocketConfigurator,
 };
 

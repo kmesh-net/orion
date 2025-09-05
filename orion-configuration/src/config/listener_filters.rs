@@ -27,7 +27,11 @@ pub struct ListenerFilter {
 pub enum ListenerFilterConfig {
     TlsInspector,
     ProxyProtocol(DownstreamProxyProtocolConfig),
+    TlvListenerFilter(TlvListenerFilterConfig),
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+pub struct TlvListenerFilterConfig {}
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct DownstreamProxyProtocolConfig {
@@ -44,7 +48,7 @@ pub struct DownstreamProxyProtocolConfig {
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use super::{DownstreamProxyProtocolConfig, ListenerFilter, ListenerFilterConfig};
+    use super::{DownstreamProxyProtocolConfig, ListenerFilter, ListenerFilterConfig, TlvListenerFilterConfig};
     use crate::config::{
         common::{ProxyProtocolVersion, *},
         transport::ProxyProtocolPassThroughTlvs,
@@ -56,28 +60,53 @@ mod envoy_conversions {
                 listener_filter::ConfigType as EnvoyListenerFilterConfigType, ListenerFilter as EnvoyListenerFilter,
             },
             extensions::filters::listener::{
-                proxy_protocol::v3::ProxyProtocol as EnvoyProxyProtocol,
+                kmesh_tlv::v3::KmeshTlv as EnvoyKmeshTlv, proxy_protocol::v3::ProxyProtocol as EnvoyProxyProtocol,
                 tls_inspector::v3::TlsInspector as EnvoyTlsInspector,
             },
         },
         google::protobuf::Any,
         prost::Message,
+        udpa::r#type::v1::TypedStruct,
     };
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
         ProxyProtocol(EnvoyProxyProtocol),
+        KmeshTlv(EnvoyKmeshTlv),
     }
 
     impl TryFrom<Any> for SupportedEnvoyListenerFilter {
         type Error = GenericError;
         fn try_from(typed_config: Any) -> Result<Self, Self::Error> {
+            if typed_config.type_url == "type.googleapis.com/udpa.type.v1.TypedStruct" {
+                let typed_struct = TypedStruct::decode(typed_config.value.as_slice())
+                    .map_err(|e| GenericError::from_msg_with_cause("failed to decode TypedStruct", e))?;
+
+                match typed_struct.type_url.as_str() {
+                    "type.googleapis.com/envoy.extensions.filters.listener.kmesh_tlv.v3.KmeshTlv" => {
+                        let config = EnvoyKmeshTlv {};
+                        return Ok(Self::KmeshTlv(config));
+                    },
+                    _ => {
+                        return Err(GenericError::unsupported_variant(format!(
+                            "unsupported TypedStruct type_url: {}",
+                            typed_struct.type_url
+                        )));
+                    },
+                }
+            }
+
             match typed_config.type_url.as_str() {
                 "type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector" => {
                     EnvoyTlsInspector::decode(typed_config.value.as_slice()).map(Self::TlsInspector)
                 },
                 "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol" => {
                     EnvoyProxyProtocol::decode(typed_config.value.as_slice()).map(Self::ProxyProtocol)
+                },
+                "type.googleapis.com/envoy.extensions.filters.listener.kmesh_tlv.v3.KmeshTlv" => {
+                    let config = EnvoyKmeshTlv::decode(typed_config.value.as_slice())
+                        .map_err(|e| GenericError::from_msg_with_cause("failed to decode KmeshTlv protobuf", e))?;
+                    Ok(Self::KmeshTlv(config))
                 },
                 _ => {
                     return Err(GenericError::unsupported_variant(typed_config.type_url));
@@ -142,6 +171,10 @@ mod envoy_conversions {
                     let config = DownstreamProxyProtocolConfig::try_from(envoy_proxy_protocol)?;
                     Ok(Self::ProxyProtocol(config))
                 },
+                SupportedEnvoyListenerFilter::KmeshTlv(config) => {
+                    let tlv_config = TlvListenerFilterConfig::try_from(config)?;
+                    Ok(Self::TlvListenerFilter(tlv_config))
+                },
             }
         }
     }
@@ -169,6 +202,13 @@ mod envoy_conversions {
                 .collect::<Result<Vec<_>, _>>()?;
             let pass_through_tlvs = pass_through_tlvs.map(ProxyProtocolPassThroughTlvs::try_from).transpose()?;
             Ok(Self { allow_requests_without_proxy_protocol, stat_prefix, disallowed_versions, pass_through_tlvs })
+        }
+    }
+
+    impl TryFrom<EnvoyKmeshTlv> for TlvListenerFilterConfig {
+        type Error = GenericError;
+        fn try_from(_value: EnvoyKmeshTlv) -> Result<Self, Self::Error> {
+            Ok(Self::default())
         }
     }
 }
