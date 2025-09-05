@@ -37,6 +37,8 @@ pub struct Bootstrap {
     pub stats_flush_interval: Option<Duration>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub stats_sinks: Vec<StatsSink>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub bootstrap_extensions: Vec<BootstrapExtension>,
 }
 
 impl Bootstrap {
@@ -73,6 +75,19 @@ pub struct Admin {
     pub address: Address,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "name")]
+pub enum BootstrapExtension {
+    #[serde(rename = "internal_listener")]
+    InternalListener(InternalListenerBootstrap),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternalListenerBootstrap {
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub buffer_size_kb: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct StaticResources {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
@@ -86,20 +101,29 @@ pub struct StaticResources {
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
-    use super::{Admin, Bootstrap, DynamicResources, Node, StaticResources};
-    use crate::config::{common::*, grpc::Duration, metrics::StatsSink};
+    use super::{
+        Admin, Bootstrap, BootstrapExtension, DynamicResources, InternalListenerBootstrap, Node, StaticResources,
+    };
+    use crate::config::{common::*, core::envoy_conversions::SocketAddressWrapper, grpc::Duration, metrics::StatsSink};
     use compact_str::CompactString;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::config::{
-        bootstrap::v3::{
-            bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
-            Admin as EnvoyAdmin, Bootstrap as EnvoyBootstrap,
+    use orion_data_plane_api::envoy_data_plane_api::{
+        envoy::{
+            config::{
+                bootstrap::v3::{
+                    bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
+                    Admin as EnvoyAdmin, Bootstrap as EnvoyBootstrap,
+                },
+                core::v3::{
+                    address,
+                    grpc_service::{EnvoyGrpc, TargetSpecifier as EnvoyGrpcTargetSpecifier},
+                    ApiConfigSource as EnvoyApiConfigSource, GrpcService as EnvoyGrpcService, Node as EnvoyNode,
+                    TypedExtensionConfig as EnvoyTypedExtensionConfig,
+                },
+                metrics::v3::stats_sink::ConfigType,
+            },
+            extensions::bootstrap::internal_listener::v3::InternalListener as EnvoyInternalListener,
         },
-        core::v3::{
-            address,
-            grpc_service::{EnvoyGrpc, TargetSpecifier as EnvoyGrpcTargetSpecifier},
-            ApiConfigSource as EnvoyApiConfigSource, GrpcService as EnvoyGrpcService, Node as EnvoyNode,
-        },
-        metrics::v3::stats_sink::ConfigType,
+        prost::Message,
     };
 
     impl Bootstrap {
@@ -180,7 +204,7 @@ mod envoy_conversions {
                 use_tcp_for_dns_lookups,
                 dns_resolution_config,
                 typed_dns_resolver_config,
-                bootstrap_extensions,
+                // bootstrap_extensions,
                 fatal_actions,
                 config_sources,
                 default_config_source,
@@ -217,7 +241,21 @@ mod envoy_conversions {
                 .collect::<Result<Vec<_>, _>>()
                 .with_node("stats_sinks")?;
 
-            Ok(Self { static_resources, node, dynamic_resources, admin, stats_flush_interval, stats_sinks })
+            let bootstrap_extensions = bootstrap_extensions
+                .into_iter()
+                .map(BootstrapExtension::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .with_node("bootstrap_extensions")?;
+
+            Ok(Self {
+                static_resources,
+                node,
+                dynamic_resources,
+                admin,
+                stats_flush_interval,
+                stats_sinks,
+                bootstrap_extensions,
+            })
         }
     }
     impl TryFrom<EnvoyNode> for Node {
@@ -336,6 +374,7 @@ mod envoy_conversions {
             Ok(Self { listeners, clusters, secrets })
         }
     }
+
     impl TryFrom<EnvoyAdmin> for Admin {
         type Error = GenericError;
         fn try_from(envoy: EnvoyAdmin) -> Result<Self, Self::Error> {
@@ -352,12 +391,53 @@ mod envoy_conversions {
                 .address
                 .ok_or(GenericError::MissingField("address is mandatory to setup admin interface"))?
             {
-                address::Address::SocketAddress(sa) => sa.try_into(),
-                _ => {
-                    Err(GenericError::UnsupportedVariant(std::borrow::Cow::Borrowed("Only SocketAddress is supported")))
+                address::Address::SocketAddress(sa) => {
+                    let wrapper: SocketAddressWrapper = sa.try_into()?;
+                    wrapper.0
                 },
-            }?;
-            Ok(Self { address })
+                _ => {
+                    return Err(GenericError::UnsupportedVariant(std::borrow::Cow::Borrowed(
+                        "Only SocketAddress is supported",
+                    )));
+                },
+            };
+            Ok(Self { address: crate::config::core::Address::Socket(address) })
+        }
+    }
+
+    impl TryFrom<EnvoyTypedExtensionConfig> for BootstrapExtension {
+        type Error = GenericError;
+        fn try_from(value: EnvoyTypedExtensionConfig) -> Result<Self, Self::Error> {
+            let EnvoyTypedExtensionConfig { name, typed_config } = value;
+            let name = required!(name)?;
+            let typed_config = required!(typed_config)?;
+
+            match name.as_str() {
+                "internal_listener" => {
+                    if typed_config.type_url
+                        == "type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener"
+                    {
+                        let internal_listener = EnvoyInternalListener::decode(typed_config.value.as_slice())
+                            .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalListener", e))?;
+                        Ok(BootstrapExtension::InternalListener(internal_listener.try_into()?))
+                    } else {
+                        Err(GenericError::from_msg(format!(
+                            "Unsupported bootstrap extension type: {}",
+                            typed_config.type_url
+                        )))
+                    }
+                },
+                _ => Err(GenericError::unsupported_variant(name)),
+            }
+        }
+    }
+
+    impl TryFrom<EnvoyInternalListener> for InternalListenerBootstrap {
+        type Error = GenericError;
+        fn try_from(value: EnvoyInternalListener) -> Result<Self, Self::Error> {
+            let EnvoyInternalListener { buffer_size_kb } = value;
+            let buffer_size_kb = buffer_size_kb.map(|v| v.value);
+            Ok(Self { buffer_size_kb })
         }
     }
 }

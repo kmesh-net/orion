@@ -46,6 +46,7 @@ const TOTAL: u64 = 100_000_000;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[allow(clippy::cast_precision_loss)]
+#[allow(clippy::print_stdout)]
 fn main() -> Result<(), BoxError> {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")

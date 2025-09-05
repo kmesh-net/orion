@@ -33,7 +33,7 @@ use super::{
 use compact_str::CompactString;
 use http::HeaderName;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt::Display, num::NonZeroU32, time::Duration};
+use std::{fmt::Display, net::SocketAddr, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Cluster {
     pub name: CompactString,
@@ -55,6 +55,8 @@ pub struct Cluster {
     #[serde(with = "humantime_serde")]
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub cleanup_interval: Option<Duration>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub internal_transport_socket: Option<TransportSocket>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -104,7 +106,20 @@ pub struct LocalityLbEndpoints {
 
 fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) -> Result<S::Ok, S::Error> {
     if value.iter().all(|s| is_default(&s.health_status) && s.load_balancing_weight == NonZeroU32::MIN) {
-        value.iter().map(|endpoint| endpoint.address.clone()).collect::<Vec<_>>().serialize(serializer)
+        // Only simplify if all addresses are socket addresses
+        let socket_addresses: Vec<SocketAddr> = value
+            .iter()
+            .filter_map(|endpoint| match &endpoint.address {
+                EndpointAddress::Socket(addr) => Some(*addr),
+                EndpointAddress::Internal(_) => None,
+            })
+            .collect();
+
+        if socket_addresses.len() == value.len() {
+            socket_addresses.serialize(serializer)
+        } else {
+            value.serialize(serializer)
+        }
     } else {
         value.serialize(serializer)
     }
@@ -114,18 +129,38 @@ fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) 
 #[serde(untagged)]
 enum LbEndpointVecDeser {
     LbEndpoints(Vec<LbEndpoint>),
+    SocketAddr(Vec<SocketAddr>),
     Address(Vec<Address>),
 }
 
 impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
     fn from(value: LbEndpointVecDeser) -> Self {
         match value {
-            LbEndpointVecDeser::Address(address) => address
+            LbEndpointVecDeser::SocketAddr(socket_addrs) => socket_addrs
                 .into_iter()
-                .map(|address| LbEndpoint {
-                    address,
+                .map(|socket_addr| LbEndpoint {
+                    address: EndpointAddress::Socket(socket_addr),
                     health_status: HealthStatus::default(),
                     load_balancing_weight: NonZeroU32::MIN,
+                })
+                .collect(),
+            LbEndpointVecDeser::Address(address) => address
+                .into_iter()
+                .filter_map(|address| match address {
+                    Address::Socket(socket_addr) => Some(LbEndpoint {
+                        address: EndpointAddress::Socket(socket_addr),
+                        health_status: HealthStatus::default(),
+                        load_balancing_weight: NonZeroU32::MIN,
+                    }),
+                    Address::Internal(internal_addr) => Some(LbEndpoint {
+                        address: EndpointAddress::Internal(InternalEndpointAddress {
+                            server_listener_name: internal_addr.server_listener_name.into(),
+                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                        }),
+                        health_status: HealthStatus::default(),
+                        load_balancing_weight: NonZeroU32::MIN,
+                    }),
+                    Address::Pipe(_, _) => None, // Skip pipe addresses
                 })
                 .collect(),
             LbEndpointVecDeser::LbEndpoints(vec) => vec,
@@ -141,10 +176,65 @@ fn deser_through<'de, In: Deserialize<'de>, Out: From<In>, D: Deserializer<'de>>
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LbEndpoint {
-    pub address: Address,
+    pub address: EndpointAddress,
     #[serde(skip_serializing_if = "is_default", default)]
     pub health_status: HealthStatus,
     pub load_balancing_weight: NonZeroU32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum EndpointAddress {
+    Socket(SocketAddr),
+    Internal(InternalEndpointAddress),
+}
+
+impl EndpointAddress {
+    pub fn into_addr(self) -> Result<SocketAddr, String> {
+        match self {
+            EndpointAddress::Socket(addr) => Ok(addr),
+            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternalEndpointAddress {
+    pub server_listener_name: CompactString,
+    pub endpoint_id: Option<CompactString>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "name")]
+pub enum TransportSocket {
+    #[serde(rename = "internal_upstream")]
+    InternalUpstream(InternalUpstreamTransport),
+    #[serde(rename = "raw_buffer")]
+    RawBuffer,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternalUpstreamTransport {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub passthrough_metadata: Vec<MetadataValueSource>,
+    pub transport_socket: Box<TransportSocket>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MetadataValueSource {
+    pub kind: MetadataKind,
+    pub name: CompactString,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum MetadataKind {
+    #[serde(rename = "host")]
+    Host,
+    #[serde(rename = "route")]
+    Route,
+    #[serde(rename = "cluster")]
+    Cluster,
 }
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -248,8 +338,9 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
         health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
-        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint, LbPolicy,
-        LocalityLbEndpoints, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret,
+        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
+        InternalEndpointAddress, InternalUpstreamTransport, LbEndpoint, LbPolicy, LocalityLbEndpoints, MetadataKind,
+        MetadataValueSource, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
     };
     use crate::config::{
         common::*,
@@ -280,10 +371,20 @@ mod envoy_conversions {
                     LbEndpoint as EnvoyLbEndpoint, LocalityLbEndpoints as EnvoyLocalityLbEndpoints,
                 },
             },
-            extensions::transport_sockets::tls::v3::UpstreamTlsContext,
-            r#type::metadata::v3::metadata_key::path_segment::Segment,
+            extensions::transport_sockets::{
+                internal_upstream::v3::{
+                    internal_upstream_transport::MetadataValueSource as EnvoyMetadataValueSource,
+                    InternalUpstreamTransport as EnvoyInternalUpstreamTransport,
+                },
+                tls::v3::UpstreamTlsContext,
+            },
+            r#type::metadata::v3::{
+                metadata_key::path_segment::Segment, metadata_kind::Kind as EnvoyMetadataKindType,
+                MetadataKind as EnvoyMetadataKind,
+            },
         },
         google::protobuf::Any,
+        prost::Message,
     };
 
     use http::HeaderName;
@@ -487,10 +588,19 @@ mod envoy_conversions {
                     .transpose()
                     .with_node("upstream_bind_config")?
                     .flatten();
-                let transport_socket = transport_socket
-                    .map(UpstreamTransportSocketConfig::try_from)
-                    .transpose()
-                    .with_node("transport_socket")?;
+                // Parse transport socket: try internal transport first, then fallback to upstream transport
+                let (upstream_transport_socket_config, transport_socket_config) = if let Some(ts) = transport_socket {
+                    if let Ok(internal_socket) = TransportSocket::try_from(ts.clone()) {
+                        // It's an internal transport socket
+                        (None, Some(internal_socket))
+                    } else {
+                        // It's not an internal transport socket, so try to parse it as a regular upstream transport socket (e.g., TLS)
+                        let upstream_socket = UpstreamTransportSocketConfig::try_from(ts).with_node("transport_socket")?;
+                        (Some(upstream_socket), None)
+                    }
+                } else {
+                    (None, None)
+                };
                 let load_balancing_policy = lb_policy.try_into().with_node("lb_policy")?;
                 let http_protocol_options = typed_extension_protocol_options
                     .into_values()
@@ -571,12 +681,13 @@ mod envoy_conversions {
                     name,
                     discovery_settings,
                     bind_device,
-                    transport_socket,
+                    transport_socket: upstream_transport_socket_config,
                     load_balancing_policy,
                     http_protocol_options,
                     health_check,
                     connect_timeout,
                     cleanup_interval,
+                    internal_transport_socket: transport_socket_config,
                 })
             })()
             .with_name(name)
@@ -667,9 +778,19 @@ mod envoy_conversions {
                     health_check_config,
                     hostname,
                     additional_addresses,
-                }) => (|| -> Result<Address, GenericError> {
+                }) => (|| -> Result<EndpointAddress, GenericError> {
                     unsupported_field!(health_check_config, hostname, additional_addresses)?;
-                    Address::try_from(address.ok_or(GenericError::from_msg("Address is not set"))?)
+                    let address: Address = convert_opt!(address)?;
+                    match address {
+                        Address::Socket(socket_addr) => Ok(EndpointAddress::Socket(socket_addr)),
+                        Address::Internal(internal_addr) => Ok(EndpointAddress::Internal(InternalEndpointAddress {
+                            server_listener_name: internal_addr.server_listener_name.into(),
+                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                        })),
+                        Address::Pipe(_, _) => {
+                            Err(GenericError::unsupported_variant("Pipe addresses are not supported for endpoints"))
+                        },
+                    }
                 })(),
                 EnvoyHostIdentifier::EndpointName(_) => Err(GenericError::unsupported_variant("EndpointName")),
             }
@@ -867,6 +988,69 @@ mod envoy_conversions {
             EnvoyLbPolicy::from_i32(value)
                 .ok_or_else(|| GenericError::unsupported_variant(format!("[unknown LbPolicy {value}]")))?
                 .try_into()
+        }
+    }
+
+    impl TryFrom<EnvoyTransportSocket> for TransportSocket {
+        type Error = GenericError;
+        fn try_from(value: EnvoyTransportSocket) -> Result<Self, Self::Error> {
+            let EnvoyTransportSocket { name, config_type } = value;
+            let name = required!(name)?;
+            let config = required!(config_type)?;
+
+            match name.as_str() {
+                "internal_upstream" => {
+                    match config {
+                        orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::transport_socket::ConfigType::TypedConfig(any) => {
+                            if any.type_url == "type.googleapis.com/envoy.extensions.transport_sockets.internal_upstream.v3.InternalUpstreamTransport" {
+                                let internal_transport = EnvoyInternalUpstreamTransport::decode(any.value.as_slice())
+                                    .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalUpstreamTransport", e))?;
+                                Ok(TransportSocket::InternalUpstream(internal_transport.try_into()?))
+                            } else {
+                                Err(GenericError::from_msg(format!("Unsupported transport socket type: {}", any.type_url)))
+                            }
+                        }
+                    }
+                }
+                "raw_buffer" => Ok(TransportSocket::RawBuffer),
+                _ => Err(GenericError::unsupported_variant(name)),
+            }
+        }
+    }
+
+    impl TryFrom<EnvoyInternalUpstreamTransport> for InternalUpstreamTransport {
+        type Error = GenericError;
+        fn try_from(value: EnvoyInternalUpstreamTransport) -> Result<Self, Self::Error> {
+            let EnvoyInternalUpstreamTransport { passthrough_metadata, transport_socket } = value;
+            let passthrough_metadata =
+                passthrough_metadata.into_iter().map(MetadataValueSource::try_from).collect::<Result<Vec<_>, _>>()?;
+            let transport_socket = required!(transport_socket)?;
+            let transport_socket = Box::new(TransportSocket::try_from(transport_socket)?);
+            Ok(Self { passthrough_metadata, transport_socket })
+        }
+    }
+
+    impl TryFrom<EnvoyMetadataValueSource> for MetadataValueSource {
+        type Error = GenericError;
+        fn try_from(value: EnvoyMetadataValueSource) -> Result<Self, Self::Error> {
+            let EnvoyMetadataValueSource { kind, name } = value;
+            let kind = required!(kind)?;
+            let name = required!(name)?.into();
+            let kind = MetadataKind::try_from(kind)?;
+            Ok(Self { kind, name })
+        }
+    }
+
+    impl TryFrom<EnvoyMetadataKind> for MetadataKind {
+        type Error = GenericError;
+        fn try_from(value: EnvoyMetadataKind) -> Result<Self, Self::Error> {
+            let EnvoyMetadataKind { kind } = value;
+            match required!(kind)? {
+                EnvoyMetadataKindType::Host(_) => Ok(MetadataKind::Host),
+                EnvoyMetadataKindType::Route(_) => Ok(MetadataKind::Route),
+                EnvoyMetadataKindType::Cluster(_) => Ok(MetadataKind::Cluster),
+                EnvoyMetadataKindType::Request(_) => Ok(MetadataKind::Route), // Map Request to Route for now
+            }
         }
     }
 }
