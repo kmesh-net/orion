@@ -393,10 +393,10 @@ pub enum FilterDecision {
     DirectResponse(Response<PolyBody>),
 }
 
-pub struct CachedRoute {
-    route: Route,
+pub struct CachedRoute<'a> {
+    route: &'a Route,
     route_match: RouteMatchResult,
-    vh: VirtualHost,
+    vh: &'a VirtualHost,
 }
 
 pub(crate) struct HttpRequestHandler {
@@ -665,14 +665,15 @@ pub trait RequestHandler<R>: Sized {
     ) -> impl Future<Output = Result<Response<PolyBody>>> + Send;
 }
 
-fn match_request_route<B>(request: &Request<B>, route_config: &RouteConfiguration) -> Option<CachedRoute> {
+#[inline]
+fn match_request_route<'a, B>(request: &Request<B>, route_config: &'a RouteConfiguration) -> Option<CachedRoute<'a>> {
     let chosen_vh = select_virtual_host(request, &route_config.virtual_hosts)?;
     let (chosen_route, route_match_result) = chosen_vh
         .routes
         .iter()
         .map(|route| (route, route.route_match.match_request(request)))
         .find(|(_, match_result)| match_result.matched())?;
-    Some(CachedRoute { route: chosen_route.clone(), route_match: route_match_result, vh: chosen_vh.clone() })
+    Some(CachedRoute { route: chosen_route, route_match: route_match_result, vh: chosen_vh })
 }
 
 impl
