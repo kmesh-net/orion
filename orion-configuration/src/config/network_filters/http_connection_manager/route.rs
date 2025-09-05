@@ -82,6 +82,15 @@ pub enum PathRewriteSpecifier {
     Regex(RegexMatchAndSubstitute),
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorityRewriteSpecifier {
+    Authority(#[serde(with = "http_serde_ext::authority")] Authority),
+    Header(CompactString),
+    Regex(RegexMatchAndSubstitute),
+    AutoHostRewrite,
+}
+
 impl PathRewriteSpecifier {
     /// will preserve the query part of the input if the replacement does not contain one
     #[allow(clippy::redundant_else)]
@@ -231,6 +240,8 @@ pub struct RouteAction {
     pub timeout: Option<Duration>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub rewrite: Option<PathRewriteSpecifier>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub authority_rewrite: Option<AuthorityRewriteSpecifier>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub retry_policy: Option<RetryPolicy>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -644,10 +655,10 @@ mod tests {
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        Action, AuthorityRedirect, Connect, DirectResponseAction, DirectResponseBody, HashPolicy, PathMatcher,
-        PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier, QueryParameterMatcher,
-        RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig,
-        Websocket, DEFAULT_TIMEOUT,
+        Action, AuthorityRedirect, AuthorityRewriteSpecifier, Connect, DirectResponseAction, DirectResponseBody,
+        HashPolicy, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier,
+        QueryParameterMatcher, RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch,
+        UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
     };
     use crate::config::{
         common::*,
@@ -672,7 +683,8 @@ mod envoy_conversions {
                     ConnectionProperties as EnvoyConnectionProperties, Header as EnvoyHeader,
                     PolicySpecifier as EnvoyPolicySpecifier, QueryParameter as EnvoyQueryParameter,
                 },
-                HashPolicy as EnvoyHashPolicy, UpgradeConfig as EnvoyUpgradeConfig,
+                HashPolicy as EnvoyHashPolicy, HostRewriteSpecifier as EnvoyHostRewriteSpecifier,
+                UpgradeConfig as EnvoyUpgradeConfig,
             },
             route_match::PathSpecifier as EnvoyPathSpecifier,
             DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
@@ -898,9 +910,8 @@ mod envoy_conversions {
                 internal_redirect_action,
                 max_internal_redirects,
                 hedge_policy,
-                max_stream_duration,
-                // cluster_specifier,
-                host_rewrite_specifier
+                max_stream_duration // cluster_specifier,
+                                    // host_rewrite_specifier
             )?;
             let cluster_not_found_response_code =
                 parse_cluster_not_found_response_code(cluster_not_found_response_code)?;
@@ -924,11 +935,37 @@ mod envoy_conversions {
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
             let upgrade_config = upgrade_configs.try_into().with_node("upgrade_configs").ok();
             let hash_policy = convert_vec!(hash_policy)?;
+            let authority_rewrite = host_rewrite_specifier
+                .filter(|spec| if let EnvoyHostRewriteSpecifier::AutoHostRewrite(bv) = spec { bv.value } else { true })
+                .map(|spec| match spec {
+                    EnvoyHostRewriteSpecifier::HostRewriteLiteral(literal) => {
+                        Authority::from_str(&literal).map(AuthorityRewriteSpecifier::Authority).map_err(|e| {
+                            GenericError::from_msg_with_cause(
+                                format!("failed to parse host rewrite literal '{literal}' as authority"),
+                                e,
+                            )
+                        })
+                    },
+                    EnvoyHostRewriteSpecifier::AutoHostRewrite(_) => Ok(AuthorityRewriteSpecifier::AutoHostRewrite),
+                    EnvoyHostRewriteSpecifier::HostRewriteHeader(header) => match HeaderName::from_str(&header) {
+                        Ok(_) => Ok(AuthorityRewriteSpecifier::Header(header.into())),
+                        Err(e) => Err(GenericError::from_msg_with_cause(
+                            format!("failed to parse host rewrite header '{header}' as header name"),
+                            e,
+                        )),
+                    },
+                    EnvoyHostRewriteSpecifier::HostRewritePathRegex(regex) => {
+                        regex.try_into().map(AuthorityRewriteSpecifier::Regex)
+                    },
+                })
+                .transpose()
+                .with_node("host_rewrite_specifier")?;
             Ok(Self {
                 cluster_not_found_response_code,
                 timeout,
                 cluster_specifier,
                 rewrite,
+                authority_rewrite,
                 retry_policy,
                 upgrade_config,
                 hash_policy,
