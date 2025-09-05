@@ -646,7 +646,7 @@ mod envoy_conversions {
                 server_header_transformation,
                 scheme_header_transformation,
                 max_request_headers_kb,
-                stream_idle_timeout,
+                stream_idle_timeout: _,
                 request_timeout,
                 request_headers_timeout,
                 drain_timeout,
@@ -667,13 +667,13 @@ mod envoy_conversions {
                 always_set_request_id_in_response,
                 forward_client_cert_details,
                 set_current_client_cert_details,
-                proxy_100_continue,
+                proxy_100_continue: _,
                 represent_ipv4_remote_address_as_ipv4_mapped_ipv6,
                 upgrade_configs,
-                normalize_path,
+                normalize_path: _,
                 merge_slashes,
-                path_with_escaped_slashes_action,
-                request_id_extension,
+                path_with_escaped_slashes_action: _,
+                request_id_extension: _,
                 local_reply_config,
                 strip_matching_host_port,
                 stream_error_on_invalid_http_message,
@@ -702,7 +702,7 @@ mod envoy_conversions {
                 server_header_transformation,
                 scheme_header_transformation,
                 max_request_headers_kb,
-                stream_idle_timeout,
+                //stream_idle_timeout,
                 // request_timeout,
                 request_headers_timeout,
                 drain_timeout,
@@ -723,13 +723,13 @@ mod envoy_conversions {
                 // always_set_request_id_in_response,
                 forward_client_cert_details,
                 set_current_client_cert_details,
-                proxy_100_continue,
+                //proxy_100_continue,
                 represent_ipv4_remote_address_as_ipv4_mapped_ipv6,
                 // upgrade_configs,
-                normalize_path,
+                //normalize_path,
                 merge_slashes,
-                path_with_escaped_slashes_action,
-                request_id_extension,
+                //path_with_escaped_slashes_action,
+                //request_id_extension,
                 local_reply_config,
                 strip_matching_host_port,
                 stream_error_on_invalid_http_message,
@@ -922,6 +922,7 @@ mod envoy_conversions {
                 typed_per_filter_config,
                 metadata
             )?;
+            let name = if name.is_empty() { "route_configuration".to_owned() } else { name };
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let response_headers_to_add = convert_vec!(response_headers_to_add)?;
@@ -1233,9 +1234,13 @@ mod envoy_conversions {
     impl TryFrom<EnvoyConfigSource> for ConfigSource {
         type Error = GenericError;
         fn try_from(value: EnvoyConfigSource) -> Result<Self, Self::Error> {
-            let EnvoyConfigSource { authorities, initial_fetch_timeout, resource_api_version, config_source_specifier } =
-                value;
-            unsupported_field!(authorities, initial_fetch_timeout, resource_api_version)?;
+            let EnvoyConfigSource {
+                authorities,
+                initial_fetch_timeout: _,
+                resource_api_version: _,
+                config_source_specifier,
+            } = value;
+            unsupported_field!(authorities)?;
             let config_source_specifier = convert_opt!(config_source_specifier)?;
             Ok(Self { config_source_specifier })
         }
