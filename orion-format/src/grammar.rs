@@ -56,32 +56,42 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
     trie_mapstr!(trie, "RESPONSE_DURATION", Operator::ResponseDuration, Category::RESPONSE_DURATION);
     trie_mapstr!(trie, "TIME_TO_FIRST_BYTE", Operator::ResponseDuration, Category::RESPONSE_DURATION); // alias for RESPONSE_DURATION
     trie_mapstr!(trie, "RESPONSE_TX_DURATION", Operator::ResponseTxDuration, Category::RESPONSE_DURATION);
-    // trie_mapstr!(trie, "DOWNSTREAM_HANDSHAKE_DURATION", Operator::DownstreamHandshakeDuration);
-    // trie_mapstr!(trie, "ROUNDTRIP_DURATION", Operator::RoundtripDuration);
+    trie_mapstr!(trie, "DOWNSTREAM_HANDSHAKE_DURATION", Operator::DownstreamHandshakeDuration, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "ROUNDTRIP_DURATION", Operator::RoundtripDuration, Category::UNSUPPORTED);
     trie_mapstr!(trie, "BYTES_RECEIVED", Operator::BytesReceived, Category::FINISH_CONTEXT);
-    // trie_mapstr!(trie, "BYTES_RETRANSMITTED", Operator::BytesRetransmitted);
-    // trie_mapstr!(trie, "PACKETS_RETRANSMITTED", Operator::PacketsRetransmitted);
-    // trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_RECEIVED", Operator::UpstreamWireBytesReceived);
-    // trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_RECEIVED", Operator::UpstreamHeaderBytesReceived);
-    // trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_RECEIVED", Operator::DownstreamWireBytesReceived);
-    // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_RECEIVED", Operator::DownstreamHeaderBytesReceived);
+    trie_mapstr!(trie, "BYTES_RETRANSMITTED", Operator::BytesRetransmitted, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "PACKETS_RETRANSMITTED", Operator::PacketsRetransmitted, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_RECEIVED", Operator::UpstreamWireBytesReceived, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_RECEIVED", Operator::UpstreamHeaderBytesReceived, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_RECEIVED", Operator::DownstreamWireBytesReceived, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_HEADER_BYTES_RECEIVED",
+        Operator::DownstreamHeaderBytesReceived,
+        Category::UNSUPPORTED
+    );
     trie_mapstr!(trie, "PROTOCOL", Operator::Protocol, Category::DOWNSTREAM_REQUEST);
     trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Operator::UpstreamProtocol, Category::UPSTREAM_REQUEST);
     trie_mapstr!(trie, "RESPONSE_CODE", Operator::ResponseCode, Category::DOWNSTREAM_RESPONSE);
-    // trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Operator::ResponseCodeDetails);
-    // trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Operator::ConnectionTerminationDetails);
+    trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Operator::ResponseCodeDetails, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Operator::ConnectionTerminationDetails, Category::UNSUPPORTED);
     trie_mapstr!(trie, "BYTES_SENT", Operator::BytesSent, Category::FINISH_CONTEXT);
-    // trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_SENT", Operator::UpstreamWireBytesSent);
-    // trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_SENT", Operator::UpstreamHeaderBytesSent);
-    // trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_SENT", Operator::DownstreamWireBytesSent);
-    // trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_SENT", Operator::DownstreamHeaderBytesSent);
+    trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_SENT", Operator::UpstreamWireBytesSent, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_SENT", Operator::UpstreamHeaderBytesSent, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_WIRE_BYTES_SENT", Operator::DownstreamWireBytesSent, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_HEADER_BYTES_SENT", Operator::DownstreamHeaderBytesSent, Category::UNSUPPORTED);
     trie_mapstr!(trie, "DURATION", Operator::Duration, Category::FINISH_CONTEXT);
-    // trie_mapstr!(trie, "COMMON_DURATION", Operator::CommonDuration);
-    // trie_mapstr!(trie, "CUSTOM_FLAGS", Operator::CustomFlags);
+    trie_mapstr!(trie, "COMMON_DURATION", Operator::CommonDuration, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "CUSTOM_FLAGS", Operator::CustomFlags, Category::UNSUPPORTED);
     trie_mapstr!(trie, "RESPONSE_FLAGS", Operator::ResponseFlags, Category::FINISH_CONTEXT);
     trie_mapstr!(trie, "RESPONSE_FLAGS_LONG", Operator::ResponseFlagsLong, Category::FINISH_CONTEXT);
-    // trie_mapstr!(trie, "UPSTREAM_HOST_NAME", Operator::UpstreamHostName);
-    // trie_mapstr!(trie, "UPSTREAM_HOST_NAME_WITHOUT_PORT", Operator::UpstreamHostNameWithoutPort);
+    trie_mapstr!(trie, "UPSTREAM_HOST_NAME", Operator::UpstreamHostName, Category::UPSTREAM_CONTEXT);
+    trie_mapstr!(
+        trie,
+        "UPSTREAM_HOST_NAME_WITHOUT_PORT",
+        Operator::UpstreamHostNameWithoutPort,
+        Category::UPSTREAM_CONTEXT
+    );
     trie_mapstr!(trie, "UPSTREAM_HOST", Operator::UpstreamHost, Category::UPSTREAM_CONTEXT);
     trie_mapstr!(trie, "UPSTREAM_CONNECTION_ID", Operator::UpstreamConnectionId, Category::UPSTREAM_CONTEXT);
     trie_mapstr!(trie, "UPSTREAM_CLUSTER", Operator::UpstreamCluster, Category::UPSTREAM_CONTEXT);
@@ -118,77 +128,127 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
         Category::DOWNSTREAM_CONTEXT
     );
     trie_mapstr!(trie, "DOWNSTREAM_REMOTE_PORT", Operator::DownstreamRemotePort, Category::DOWNSTREAM_CONTEXT);
-    // trie_mapstr!(trie, "UPSTREAM_REQUEST_ATTEMPT_COUNT", Operator::UPSTREAMREQUESTATTEMPTCOUNT);
-    // trie_mapstr!(trie, "UPSTREAM_TLS_CIPHER", Operator::UpstreamTlsCipher);
-    // trie_mapstr!(trie, "UPSTREAM_TLS_VERSION", Operator::UpstreamTlsVersion);
-    // trie_mapstr!(trie, "UPSTREAM_TLS_SESSION_ID", Operator::UpstreamTlsSessionId);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_ISSUER", Operator::UpstreamPeerIssuer);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_CERT", Operator::UpstreamPeerCert);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_SUBJECT", Operator::UpstreamPeerSubject);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_LOCAL_ADDRESS", Operator::DownstreamDirectLocalAddress);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_LOCAL_ADDRESS_WITHOUT_PORT", Operator::DownstreamDirectLocalAddressWithoutPort);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_LOCAL_PORT", Operator::DownstreamDirectLocalPort);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_REMOTE_ADDRESS", Operator::DownstreamDirectRemoteAddress);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_REMOTE_ADDRESS_WITHOUT_PORT", Operator::DownstreamDirectRemoteAddressWithoutPort);
-    // trie_mapstr!(trie, "DOWNSTREAM_DIRECT_REMOTE_PORT", Operator::DownstreamDirectRemotePort);
+    trie_mapstr!(trie, "UPSTREAM_REQUEST_ATTEMPT_COUNT", Operator::UpstreamRequestAttemptCount, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_TLS_CIPHER", Operator::UpstreamTlsCipher, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_TLS_VERSION", Operator::UpstreamTlsVersion, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_TLS_SESSION_ID", Operator::UpstreamTlsSessionId, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_ISSUER", Operator::UpstreamPeerIssuer, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_CERT", Operator::UpstreamPeerCert, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_SUBJECT", Operator::UpstreamPeerSubject, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_DIRECT_LOCAL_ADDRESS",
+        Operator::DownstreamDirectLocalAddress,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_DIRECT_LOCAL_ADDRESS_WITHOUT_PORT",
+        Operator::DownstreamDirectLocalAddressWithoutPort,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(trie, "DOWNSTREAM_DIRECT_LOCAL_PORT", Operator::DownstreamDirectLocalPort, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_DIRECT_REMOTE_ADDRESS",
+        Operator::DownstreamDirectRemoteAddress,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_DIRECT_REMOTE_ADDRESS_WITHOUT_PORT",
+        Operator::DownstreamDirectRemoteAddressWithoutPort,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(trie, "DOWNSTREAM_DIRECT_REMOTE_PORT", Operator::DownstreamDirectRemotePort, Category::UNSUPPORTED);
     trie_mapstr!(trie, "CONNECTION_ID", Operator::ConnectionId, Category::DOWNSTREAM_CONTEXT);
     trie_mapstr!(trie, "REQUEST_HEADERS_BYTES", Operator::RequestHeadersBytes, Category::DOWNSTREAM_REQUEST);
     trie_mapstr!(trie, "RESPONSE_HEADERS_BYTES", Operator::ResponseHeadersBytes, Category::DOWNSTREAM_RESPONSE);
-    // trie_mapstr!(trie, "REQUESTED_SERVER_NAME", Operator::RequestedServerName);
-    // trie_mapstr!(trie, "ROUTE_NAME", Operator::RouteName);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_URI_SAN", Operator::UpstreamPeerUriSan);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_DNS_SAN", Operator::UpstreamPeerDnsSan);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_IP_SAN", Operator::UpstreamPeerIpSan);
-    // trie_mapstr!(trie, "UPSTREAM_LOCAL_URI_SAN", Operator::UpstreamLocalUriSan);
-    // trie_mapstr!(trie, "UPSTREAM_LOCAL_DNS_SAN", Operator::UpstreamLocalDnsSan);
-    // trie_mapstr!(trie, "UPSTREAM_LOCAL_IP_SAN", Operator::UpstreamLocalIpSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_URI_SAN", Operator::DownstreamPeerUriSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_DNS_SAN", Operator::DownstreamPeerDnsSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_IP_SAN", Operator::DownstreamPeerIpSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_EMAIL_SAN", Operator::DownstreamPeerEmailSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_OTHERNAME_SAN", Operator::DownstreamPeerOthernameSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_URI_SAN", Operator::DownstreamLocalUriSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_DNS_SAN", Operator::DownstreamLocalDnsSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_IP_SAN", Operator::DownstreamLocalIpSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_EMAIL_SAN", Operator::DownstreamLocalEmailSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_OTHERNAME_SAN", Operator::DownstreamLocalOthernameSan);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_SUBJECT", Operator::DownstreamPeerSubject);
-    // trie_mapstr!(trie, "DOWNSTREAM_LOCAL_SUBJECT", Operator::DownstreamLocalSubject);
-    // trie_mapstr!(trie, "DOWNSTREAM_TLS_SESSION_ID", Operator::DownstreamTlsSessionId);
-    // trie_mapstr!(trie, "DOWNSTREAM_TLS_CIPHER", Operator::DownstreamTlsCipher);
-    // trie_mapstr!(trie, "DOWNSTREAM_TLS_VERSION", Operator::DownstreamTlsVersion);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_FINGERPRINT_256", Operator::DownstreamPeerFingerprint256);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_FINGERPRINT_1", Operator::DownstreamPeerFingerprint1);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_SERIAL", Operator::DownstreamPeerSerial);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CHAIN_FINGERPRINTS_256", Operator::DownstreamPeerChainFingerprints256);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CHAIN_FINGERPRINTS_1", Operator::DownstreamPeerChainFingerprints1);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CHAIN_SERIALS", Operator::DownstreamPeerChainSerials);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_ISSUER", Operator::DownstreamPeerIssuer);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT", Operator::DownstreamPeerCert);
-    // trie_mapstr!(trie, "DOWNSTREAM_TRANSPORT_FAILURE_REASON", Operator::DownstreamTransportFailureReason);
-    // trie_mapstr!(trie, "UPSTREAM_TRANSPORT_FAILURE_REASON", Operator::UpstreamTransportFailureReason);
-    // trie_mapstr!(trie, "HOSTNAME", Operator::Hostname);
-    // trie_mapstr!(trie, "FILTER_CHAIN_NAME", Operator::FilterChainName);
-    // trie_mapstr!(trie, "VIRTUAL_CLUSTER_NAME", Operator::VirtualClusterName);
-    // trie_mapstr!(trie, "TLS_JA3_FINGERPRINT", Operator::TlsJa3Fingerprint);
+    trie_mapstr!(trie, "REQUESTED_SERVER_NAME", Operator::RequestedServerName, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "ROUTE_NAME", Operator::RouteName, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_URI_SAN", Operator::UpstreamPeerUriSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_DNS_SAN", Operator::UpstreamPeerDnsSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_IP_SAN", Operator::UpstreamPeerIpSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_LOCAL_URI_SAN", Operator::UpstreamLocalUriSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_LOCAL_DNS_SAN", Operator::UpstreamLocalDnsSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_LOCAL_IP_SAN", Operator::UpstreamLocalIpSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_URI_SAN", Operator::DownstreamPeerUriSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_DNS_SAN", Operator::DownstreamPeerDnsSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_IP_SAN", Operator::DownstreamPeerIpSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_EMAIL_SAN", Operator::DownstreamPeerEmailSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_OTHERNAME_SAN", Operator::DownstreamPeerOthernameSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_URI_SAN", Operator::DownstreamLocalUriSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_DNS_SAN", Operator::DownstreamLocalDnsSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_IP_SAN", Operator::DownstreamLocalIpSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_EMAIL_SAN", Operator::DownstreamLocalEmailSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_OTHERNAME_SAN", Operator::DownstreamLocalOthernameSan, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_SUBJECT", Operator::DownstreamPeerSubject, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_LOCAL_SUBJECT", Operator::DownstreamLocalSubject, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_TLS_SESSION_ID", Operator::DownstreamTlsSessionId, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_TLS_CIPHER", Operator::DownstreamTlsCipher, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_TLS_VERSION", Operator::DownstreamTlsVersion, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_PEER_FINGERPRINT_256",
+        Operator::DownstreamPeerFingerprint256,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_FINGERPRINT_1", Operator::DownstreamPeerFingerprint1, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_SERIAL", Operator::DownstreamPeerSerial, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_PEER_CHAIN_FINGERPRINTS_256",
+        Operator::DownstreamPeerChainFingerprints256,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_PEER_CHAIN_FINGERPRINTS_1",
+        Operator::DownstreamPeerChainFingerprints1,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_CHAIN_SERIALS", Operator::DownstreamPeerChainSerials, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_ISSUER", Operator::DownstreamPeerIssuer, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT", Operator::DownstreamPeerCert, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "DOWNSTREAM_TRANSPORT_FAILURE_REASON",
+        Operator::DownstreamTransportFailureReason,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(
+        trie,
+        "UPSTREAM_TRANSPORT_FAILURE_REASON",
+        Operator::UpstreamTransportFailureReason,
+        Category::UNSUPPORTED
+    );
+    trie_mapstr!(trie, "HOSTNAME", Operator::Hostname, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "FILTER_CHAIN_NAME", Operator::FilterChainName, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "VIRTUAL_CLUSTER_NAME", Operator::VirtualClusterName, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "TLS_JA3_FINGERPRINT", Operator::TlsJa3Fingerprint, Category::UNSUPPORTED);
     trie_mapstr!(trie, "UNIQUE_ID", Operator::UniqueId, Category::UPSTREAM_REQUEST);
     trie_mapstr!(trie, "TRACE_ID", Operator::TraceId, Category::DOWNSTREAM_REQUEST);
-    // trie_mapstr!(trie, "STREAM_ID", Operator::StreamId);
+    trie_mapstr!(trie, "STREAM_ID", Operator::StreamId, Category::UNSUPPORTED);
     trie_mapstr!(trie, "START_TIME", Operator::StartTime, Category::INIT_CONTEXT);
-    // trie_mapstr!(trie, "START_TIME_LOCAL", Operator::StartTimeLocal);
-    // trie_mapstr!(trie, "EMIT_TIME", Operator::EmitTime);
-    // trie_mapstr!(trie, "EMIT_TIME_LOCAL", Operator::EmitTimeLocal);
-    // trie_mapstr!(trie, "DYNAMIC_METADATA", Operator::DynamicMetadata);
-    // trie_mapstr!(trie, "CLUSTER_METADATA", Operator::ClusterMetadata);
-    // trie_mapstr!(trie, "UPSTREAM_METADATA", Operator::UpstreamMetadata);
-    // trie_mapstr!(trie, "FILTER_STATE", Operator::FilterState);
-    // trie_mapstr!(trie, "UPSTREAM_FILTER_STATE", Operator::UpstreamFilterState);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT_V_START", Operator::DownstreamPeerCertVStart);
-    // trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT_V_END", Operator::DownstreamPeerCertVEnd);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_START", Operator::UpstreamPeerCertVStart);
-    // trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_END", Operator::UpstreamPeerCertVEnd);
-    // trie_mapstr!(trie, "ENVIRONMENT", Operator::Environment);
-    // trie_mapstr!(trie, "UPSTREAM_CONNECTION_POOL_READY_DURATION", Operator::UpstreamConnectionPoolReadyDuration);
+    trie_mapstr!(trie, "START_TIME_LOCAL", Operator::StartTimeLocal, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "EMIT_TIME", Operator::EmitTime, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "EMIT_TIME_LOCAL", Operator::EmitTimeLocal, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DYNAMIC_METADATA", Operator::DynamicMetadata, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "CLUSTER_METADATA", Operator::ClusterMetadata, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_METADATA", Operator::UpstreamMetadata, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "FILTER_STATE", Operator::FilterState, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_FILTER_STATE", Operator::UpstreamFilterState, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT_V_START", Operator::DownstreamPeerCertVStart, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "DOWNSTREAM_PEER_CERT_V_END", Operator::DownstreamPeerCertVEnd, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_START", Operator::UpstreamPeerCertVStart, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "UPSTREAM_PEER_CERT_V_END", Operator::UpstreamPeerCertVEnd, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "ENVIRONMENT", Operator::Environment, Category::UNSUPPORTED);
+    trie_mapstr!(
+        trie,
+        "UPSTREAM_CONNECTION_POOL_READY_DURATION",
+        Operator::UpstreamConnectionPoolReadyDuration,
+        Category::UNSUPPORTED
+    );
     trie_mapstr!(
         trie,
         "REQ",
@@ -264,6 +324,20 @@ impl Grammar for EnvoyGrammar {
                 } else if let Some((placeholder, category, placeholder_len, has_arg)) =
                     ENVOY_PATTERNS.find_longest_prefix(remainder.bytes())
                 {
+                    // ensure the placeholder is properly closed with a '%'
+                    //
+
+                    let operator = match remainder.find(&[' ', '%', '(']) {
+                        Some(index) => &remainder[..index], // ...return a slice from the beginning to that index.
+                        None => remainder,                  // In that case, return the whole string slice.
+                    };
+
+                    if operator.len() != *placeholder_len {
+                        return Err(FormatError::InvalidOperator(
+                            remainder.split_once('%').map(|(operator, _)| operator).unwrap_or(remainder).into(),
+                        ));
+                    }
+
                     let after_placeholder = &remainder[*placeholder_len..];
                     // placeholder found
                     if *has_arg {
@@ -503,6 +577,13 @@ mod tests {
     #[test]
     fn test_parse_unsupported_operator() {
         let input = "%UNSUPPORTED%";
+        let result = EnvoyGrammar::parse(input);
+        assert!(matches!(result, Err(FormatError::InvalidOperator(_))));
+    }
+
+    #[test]
+    fn test_parse_unsupported_operator_with_partial_match() {
+        let input = "%RESPONSE_CODE_UNSUPPORTED%";
         let result = EnvoyGrammar::parse(input);
         assert!(matches!(result, Err(FormatError::InvalidOperator(_))));
     }

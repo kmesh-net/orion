@@ -19,7 +19,7 @@ use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
-pub const NUM_OPERATOR_CATEGORIES: usize = 11;
+pub const NUM_OPERATOR_CATEGORIES: usize = 12;
 
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -35,6 +35,7 @@ bitflags! {
         const REQUEST_DURATION = 1 << 8;
         const RESPONSE_DURATION = 1 << 9;
         const ARGUMENT = 1 << 10;
+        const UNSUPPORTED = 1 << 11;
     }
 }
 

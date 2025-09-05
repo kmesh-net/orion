@@ -36,6 +36,9 @@ use thread_local::ThreadLocal;
 pub const DEFAULT_ACCESS_LOG_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%"
 "#;
 
+pub const DEFAULT_ISTIO_ACCESS_LOG_FORMAT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS% "%UPSTREAM_TRANSPORT_FAILURE_REASON%" %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" %UPSTREAM_CLUSTER_RAW% %UPSTREAM_LOCAL_ADDRESS%  %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS% %REQUESTED_SERVER_NAME% %ROUTE_NAME%"
+"#;
+
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum FormatError {
     #[error("invalid operator `{0}`")]
@@ -383,6 +386,26 @@ mod tests {
         let req = build_request();
         let resp = build_response();
         let source = LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false).unwrap();
+        let mut formatter = source.local_clone();
+        formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
+        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter
+            .with_context(&UpstreamContext { authority: req.uri().authority().unwrap(), cluster_name: "test_cluster" });
+        formatter.with_context(&DownstreamResponse { response: &resp, response_head_size: 0 });
+        formatter.with_context(&FinishContext {
+            duration: Duration::from_millis(100),
+            bytes_received: 128,
+            bytes_sent: 256,
+            response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
+        });
+        println!("{}", &formatter.into_message());
+    }
+
+    #[test]
+    fn default_istio_format_string() {
+        let req = build_request();
+        let resp = build_response();
+        let source = LogFormatter::try_new(DEFAULT_ISTIO_ACCESS_LOG_FORMAT, false).unwrap();
         let mut formatter = source.local_clone();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
         formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
