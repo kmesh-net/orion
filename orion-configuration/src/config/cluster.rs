@@ -30,13 +30,13 @@ use super::{
     transport::{BindDevice, CommonTlsValidationContext, TlsParameters, UpstreamTransportSocketConfig},
 };
 
-use compact_str::CompactString;
 use http::HeaderName;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use smol_str::SmolStr;
 use std::{fmt::Display, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Cluster {
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(flatten)]
     pub discovery_settings: ClusterDiscoveryType,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -213,7 +213,7 @@ pub struct TlsConfig {
     //  We could technically fall back to using the endpoint adress/name for the sni
     // where no sni is configured here but that would require a major refactor.
     // previous behaviour was to set sni to the empty string if missing.
-    pub sni: CompactString,
+    pub sni: SmolStr,
     #[serde(skip_serializing_if = "is_default", default)]
     pub parameters: TlsParameters,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default", flatten)]
@@ -226,7 +226,7 @@ pub struct TlsConfig {
 #[serde(rename_all = "snake_case")]
 pub enum TlsSecret {
     #[serde(rename = "tls_certificate_sds")]
-    SdsConfig(CompactString),
+    SdsConfig(SmolStr),
     #[serde(rename = "tls_certificate")]
     Certificate(TlsCertificate),
 }
@@ -259,7 +259,6 @@ mod envoy_conversions {
         },
         util::duration_from_envoy,
     };
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::{
@@ -285,6 +284,7 @@ mod envoy_conversions {
         },
         google::protobuf::Any,
     };
+    use smol_str::SmolStr;
 
     use http::HeaderName;
     use std::{collections::BTreeSet, num::NonZeroU32};
@@ -420,20 +420,20 @@ mod envoy_conversions {
                                     },
                                 }
                             } else if let Some(metadata_key) = &config.metadata_key {
-                                let key = CompactString::from(&metadata_key.key);
+                                let key = SmolStr::from(&metadata_key.key);
                                 let path = metadata_key.path.iter()
                                     .filter_map(|path_segment| {
                                         if let Some(segment) = &path_segment.segment {
                                             match segment {
                                                 Segment::Key(key_str) => {
-                                                    Some(CompactString::from(key_str))
+                                                    Some(SmolStr::from(key_str))
                                                 }
                                             }
                                         } else {
                                             None
                                         }
                                     })
-                                    .collect::<Vec<CompactString>>();
+                                    .collect::<Vec<SmolStr>>();
                                 OriginalDstRoutingMethod::MetadataKey(MetadataKey { key, path })
                             } else {
                                 OriginalDstRoutingMethod::Default
@@ -460,7 +460,6 @@ mod envoy_conversions {
                 } else {
                     Ok(None)
                 }?;
-                let name = CompactString::from(&name);
                 let discovery_type = extract_discovery_type(&required!(cluster_discovery_type)?)
                     .with_node("cluster_discovery_type")?;
                 if discovery_type == EnvoyDiscoveryType::OriginalDst {
@@ -568,7 +567,7 @@ mod envoy_conversions {
                     .map_err(|_| GenericError::from_msg("Failed to convert cleanup_interval into Duration"))
                     .with_node("cleanup_interval")?;
                 Ok(Self {
-                    name,
+                    name: SmolStr::from(&name),
                     discovery_settings,
                     bind_device,
                     transport_socket,

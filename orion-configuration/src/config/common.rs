@@ -15,9 +15,9 @@
 //
 //
 
-use compact_str::CompactString;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{
     borrow::Cow,
     error::Error,
@@ -220,8 +220,8 @@ impl<T> WithNodeOnResult for Result<T, GenericError> {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MetadataKey {
-    pub key: CompactString,
-    pub path: Vec<CompactString>,
+    pub key: SmolStr,
+    pub path: Vec<SmolStr>,
 }
 
 #[cfg(feature = "envoy-conversions")]

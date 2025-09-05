@@ -17,9 +17,9 @@
 
 use std::sync::OnceLock;
 
-use compact_str::CompactString;
 use http::Version;
 use lasso::ThreadedRodeo;
+use smol_str::SmolStr;
 
 static GLOBAL_INTERNER: OnceLock<ThreadedRodeo> = OnceLock::new();
 
@@ -52,7 +52,7 @@ impl StringInterner for String {
     }
 }
 
-impl StringInterner for CompactString {
+impl StringInterner for SmolStr {
     fn to_static_str(&self) -> &'static str {
         intern_str(self)
     }

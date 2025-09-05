@@ -30,7 +30,8 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use http::{uri::Authority, Request, Response};
 use orion_http_header::{X_ENVOY_ORIGINAL_PATH, X_REQUEST_ID};
 use orion_interner::StringInterner;
-use smol_str::{format_smolstr, SmolStr, SmolStrBuilder, ToSmolStr};
+use smol_str::ToSmolStr;
+use smol_str::{format_smolstr, SmolStr, SmolStrBuilder};
 use uuid::Uuid;
 
 pub trait Context {
@@ -473,10 +474,10 @@ pub fn format_system_time_heapless(time: SystemTime) -> heapless::String<24> {
 }
 
 #[cfg(any())]
-pub fn format_system_time_compact(time: SystemTime) -> CompactString {
+pub fn format_system_time_compact(time: SystemTime) -> SmolStr {
     let datetime: DateTime<Utc> = time.into();
     let mut buffer = itoa::Buffer::new();
-    let mut rfc3999 = CompactString::default();
+    let mut rfc3999 = SmolStr::default();
 
     _ = rfc3999.push_str(buffer.format(datetime.year()));
     _ = rfc3999.push('-');

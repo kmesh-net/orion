@@ -498,7 +498,7 @@ impl Listener {
                     if let ConnectionHandler::Http(http_manager) = &chain.handler {
                         let route_id = http_manager.get_route_id();
                         if let Some(route_id) = route_id {
-                            if route_id == id {
+                            if route_id == &id {
                                 debug!("{listener_name} Route updated {id} {route:?}");
                                 http_manager.update_route(route.clone());
                             }
@@ -512,7 +512,7 @@ impl Listener {
                 for chain in filter_chains.values() {
                     if let ConnectionHandler::Http(http_manager) = &chain.handler {
                         if let Some(route_id) = http_manager.get_route_id() {
-                            if route_id == id {
+                            if route_id == &id {
                                 http_manager.remove_route();
                             }
                         }

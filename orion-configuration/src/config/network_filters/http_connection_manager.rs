@@ -20,7 +20,6 @@ pub mod header_modifer;
 pub mod http_filters;
 pub mod route;
 
-use compact_str::CompactString;
 use exponential_backoff::Backoff;
 use header_matcher::HeaderMatcher;
 use header_modifer::{HeaderModifier, HeaderValueOption};
@@ -28,6 +27,7 @@ use http::{HeaderName, HeaderValue, StatusCode};
 use http_filters::{FilterOverride, HttpFilter};
 use route::{Action, RouteMatch};
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{collections::HashMap, str::FromStr, time::Duration};
 
 use crate::config::{
@@ -96,7 +96,7 @@ pub enum RouteSpecifier {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RouteConfiguration {
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(skip_serializing_if = "std::ops::Not::not", default = "Default::default")]
     pub most_specific_header_mutations_wins: bool,
     #[serde(skip_serializing_if = "is_default", default)]
@@ -112,9 +112,9 @@ pub struct RouteConfiguration {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MatchHost {
     Wildcard,
-    Prefix(CompactString),
-    Suffix(CompactString),
-    Exact(CompactString),
+    Prefix(SmolStr),
+    Suffix(SmolStr),
+    Exact(SmolStr),
 }
 
 impl Serialize for MatchHost {
@@ -136,13 +136,13 @@ impl<'de> Deserialize<'de> for MatchHost {
     where
         D: serde::Deserializer<'de>,
     {
-        let cs = CompactString::deserialize(deserializer)?;
-        Self::try_from_compact_str(cs).map_err(|e| serde::de::Error::custom(format!("{e}")))
+        let cs = SmolStr::deserialize(deserializer)?;
+        Self::try_from_smol_str(cs).map_err(|e| serde::de::Error::custom(format!("{e}")))
     }
 }
 
 impl MatchHost {
-    pub fn try_from_compact_str(value: CompactString) -> Result<Self, GenericError> {
+    pub fn try_from_smol_str(value: SmolStr) -> Result<Self, GenericError> {
         let _ = HeaderValue::from_str(&value)
             .map_err(|_| GenericError::from_msg(format!("failed to parse \"{value}\" as a headervalue")))?;
 
@@ -173,21 +173,21 @@ impl MatchHost {
 impl TryFrom<String> for MatchHost {
     type Error = GenericError;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::try_from_compact_str(value.into())
+        Self::try_from_smol_str(value.into())
     }
 }
 
 impl TryFrom<&str> for MatchHost {
     type Error = GenericError;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::try_from_compact_str(value.into())
+        Self::try_from_smol_str(value.into())
     }
 }
 
-impl TryFrom<CompactString> for MatchHost {
+impl TryFrom<SmolStr> for MatchHost {
     type Error = GenericError;
-    fn try_from(value: CompactString) -> Result<Self, Self::Error> {
-        Self::try_from_compact_str(value)
+    fn try_from(value: SmolStr) -> Result<Self, Self::Error> {
+        Self::try_from_smol_str(value)
     }
 }
 
@@ -248,7 +248,7 @@ impl MatchHost {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct VirtualHost {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub domains: Vec<MatchHost>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub routes: Vec<Route>,
@@ -373,7 +373,7 @@ pub struct Route {
     #[serde(rename = "match")]
     pub route_match: RouteMatch,
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "Default::default")]
-    pub typed_per_filter_config: std::collections::HashMap<CompactString, FilterOverride>,
+    pub typed_per_filter_config: std::collections::HashMap<SmolStr, FilterOverride>,
     #[serde(flatten)]
     pub action: Action,
 }
@@ -386,7 +386,7 @@ pub struct UpgradeConfig {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RdsSpecifier {
-    pub route_config_name: CompactString,
+    pub route_config_name: SmolStr,
     pub config_source: ConfigSource,
 }
 
@@ -583,7 +583,6 @@ mod envoy_conversions {
         network_filters::access_log::AccessLog,
         util::{duration_from_envoy, http_status_from},
     };
-    use compact_str::CompactString;
     use http::HeaderName;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::{
@@ -601,15 +600,16 @@ mod envoy_conversions {
             HttpConnectionManager as EnvoyHttpConnectionManager, Rds as EnvoyRds,
         },
     };
+    use smol_str::SmolStr;
     use std::{collections::HashMap, str::FromStr, time::Duration};
 
     impl HttpConnectionManager {
         pub(crate) fn ensure_corresponding_filter_exists(
-            filter_override: (&CompactString, &FilterOverride),
+            filter_override: (&SmolStr, &FilterOverride),
             http_filters: &[HttpFilter],
         ) -> Result<(), GenericError> {
             let (name, config) = filter_override;
-            match http_filters.iter().find(|filter| filter.name == name) {
+            match http_filters.iter().find(|filter| &filter.name == name) {
                 None => Err(GenericError::from_msg(format!("http filter \"{name}\" does not exist"))),
                 Some(matching_filter) => match &config.filter_settings {
                     None => Ok(()),
@@ -761,10 +761,10 @@ mod envoy_conversions {
             let mut http_filters: Vec<SupportedEnvoyHttpFilter> = convert_non_empty_vec!(http_filters)?;
             match http_filters.pop() {
                 Some(SupportedEnvoyHttpFilter { filter: SupportedEnvoyFilter::Router(rtr), name, disabled: false }) => {
-                    Router::try_from(rtr).with_node(name)
+                    Router::try_from(rtr).with_node(name.to_string())
                 },
                 Some(SupportedEnvoyHttpFilter { filter: SupportedEnvoyFilter::Router(_), name, disabled: true }) => {
-                    Err(GenericError::from_msg("router cannot be disabled").with_node(name))
+                    Err(GenericError::from_msg("router cannot be disabled").with_node(name.to_string()))
                 },
                 _ => Err(GenericError::from_msg("final filter of the chain has to be a router")),
             }
@@ -792,7 +792,7 @@ mod envoy_conversions {
                         return Err(e
                             .with_node("typed_per_filter_config")
                             .with_node("route")
-                            .with_node(vh.name.clone())
+                            .with_node(vh.name.to_string())
                             .with_node("virtual_hosts")
                             .with_node("route_specifier"));
                     }
@@ -919,7 +919,7 @@ mod envoy_conversions {
                 typed_per_filter_config,
                 metadata
             )?;
-            let name: CompactString = required!(name)?.into();
+            let name: String = required!(name)?;
             (|| -> Result<_, GenericError> {
                 let response_headers_to_add = convert_vec!(response_headers_to_add)?;
                 let request_headers_to_add = convert_vec!(request_headers_to_add)?;
@@ -944,7 +944,7 @@ mod envoy_conversions {
                 let virtual_hosts = convert_non_empty_vec!(virtual_hosts)?;
                 let response_header_modifier = HeaderModifier::new(response_headers_to_remove, response_headers_to_add);
                 Ok(Self {
-                    name: name.clone(),
+                    name: SmolStr::from(&name),
                     virtual_hosts,
                     most_specific_header_mutations_wins,
                     response_header_modifier,
@@ -1008,7 +1008,7 @@ mod envoy_conversions {
                 request_mirror_policies,
                 metadata
             )?;
-            let name: CompactString = required!(name)?.into();
+            let name: String = required!(name)?;
             (|| -> Result<_, GenericError> {
                 let response_headers_to_add = convert_vec!(response_headers_to_add)?;
                 let request_headers_to_add = convert_vec!(request_headers_to_add)?;
@@ -1036,7 +1036,7 @@ mod envoy_conversions {
                 let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
                 let response_header_modifier = HeaderModifier::new(response_headers_to_remove, response_headers_to_add);
                 Ok(Self {
-                    name: name.clone(),
+                    name: SmolStr::from(&name),
                     routes,
                     domains,
                     request_headers_to_add,
@@ -1200,7 +1200,7 @@ mod envoy_conversions {
                 typed_per_filter_config
                     .into_iter()
                     .map(|(name, typed_config)| {
-                        FilterOverride::try_from(typed_config).map(|x| (CompactString::new(&name), x)).with_node(name)
+                        FilterOverride::try_from(typed_config).map(|x| (SmolStr::new(&name), x)).with_node(name)
                     })
                     .collect::<Result<HashMap<_, _>, GenericError>>()
             }

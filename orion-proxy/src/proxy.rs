@@ -21,7 +21,6 @@ use crate::{
     runtime::{self, RuntimeId},
     xds_configurator::XdsConfigurationHandler,
 };
-use compact_str::ToCompactString;
 use futures::future::join_all;
 use orion_configuration::config::{
     bootstrap::Node,
@@ -39,6 +38,7 @@ use orion_lib::{
 };
 use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
 use parking_lot::RwLock;
+use smol_str::ToSmolStr;
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -326,11 +326,7 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
                 listeners.iter().map(|l| (l.name.clone(), l.get_access_log_configurations())).collect::<Vec<_>>();
 
             for (listener_name, access_log_configurations) in listener_configurations {
-                _ = update_configuration(
-                    Target::Listener(listener_name.to_compact_string()),
-                    access_log_configurations,
-                )
-                .await;
+                _ = update_configuration(Target::Listener(listener_name.to_smolstr()), access_log_configurations).await;
             }
 
             handles.join_all().await;

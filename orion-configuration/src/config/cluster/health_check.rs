@@ -16,12 +16,12 @@
 //
 
 use crate::config::common::is_default;
-use compact_str::CompactString;
 use http::{
     uri::{Authority, PathAndQuery},
     Method,
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{ops::Range, str::FromStr, time::Duration};
 
 pub use super::http_protocol_options::Codec;
@@ -254,7 +254,7 @@ pub struct TcpHealthCheck {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct GrpcHealthCheck {
-    pub service_name: CompactString,
+    pub service_name: SmolStr,
 }
 
 #[cfg(feature = "envoy-conversions")]
