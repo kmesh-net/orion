@@ -26,7 +26,7 @@ opentelemetry-otlp = { version = "0.29.0", features = [
   "tokio",
   "tonic",
 ] }
-opentelemetry_sdk = "0.29.0"
+opentelemetry_sdk = "0.30.0"
 orion-configuration.workspace = true
 orion-interner.workspace = true
 parking_lot = "0.12.3"
