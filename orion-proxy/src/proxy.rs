@@ -80,7 +80,7 @@ fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Re
 }
 
 #[derive(Debug, Clone)]
-struct ServiceInfo {
+struct XDSConfiguration {
     bootstrap: Bootstrap,
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
@@ -145,25 +145,21 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         return Err("No listeners and no ads clusters configured".into());
     }
 
-    let service_info = ServiceInfo {
+    let xds_option = XDSConfiguration {
         node,
         configuration_senders: config_senders,
         secret_manager,
         listener_factories,
-        bootstrap,
         clusters,
         ads_cluster_names,
         access_log_config,
         tracing,
         metrics: metrics.clone(),
+        bootstrap,
     };
 
-    let services_handle = spawn_services_runtime_from_thread(
-        "services",
-        rt_config.num_service_threads.get() as usize,
-        None,
-        service_info,
-    )?;
+    let xds_handle =
+        spawn_xds_runtime_from_thread("xds", rt_config.num_service_threads.get() as usize, None, xds_option)?;
 
     if !are_metrics_empty {
         info!("Waiting for metrics setup to complete...");
@@ -183,7 +179,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
 
     info!("Launching with {} cpus, {} runtimes", num_cpus, num_runtimes);
 
-    let proxy_handles = {
+    let mut handlers = {
         (0..num_runtimes)
             .zip(config_receivers.into_iter())
             .map(|(id, config_receivers)| {
@@ -198,9 +194,9 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
             .collect::<Result<Vec<_>>>()?
     };
 
-    let handles = proxy_handles.into_iter().chain(std::iter::once(services_handle)).collect::<Vec<_>>();
+    handlers.push(xds_handle);
 
-    for h in handles {
+    for h in handlers {
         if let Err(err) = h.join() {
             warn!("Closing handler with error {err:?}");
         }
@@ -208,62 +204,54 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
     Ok(sender_guards)
 }
 
-type RuntimeHandle = JoinHandle<Result<()>>;
-
 fn spawn_proxy_runtime_from_thread(
     thread_name: &'static str,
     num_threads: usize,
     metrics: Vec<Metrics>,
     affinity_info: Option<(RuntimeId, Affinity)>,
     configuration_receivers: ConfigurationReceivers,
-) -> Result<RuntimeHandle> {
+) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
 
-    let handle: JoinHandle<Result<()>> = thread::Builder::new().name(thread_name.clone()).spawn(move || {
+    let handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, Some(metrics));
         rt.block_on(async {
             tokio::select! {
                 _ = start_proxy(configuration_receivers) => {
                     info!("Proxy Runtime terminated!");
-                    Ok(())
                 }
                 _ = tokio::signal::ctrl_c() => {
                     info!("CTRL+C (Proxy runtime)!");
-                    Ok(())
                 }
             }
-        })
+        });
     })?;
     Ok(handle)
 }
 
-fn spawn_services_runtime_from_thread(
+fn spawn_xds_runtime_from_thread(
     thread_name: &'static str,
     num_threads: usize,
     affinity_info: Option<(RuntimeId, Affinity)>,
-    service_info: ServiceInfo,
-) -> Result<RuntimeHandle> {
+    xds_option: XDSConfiguration,
+) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
-
     let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, None);
         rt.block_on(async {
             tokio::select! {
-                result = spawn_services(service_info) => {
+                result = run_xds_client(xds_option) => {
                     if let Err(err) = result {
-                        warn!("Error in services runtime: {err:?}");
+                        warn!("Error in xds runtime: {err:?}");
                     }
-                    info!("Service Runtime terminated!");
-                    Ok(())
+                    info!("XDS Runtime terminated!");
                 }
                 _ = tokio::signal::ctrl_c() => {
-                    info!("CTRL+C (service runtime)!");
-                    Ok(())
+                    info!("CTRL+C (xds runtime)!");
                 }
             }
-        })
+        });
     })?;
-
     Ok(rt_handle)
 }
 
@@ -274,8 +262,8 @@ fn build_thread_name(thread_name: &'static str, affinity_info: Option<&(RuntimeI
     }
 }
 
-async fn spawn_services(info: ServiceInfo) -> Result<()> {
-    let ServiceInfo {
+async fn run_xds_client(info: XDSConfiguration) -> Result<()> {
+    let XDSConfiguration {
         bootstrap,
         node,
         configuration_senders,
