@@ -94,7 +94,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
-    use tracing::warn;
+    use tracing::info;
 
     #[derive(Debug, Clone)]
     pub(crate) struct SupportedEnvoyHttpFilter {
@@ -171,7 +171,7 @@ mod envoy_conversions {
                 | "type.googleapis.com/istio.envoy.config.filter.http.alpn.v2alpha1.FilterConfig"
                 | "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
                 | "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors" => {
-                    warn!("Ignored Istio type {}", typed_config.type_url);
+                    info!("Ignored Istio type {}", typed_config.type_url);
                     Ok(SupportedEnvoyFilter::Ignored)
                 },
 

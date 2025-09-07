@@ -297,10 +297,10 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: EnvoyCluster) -> Result<Self, Self::Error> {
             let EnvoyCluster {
-                transport_socket_matches,
+                transport_socket_matches: _,
                 name,
                 alt_stat_name: _,
-                eds_cluster_config,
+                eds_cluster_config: _,
                 connect_timeout,
                 per_connection_buffer_limit_bytes,
                 lb_policy,
@@ -326,14 +326,14 @@ mod envoy_conversions {
                 cleanup_interval,
                 upstream_bind_config,
                 lb_subset_config,
-                common_lb_config,
+                common_lb_config: _,
                 transport_socket,
-                metadata,
+                metadata: _,
                 protocol_selection,
                 upstream_connection_options: _,
                 close_connections_on_host_health_failure,
                 ignore_health_on_host_removal,
-                filters,
+                filters: _,
                 load_balancing_policy,
                 lrs_server,
                 track_timeout_budgets,
@@ -349,10 +349,10 @@ mod envoy_conversions {
             let name = required!(name)?;
             (|| -> Result<Self, GenericError> {
                 unsupported_field!(
-                    transport_socket_matches,
+                    //transport_socket_matches,
                     // name,
                     //alt_stat_name,
-                    eds_cluster_config,
+                    //eds_cluster_config,
                     // connect_timeout,
                     per_connection_buffer_limit_bytes,
                     // lb_policy,
@@ -378,14 +378,14 @@ mod envoy_conversions {
                     // cleanup_interval,
                     // upstream_bind_config,
                     lb_subset_config,
-                    common_lb_config,
+                    //common_lb_config,
                     // transport_socket,
-                    metadata,
+                    //metadata,
                     protocol_selection,
                     //upstream_connection_options,
                     close_connections_on_host_health_failure,
                     ignore_health_on_host_removal,
-                    filters,
+                    //filters,
                     load_balancing_policy,
                     lrs_server,
                     track_timeout_budgets,
@@ -745,7 +745,7 @@ mod envoy_conversions {
     //todo(hayley): refactor this to a trait impl when splitting the envoy conversions out of this crate
     fn bind_device_from_bind_config(value: EnvoyBindConfig) -> Result<Option<BindDevice>, GenericError> {
         let EnvoyBindConfig {
-            source_address,
+            source_address: _,
             freebind,
             socket_options,
             extra_source_addresses,
@@ -753,7 +753,7 @@ mod envoy_conversions {
             local_address_selector,
         } = value;
         unsupported_field!(
-            source_address,
+            //source_address,
             freebind,
             // socket_options,
             extra_source_addresses,

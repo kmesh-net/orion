@@ -357,7 +357,7 @@ mod envoy_conversions {
             let EnvoyTlsParameters {
                 tls_minimum_protocol_version,
                 tls_maximum_protocol_version,
-                cipher_suites,
+                cipher_suites: _,
                 ecdh_curves,
                 signature_algorithms,
                 compliance_policies,
@@ -365,7 +365,7 @@ mod envoy_conversions {
             unsupported_field!(
                 // tls_minimum_protocol_version,
                 // tls_maximum_protocol_version,
-                cipher_suites,
+                //cipher_suites,
                 ecdh_curves,
                 signature_algorithms,
                 compliance_policies
@@ -423,7 +423,7 @@ mod envoy_conversions {
                 tls_certificate_provider_instance,
                 tls_certificate_certificate_provider,
                 tls_certificate_certificate_provider_instance,
-                alpn_protocols,
+                alpn_protocols: _,
                 custom_handshaker,
                 key_log,
                 validation_context_type,
@@ -436,7 +436,7 @@ mod envoy_conversions {
                 tls_certificate_provider_instance,
                 tls_certificate_certificate_provider,
                 tls_certificate_certificate_provider_instance,
-                alpn_protocols,
+                //alpn_protocols,
                 custom_handshaker,
                 key_log, // validation_context_type
                 custom_tls_certificate_selector
@@ -461,9 +461,9 @@ mod envoy_conversions {
     impl TryFrom<EnvoySdsSecretConfig> for SdsConfig {
         type Error = GenericError;
         fn try_from(value: EnvoySdsSecretConfig) -> Result<Self, Self::Error> {
-            let EnvoySdsSecretConfig { name, sds_config } = value;
+            let EnvoySdsSecretConfig { name, sds_config: _ } = value;
             let name: CompactString = required!(name)?.into();
-            unsupported_field!(sds_config).with_name(name.clone())?;
+            //unsupported_field!(sds_config).with_name(name.clone())?;
             Ok(Self { name })
         }
     }
@@ -478,7 +478,7 @@ mod envoy_conversions {
                 EnvoyValidationContextType::ValidationContextSdsSecretConfig(x) => {
                     SdsConfig::try_from(x).map(|sds| Self::SdsConfig(sds.name))
                 },
-                EnvoyValidationContextType::CombinedValidationContext(_) => {
+                EnvoyValidationContextType::CombinedValidationContext(_combined_context) => {
                     Err(GenericError::unsupported_variant("CombinedValidationContext"))
                 },
                 EnvoyValidationContextType::ValidationContextCertificateProvider(_) => {

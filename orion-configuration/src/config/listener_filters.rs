@@ -67,7 +67,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
-    use tracing::warn;
+    use tracing::info;
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
@@ -85,10 +85,13 @@ mod envoy_conversions {
                 "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol" => {
                     EnvoyProxyProtocol::decode(typed_config.value.as_slice()).map(Self::ProxyProtocol)
                 },
-                "type.googleapis.com/udpa.type.v1.TypedStruct" | "type.googleapis.com/stats.PluginConfig" => {
-                    warn!("Ignored Istio type {}", typed_config.type_url);
+                "type.googleapis.com/udpa.type.v1.TypedStruct"
+                | "type.googleapis.com/stats.PluginConfig"
+                | "type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector" => {
+                    info!("Ignored Istio type {}", typed_config.type_url);
                     Ok(SupportedEnvoyListenerFilter::Ignored)
                 },
+
                 _ => {
                     return Err(GenericError::unsupported_variant(format!(
                         "Listener filter unsupported variant {}",

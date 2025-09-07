@@ -555,6 +555,7 @@ mod envoy_conversions {
                                     }
                                 }
                             },
+                            SupportedEnvoyFilter::Ignored => Ok(()),
                         },
                         Err(e) => Err(e),
                     }
@@ -674,6 +675,7 @@ mod envoy_conversions {
         HttpConnectionManager(EnvoyHttpConnectionManager),
         NetworkRbac(EnvoyNetworkRbac),
         TcpProxy(EnvoyTcpProxy),
+        Ignored,
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -689,8 +691,14 @@ mod envoy_conversions {
             "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy" => {
                 EnvoyTcpProxy::decode(typed_config.value.as_slice()).map(Self::TcpProxy)
             },
+            "type.googleapis.com/stats.PluginConfig" | "type.googleapis.com/udpa.type.v1.TypedStruct"=> {
+                Ok(Self::Ignored)
+            }
             _ => {
-                return Err(GenericError::unsupported_variant(typed_config.type_url));
+                return Err(GenericError::unsupported_variant(format!(
+                        "Supported Envoy Filter unsupported variant {}",
+                        typed_config.type_url
+                    )))
             },
         }
         .map_err(|e| {

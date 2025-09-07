@@ -282,13 +282,13 @@ impl HttpChannelBuilder {
     }
 
     fn build_channel_from_pipe(self) -> crate::Result<HttpChannel> {
-        use hyperlocal::{UnixClientExt, Uri};
+        use hyperlocal::Uri;
 
         match &self.address {
             Some(Address::Pipe(name, _)) => {
                 let client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
-                let uri: hyper::Uri = Uri::new(name.clone(), "/").into();
+                let uri: hyper::Uri = Uri::new(name.clone(), ".").into();
                 let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
                 warn!("Building address from a pipe {uri:?}");
 

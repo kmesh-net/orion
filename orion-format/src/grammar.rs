@@ -386,7 +386,7 @@ impl Grammar for EnvoyGrammar {
 // Unit tests module
 #[cfg(test)]
 mod tests {
-    use crate::DEFAULT_ACCESS_LOG_FORMAT;
+    use crate::{DEFAULT_ACCESS_LOG_FORMAT, DEFAULT_ISTIO_2_ACCESS_LOG_FORMAT, DEFAULT_ISTIO_ACCESS_LOG_FORMAT};
 
     use super::*;
 
@@ -499,6 +499,12 @@ mod tests {
     #[test]
     fn test_default_fmt() {
         _ = EnvoyGrammar::parse(DEFAULT_ACCESS_LOG_FORMAT).unwrap();
+    }
+
+    #[test]
+    fn test_istio_fmt() {
+        _ = EnvoyGrammar::parse(DEFAULT_ISTIO_ACCESS_LOG_FORMAT).unwrap();
+        _ = EnvoyGrammar::parse(DEFAULT_ISTIO_2_ACCESS_LOG_FORMAT).unwrap();
     }
 
     // bad patters..

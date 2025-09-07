@@ -46,6 +46,7 @@ use orion_data_plane_api::envoy_data_plane_api::{
 
 use orion_format::{LogFormatter, DEFAULT_ACCESS_LOG_FORMAT};
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 use crate::config::{common::*, core::DataSource};
 
@@ -224,10 +225,12 @@ impl TryFrom<EnvoyAccessLog> for AccessLog {
         }?;
 
         let logger = match fmt.flatten() {
-            Some(SubstitutionFormatString { format, omit_empty_values }) => orion_format::LogFormatter::try_new(
-                format.as_ref().map(AsRef::as_ref).unwrap_or(DEFAULT_ACCESS_LOG_FORMAT),
-                omit_empty_values,
-            ),
+            Some(SubstitutionFormatString { format, omit_empty_values }) => {
+                let format = format.as_ref().map(AsRef::as_ref).unwrap_or(DEFAULT_ACCESS_LOG_FORMAT);
+                warn!("Received formatter {format}");
+                let format = DEFAULT_ACCESS_LOG_FORMAT;
+                orion_format::LogFormatter::try_new(format, omit_empty_values)
+            },
             None => orion_format::LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false),
         }
         .map_err(|e| GenericError::from_msg(format!("Error: failed to create log formatter: {e}")))?;

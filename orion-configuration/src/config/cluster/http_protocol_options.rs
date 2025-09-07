@@ -61,6 +61,7 @@ pub struct CommonHttpOptions {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 enum UpstreamHttpProtocolOptions {
     Explicit(ExplicitProtocolOptions),
+    UseDownstream(UseDownstreamProtocolOptions),
 }
 
 impl Default for UpstreamHttpProtocolOptions {
@@ -72,6 +73,13 @@ impl Default for UpstreamHttpProtocolOptions {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "http_version", rename_all = "UPPERCASE")]
 enum ExplicitProtocolOptions {
+    Http1(Http1ProtocolOptions),
+    Http2(Http2ProtocolOptions),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "http_version", rename_all = "UPPERCASE")]
+enum UseDownstreamProtocolOptions {
     Http1(Http1ProtocolOptions),
     Http2(Http2ProtocolOptions),
 }
@@ -127,7 +135,9 @@ mod envoy_conversions {
         Codec, CommonHttpOptions, ExplicitProtocolOptions, Http1ProtocolOptions, Http2KeepAliveSettings,
         Http2ProtocolOptions, HttpProtocolOptions, UpstreamHttpProtocolOptions,
     };
-    use crate::config::{common::*, util::duration_from_envoy};
+    use crate::config::{
+        cluster::http_protocol_options::UseDownstreamProtocolOptions, common::*, util::duration_from_envoy,
+    };
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::core::v3::{
@@ -138,7 +148,7 @@ mod envoy_conversions {
                 http_protocol_options::{
                     explicit_http_config::ProtocolConfig as EnvoyProtocolConfig,
                     ExplicitHttpConfig as EnvoyExplicitHttpConfig,
-                    UpstreamProtocolOptions as EnvoyUpstreamProtocolOptions,
+                    UpstreamProtocolOptions as EnvoyUpstreamProtocolOptions, UseDownstreamHttpConfig,
                 },
                 HttpProtocolOptions as EnvoyHttpProtocolOptions,
             },
@@ -193,7 +203,7 @@ mod envoy_conversions {
                 idle_timeout,
                 max_connection_duration,
                 max_headers_count,
-                max_stream_duration,
+                max_stream_duration: _,
                 headers_with_underscores_action,
                 max_requests_per_connection: _,
                 max_response_headers_kb,
@@ -202,7 +212,7 @@ mod envoy_conversions {
                 // idle_timeout,
                 max_connection_duration,
                 max_headers_count,
-                max_stream_duration,
+                //max_stream_duration,
                 headers_with_underscores_action,
                 //max_requests_per_connection,
                 max_response_headers_kb
@@ -238,10 +248,12 @@ mod envoy_conversions {
                 .unwrap_or_default();
             let common = common_http_protocol_options.map(CommonHttpOptions::try_from).transpose()?.unwrap_or_default();
             let (codec, http1_options, http2_options) = match upstream_protocol_options {
-                UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http1(http1)) => {
+                UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http1(http1))
+                | UpstreamHttpProtocolOptions::UseDownstream(UseDownstreamProtocolOptions::Http1(http1)) => {
                     (Codec::Http1, http1, Http2ProtocolOptions::default())
                 },
-                UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http2(http2)) => {
+                UpstreamHttpProtocolOptions::Explicit(ExplicitProtocolOptions::Http2(http2))
+                | UpstreamHttpProtocolOptions::UseDownstream(UseDownstreamProtocolOptions::Http2(http2)) => {
                     (Codec::Http2, Http1ProtocolOptions, http2)
                 },
             };
@@ -256,8 +268,8 @@ mod envoy_conversions {
             match value {
                 EnvoyUpstreamProtocolOptions::ExplicitHttpConfig(envoy) => envoy.try_into().map(Self::Explicit),
                 EnvoyUpstreamProtocolOptions::AutoConfig(_) => Err(GenericError::unsupported_variant("AutoConfig")),
-                EnvoyUpstreamProtocolOptions::UseDownstreamProtocolConfig(_) => {
-                    Err(GenericError::unsupported_variant("UseDownstreamProtocolConfig"))
+                EnvoyUpstreamProtocolOptions::UseDownstreamProtocolConfig(envoy) => {
+                    envoy.try_into().map(Self::UseDownstream)
                 },
             }
         }
@@ -268,6 +280,20 @@ mod envoy_conversions {
         fn try_from(value: EnvoyExplicitHttpConfig) -> Result<Self, Self::Error> {
             let EnvoyExplicitHttpConfig { protocol_config } = value;
             convert_opt!(protocol_config)
+        }
+    }
+
+    impl TryFrom<UseDownstreamHttpConfig> for UseDownstreamProtocolOptions {
+        type Error = GenericError;
+        fn try_from(value: UseDownstreamHttpConfig) -> Result<Self, Self::Error> {
+            let UseDownstreamHttpConfig { http_protocol_options, http2_protocol_options, http3_protocol_options: _ } =
+                value;
+
+            match (http_protocol_options, http2_protocol_options) {
+                (None, None) => Err(GenericError::MissingField("No http options provided")),
+                (None | Some(_), Some(http2_config)) => http2_config.try_into().map(Self::Http2),
+                (Some(http1_config), None) => http1_config.try_into().map(Self::Http1),
+            }
         }
     }
 

@@ -872,7 +872,7 @@ mod envoy_conversions {
                 internal_redirect_action,
                 max_internal_redirects,
                 hedge_policy,
-                max_stream_duration,
+                max_stream_duration: _,
                 cluster_specifier,
                 host_rewrite_specifier,
             } = value;
@@ -901,7 +901,7 @@ mod envoy_conversions {
                 internal_redirect_action,
                 max_internal_redirects,
                 hedge_policy,
-                max_stream_duration,
+                //max_stream_duration,
                 // cluster_specifier,
                 host_rewrite_specifier
             )?;
