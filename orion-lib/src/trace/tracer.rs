@@ -146,7 +146,6 @@ impl Tracer {
         // Trigger: x_request_id...
 
         if let Some(trace_id) = request_id.as_ref().and_then(|val| <u128 as FromHeaderValue>::from(val.as_ref()).ok()) {
-            println!("here!");
             if forced
                 || (Self::should_sample(self.tracing.random_sampling)
                     && Self::should_sample(self.tracing.overall_sampling))

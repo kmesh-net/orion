@@ -63,7 +63,7 @@ impl GrpcService {
 
         let http_req = Request::from_parts(
             parts,
-            BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _flags| {
+            BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _event_error, _flags| {
                 println!("gRPC request body finalized")
             }),
         );

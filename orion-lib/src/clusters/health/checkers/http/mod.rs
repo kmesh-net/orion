@@ -183,5 +183,5 @@ fn create_request(
     let req = req.header("User-Agent", "orion/health-checks");
 
     let empty = Empty::<Bytes>::default().into();
-    Ok(RequestExt::new(req.body(BodyWithMetrics::new(BodyKind::Request, empty, |_, _| {}))?))
+    Ok(RequestExt::new(req.body(BodyWithMetrics::new(BodyKind::Request, empty, |_, _, _| {}))?))
 }

@@ -192,6 +192,10 @@ impl Error {
         self.0
     }
 
+    pub fn inner(&self) -> &(impl ErrorTrait + Send + Sync + 'static) {
+        &self.0
+    }
+
     pub fn get_context_data<T: 'static>(&self) -> Option<&T> {
         if let ErrorImpl::Context(ErrorInfo { message: _, any: Some(val) }, _) = &self.0 {
             val.downcast_ref::<T>()
@@ -275,7 +279,7 @@ impl ErrorTrait for ErrorImpl {
     fn source(&self) -> Option<&(dyn ErrorTrait + 'static)> {
         match self {
             Self::Error(err) => err.source(),
-            Self::Context(_, err) => Some(err.as_ref()),
+            Self::Context(_, err) => err.source(),
         }
     }
 }

@@ -20,7 +20,10 @@ use super::{
     tcp_proxy::{TcpProxy, TcpProxyBuilder},
 };
 use crate::{
-    listeners::{filter_state::DownstreamConnectionMetadata, http_connection_manager::ExtendedRequest},
+    listeners::{
+        filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
+        http_connection_manager::ExtendedRequest,
+    },
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::AsyncReadWrite,
     AsyncStream, ConversionContext, Error, Result,
@@ -168,7 +171,7 @@ impl FilterchainType {
     pub async fn start_filterchain(
         &self,
         stream: AsyncStream,
-        downstream_metadata: Arc<DownstreamConnectionMetadata>,
+        downstream_metadata: Arc<DownstreamMetadata>,
         shard_id: ThreadId,
         listener_name: &'static str,
         start_instant: std::time::Instant,
