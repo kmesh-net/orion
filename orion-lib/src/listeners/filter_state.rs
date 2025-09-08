@@ -15,6 +15,7 @@
 //
 //
 
+use compact_str::CompactString;
 use orion_configuration::config::common::TlvType;
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -46,5 +47,20 @@ impl DownstreamConnectionMetadata {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DownstreamMetadata {
+    pub connection: DownstreamConnectionMetadata,
+    pub server_name: Option<CompactString>,
+}
+
+impl DownstreamMetadata {
+    pub fn new<S>(connection: DownstreamConnectionMetadata, server_name: Option<S>) -> Self
+    where
+        S: Into<CompactString>,
+    {
+        Self { connection, server_name: server_name.map(Into::into) }
     }
 }

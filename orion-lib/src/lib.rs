@@ -18,6 +18,7 @@
 #![recursion_limit = "128"]
 
 pub mod configuration;
+pub mod event_error;
 
 pub mod access_log;
 mod body;

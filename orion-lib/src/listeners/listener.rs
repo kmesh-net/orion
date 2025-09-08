@@ -20,7 +20,7 @@ use super::{
     listeners_manager::TlsContextChange,
 };
 use crate::{
-    listeners::filter_state::DownstreamConnectionMetadata,
+    listeners::filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader},
     ConversionContext, Error, Result, RouteConfigurationChange,
@@ -308,7 +308,7 @@ impl Listener {
 
         match_subitem(
             FilterChainMatch::matches_server_name,
-            server_name.unwrap_or_default(),
+            server_name.unwrap_or(""),
             filter_chains.keys(),
             &mut scratchpad,
             &mut possible_filters,
@@ -343,6 +343,8 @@ impl Listener {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_arguments)]
     async fn process_listener_update(
         listener_name: &'static str,
         filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
@@ -366,16 +368,6 @@ impl Listener {
                 .unwrap_or(u64::MAX);
             with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
         }
-
-        let downstream_metadata = if let Some(config) = proxy_protocol_config.as_ref() {
-            let reader = ProxyProtocolReader::new(Arc::clone(config));
-            let (metadata, new_stream) = reader.try_read_proxy_header(stream, local_address, peer_addr).await?;
-            stream = new_stream;
-            metadata
-        } else {
-            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address }
-        };
-        let downstream_metadata = Arc::new(downstream_metadata);
 
         let server_name = if with_tls_inspector {
             let (tls_result, rewound_stream) = tls_inspector::inspect_client_hello(stream).await;
@@ -428,16 +420,32 @@ impl Listener {
             None
         };
 
+        let connection_metadata = if let Some(config) = proxy_protocol_config.as_ref() {
+            let reader = ProxyProtocolReader::new(Arc::clone(config));
+            let (metadata, new_stream) = reader.try_read_proxy_header(stream, local_address, peer_addr).await?;
+            stream = new_stream;
+            metadata
+        } else {
+            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address }
+        };
+
         let selected_filterchain =
-            Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref())?;
+            Self::select_filterchain(&filter_chains, &connection_metadata, server_name.as_deref())?;
+
         if let Some(filterchain) = selected_filterchain {
             debug!(
                 "{listener_name} : mapping connection from {peer_addr} to filter chain {}",
                 filterchain.filter_chain().name
             );
-            if let Some(stream) = filterchain.apply_rbac(stream, &downstream_metadata, server_name.as_deref()) {
+            if let Some(stream) = filterchain.apply_rbac(stream, &connection_metadata, server_name.as_deref()) {
                 return filterchain
-                    .start_filterchain(stream, downstream_metadata, shard_id, listener_name, start_instant)
+                    .start_filterchain(
+                        stream,
+                        Arc::new(DownstreamMetadata { connection: connection_metadata, server_name }),
+                        shard_id,
+                        listener_name,
+                        start_instant,
+                    )
                     .await;
             }
             debug!("{listener_name} : dropped connection from {peer_addr} due to rbac");
@@ -681,8 +689,8 @@ filter_chains:
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
         };
-        let good_host = Some("host.test");
-        assert!(matches!(Listener::select_filterchain(&m, &metadata, good_host), Ok(Some(()))));
+
+        assert!(matches!(Listener::select_filterchain(&m, &metadata, Some("host.test")), Ok(Some(()))));
         assert!(matches!(Listener::select_filterchain(&m, &metadata, Some("a.wildcard")), Ok(Some(()))));
         assert!(matches!(Listener::select_filterchain(&m, &metadata, None), Ok(None)));
     }
@@ -737,7 +745,6 @@ filter_chains:
             Listener::select_filterchain(&m, &metadata, Some("this.is.less.specific")).unwrap().copied(),
             Some(2)
         );
-
         assert_eq!(Listener::select_filterchain(&m, &metadata, Some("hello.world")).unwrap().copied(), Some(3));
     }
 }
