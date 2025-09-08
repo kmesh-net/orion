@@ -1,0 +1,135 @@
+Istio Proxy/Envoy CMD params
+/usr/local/bin/envoy -c etc/istio/proxy/envoy-rev.json --drain-time-s 45 --drain-strategy immediate --local-address-ip-version v4 --file-flush-interval-msec 1000 --disable-hot-restart --allow-unknown-static-fields -l warning --component-log-level misc:error --skip-deprecated-logs --concurrency 2
+
+k exec -ti details-v1-766844796b-fg5fr -c istio-proxy -- /bin/bash
+
+/pkg/config/constants/constants.go -- name of the binary
+/pkg/envoy/proxy.go -- params passed to orion
+
+make docker.proxyv2
+
+docker tag localhost:5000/pilot:latest istio/pilot:1.28-dev
+docker tag localhost:5000/proxyv2:latest istio/proxyv2:1.28-dev
+
+kind load docker-image istio/proxyv2:1.28-dev --name envoy-gateway
+kind load docker-image istio/pilot:1.28-dev --name envoy-gateway
+
+k logs -c istio-proxy details-v1-766844796b-4sdwd
+
+
+Orion location for building docker images
+cp ../kmesh-orion/orion-proxy/conf/orion-conf.yaml ./out/linux_amd64/dockerx_build/build.docker.proxyv2/amd64/
+cp ../kmesh-orion/orion-proxy/conf/orion-conf.yaml ./out/linux_amd64/dockerx_build/build.docker.proxyv2/
+cp ../kmesh-orion/orion-proxy/conf/orion-conf.yaml ./out/linux_amd64/release/
+cp ../kmesh-orion/orion-proxy/conf/orion-conf.yaml ./out/linux_amd64/
+
+
+cp ../kmesh-orion/target/debug/orion ./out/linux_amd64/dockerx_build/build.docker.proxyv2/amd64/
+cp ../kmesh-orion/target/debug/orion ./out/linux_amd64/release/
+cp ../kmesh-orion/target/debug/orion ./out/linux_amd64/
+
+
+./out/linux_amd64/dockerx_build/build.docker.proxyv2/amd64/orion --config ../kmesh-orion/orion-proxy/conf/orion-runtime.yaml --with-envoy-bootstrap /home/dawid/Workspace/istio-orion-demo/envoy-rev.json
+
+
+
+Change UnixClient::unix(), it selects Http1 by default
+ #[must_use]
+    fn unix() -> Client<UnixConnector, B>
+    where
+        B::Data: Send,
+    {
+        Client::builder(TokioExecutor::new()).build(UnixConnector)
+    }
+
+
+
+/usr/local/bin/pilot-agent proxy sidecar --domain default.svc.cluster.local --proxyLogLevel=warning --proxyComponentLogLevel=misc:error --log_output_level=default:info
+./out/linux_amd64/pilot-agent proxy sidecar --domain default.svc.cluster.local --proxyLogLevel=debug --proxyComponentLogLevel=all:debug --log_output_level=all:debug
+
+/etc/istio/proxy/grpc-bootstrap.json
+{
+  "xds_servers": [
+    {
+      "server_uri": "unix:///etc/istio/proxy/XDS",
+      "channel_creds": [
+        {
+          "type": "insecure"
+        }
+      ],
+      "server_features": [
+        "xds_v3"
+      ]
+    }
+  ],
+  "node": {
+    "id": "sidecar~10.244.0.57~details-v1-766844796b-gz9gr.default~default.svc.cluster.local",
+    "metadata": {
+      "ANNOTATIONS": {
+        "istio.io/rev": "default",
+        "kubectl.kubernetes.io/default-container": "details",
+        "kubectl.kubernetes.io/default-logs-container": "details",
+        "kubernetes.io/config.seen": "2025-09-04T09:32:25.872044874Z",
+        "kubernetes.io/config.source": "api",
+        "prometheus.io/path": "/stats/prometheus",
+        "prometheus.io/port": "15020",
+        "prometheus.io/scrape": "true",
+        "sidecar.istio.io/status": "{\"initContainers\":[\"istio-init\"],\"containers\":[\"istio-proxy\"],\"volumes\":[\"workload-socket\",\"credential-socket\",\"workload-certs\",\"istio-envoy\",\"istio-data\",\"istio-podinfo\",\"istio-token\"
+,\"istiod-ca-cert\",\"istio-ca-crl\"],\"imagePullSecrets\":null,\"revision\":\"default\"}"
+      },
+      "APP_CONTAINERS": "details",
+      "CLUSTER_ID": "Kubernetes",
+      "ENVOY_PROMETHEUS_PORT": 15090,
+      "ENVOY_SKIP_DEPRECATED_LOGS": "true",
+      "ENVOY_STATUS_PORT": 15021,
+      "GENERATOR": "grpc",
+      "INSTANCE_IPS": "10.244.0.57",
+      "INTERCEPTION_MODE": "REDIRECT",
+      "ISTIO_PROXY_SHA": "dd6dd2104dc107fd5f5da434f1a0424ec1099943",
+      "ISTIO_VERSION": "1.28-dev",
+      "LABELS": {
+        "app": "details",
+        "security.istio.io/tlsMode": "istio",
+        "service.istio.io/canonical-name": "details",
+        "service.istio.io/canonical-revision": "v1",
+        "version": "v1"
+      },
+      "MESH_ID": "cluster.local",
+      "METADATA_DISCOVERY": "false",
+      "NAME": "details-v1-766844796b-gz9gr",
+      "NAMESPACE": "default",
+      "NODE_NAME": "envoy-gateway-control-plane",
+      "OWNER": "kubernetes://apis/apps/v1/namespaces/default/deployments/details-v1",
+      "PILOT_SAN": [
+        "istiod.istio-system.svc"
+      ],
+      "POD_PORTS": "[{\"containerPort\":9080,\"protocol\":\"TCP\"}]",
+      "PROXY_CONFIG": {
+        "binaryPath": "/usr/local/bin/orion",
+        "concurrency": 2,
+        "configPath": "./etc/istio/proxy",
+        "controlPlaneAuthPolicy": "MUTUAL_TLS",
+        "discoveryAddress": "istiod.istio-system.svc:15012",
+        "drainDuration": "45s",
+        "proxyAdminPort": 15000,
+        "serviceCluster": "istio-proxy",
+        "statNameLength": 189,
+        "statusPort": 15020,
+        "terminationDrainDuration": "5s"
+      },
+      "SERVICE_ACCOUNT": "bookinfo-details",
+      "WORKLOAD_IDENTITY_SOCKET_FILE": "socket",
+      "WORKLOAD_NAME": "details-v1"
+    },
+    "locality": {},
+    "UserAgentVersionType": null
+  },
+  "server_listener_resource_name_template": "xds.istio.io/grpc/lds/inbound/%s"
+}
+
+
+k cp -c istio-proxy details-v1-766844796b-zj22b:/var/run/secrets/istio/root-cert.pem  .
+
+
+/usr/local/bin/pilot-discovery discovery --monitoringAddr=:15014 --log_output_level=default:info --domain cluster.local --keepaliveMaxServerConnectionAge 30m
+./out/linux_amd64/pilot-discovery discovery --monitoringAddr=:15014 --log_output_level=all:debug --domain cluster.local --keepaliveMaxServerConnectionAge 30m

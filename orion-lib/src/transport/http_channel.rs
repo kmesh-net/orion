@@ -67,7 +67,7 @@ use std::{
     thread::ThreadId,
     time::{Duration, Instant},
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
@@ -288,13 +288,19 @@ impl HttpChannelBuilder {
             Some(Address::Pipe(name, _)) => {
                 let client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
-                let uri: hyper::Uri = Uri::new(name.clone(), ".").into();
+                let uri: hyper::Uri = Uri::new(name.clone(), "").into();
                 let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
                 warn!("Building address from a pipe {uri:?}");
-
                 Ok(HttpChannel {
-                    client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
-                    //client: HttpChannelClient::Unix(uri, Arc::new(Client::unix())),
+                    //client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
+                    client: HttpChannelClient::Unix(
+                        uri,
+                        Arc::new(
+                            hyper_util::client::legacy::Client::builder(TokioExecutor::new())
+                                .http2_only(true)
+                                .build(UnixConnector),
+                        ),
+                    ),
                     http_version: self.http_protocol_options.codec,
                     upstream_authority: authority,
                     cluster_name: self.cluster_name.unwrap_or_default(),
@@ -415,7 +421,11 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
                 let RequestContext { route_timeout, retry_policy } = request.ctx.clone();
                 let client = sender;
                 let mut req = request.req;
-                *req.uri_mut() = uri.clone();
+                let path_and_query = req.uri().path_and_query().cloned();
+                info!("Using UNIX channel and rewriting uris {} {}", req.uri(), uri);
+                let mut parts = uri.clone().into_parts();
+                parts.path_and_query = path_and_query;
+                *req.uri_mut() = Uri::from_parts(parts).expect("We do expect this to work");
 
                 let result = if let Some(t) = route_timeout {
                     match fast_timeout(t, self.send_request(retry_policy, client, req, cluster_name)).await {

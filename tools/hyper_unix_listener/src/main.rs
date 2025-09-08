@@ -19,7 +19,7 @@ async fn main() {
         let listener = UnixListener::bind(args.path_name).expect("parsed unix path");
 
         listener
-            .serve(|| |_request| async { Ok::<_, hyper::Error>(Response::new("Hello, world.".to_string())) })
+            .serve(|| |_request| async { Ok::<_, hyper::Error>(Response::new("Hello, world.".to_owned())) })
             .await
             .expect("failed to serve a connection")
     };
