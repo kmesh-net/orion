@@ -28,6 +28,9 @@ use hickory_resolver::{name_server::TokioConnectionProvider, TokioAsyncResolver}
 static GLOBAL_DNS_RESOLVER: OnceLock<TokioAsyncResolver> = OnceLock::new();
 
 pub async fn resolve(host: &str, port: u16) -> io::Result<SocketAddr> {
+    if let Ok(addr) = (host.to_owned() + ":" + &port.to_string()).parse::<SocketAddr>() {
+        return Ok(addr);
+    }
     match GLOBAL_DNS_RESOLVER
         .get_or_init(|| -> TokioAsyncResolver {
             // The TokioAsyncResolver needs a Tokio runtime already running. By encapsulating the
