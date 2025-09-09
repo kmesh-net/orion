@@ -80,7 +80,7 @@ fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Re
 }
 
 #[derive(Debug, Clone)]
-struct XDSConfiguration {
+struct ProxyConfiguration {
     bootstrap: Bootstrap,
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
@@ -145,7 +145,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         return Err("No listeners and no ads clusters configured".into());
     }
 
-    let xds_option = XDSConfiguration {
+    let config = ProxyConfiguration {
         node,
         configuration_senders: config_senders,
         secret_manager,
@@ -158,8 +158,8 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         bootstrap,
     };
 
-    let xds_handle =
-        spawn_xds_runtime_from_thread("xds", rt_config.num_service_threads.get() as usize, None, xds_option)?;
+    let services_handle =
+        spawn_services_runtime_from_thread("services", rt_config.num_service_threads.get() as usize, None, config)?;
 
     if !are_metrics_empty {
         info!("Waiting for metrics setup to complete...");
@@ -194,7 +194,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
             .collect::<Result<Vec<_>>>()?
     };
 
-    handlers.push(xds_handle);
+    handlers.push(services_handle);
 
     for h in handlers {
         if let Err(err) = h.join() {
@@ -229,18 +229,18 @@ fn spawn_proxy_runtime_from_thread(
     Ok(handle)
 }
 
-fn spawn_xds_runtime_from_thread(
+fn spawn_services_runtime_from_thread(
     thread_name: &'static str,
-    num_threads: usize,
+    threads_num: usize,
     affinity_info: Option<(RuntimeId, Affinity)>,
-    xds_option: XDSConfiguration,
+    config: ProxyConfiguration,
 ) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
     let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
-        let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, None);
+        let rt = runtime::build_tokio_runtime(&thread_name, threads_num, affinity_info, None);
         rt.block_on(async {
             tokio::select! {
-                result = run_xds_client(xds_option) => {
+                result = run_services(config) => {
                     if let Err(err) = result {
                         warn!("Error in xds runtime: {err:?}");
                     }
@@ -262,8 +262,8 @@ fn build_thread_name(thread_name: &'static str, affinity_info: Option<&(RuntimeI
     }
 }
 
-async fn run_xds_client(info: XDSConfiguration) -> Result<()> {
-    let XDSConfiguration {
+async fn run_services(config: ProxyConfiguration) -> Result<()> {
+    let ProxyConfiguration {
         bootstrap,
         node,
         configuration_senders,
@@ -275,63 +275,29 @@ async fn run_xds_client(info: XDSConfiguration) -> Result<()> {
         metrics,
         #[allow(unused_variables)]
         tracing,
-    } = info;
+    } = config;
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
-    // spawn XSD configuration service...
-    let configuration_senders_clone = configuration_senders.clone();
-    let bootstrap_clone = bootstrap.clone();
-    let secret_manager_clone = secret_manager.clone();
-    set.spawn(async move {
-        let initial_clusters = configure_initial_resources(
-            bootstrap_clone,
-            listener_factories,
-            clusters,
-            configuration_senders_clone.clone(),
-        )
-        .await?;
-        if !ads_cluster_names.is_empty() {
-            let mut xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
-            _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
-        }
-        Ok(())
-    });
+    // spawn XDS configuration service...
+    spawn_xds_client(
+        &mut set,
+        bootstrap.clone(),
+        node,
+        configuration_senders.clone(),
+        secret_manager.clone(),
+        listener_factories,
+        clusters,
+        ads_cluster_names,
+    );
 
     // spawn access loggers service...
     if let Some(conf) = access_log_config {
-        let listeners = bootstrap.static_resources.listeners.clone();
-        set.spawn(async move {
-            let handles = start_access_loggers(
-                conf.num_instances.get(),
-                conf.queue_length.get(),
-                conf.log_rotation.0.clone(),
-                conf.max_log_files.get(),
-            );
-
-            info!("Access loggers started with {} instances", conf.num_instances);
-
-            let listener_configurations =
-                listeners.iter().map(|l| (l.name.clone(), l.get_access_log_configurations())).collect::<Vec<_>>();
-
-            for (listener_name, access_log_configurations) in listener_configurations {
-                _ = update_configuration(
-                    Target::Listener(listener_name.to_compact_string()),
-                    access_log_configurations,
-                )
-                .await;
-            }
-
-            handles.join_all().await;
-            Ok(())
-        });
+        spawn_access_loggers(&mut set, bootstrap.clone(), conf);
     }
 
     // spawn admin interface task
     if bootstrap.admin.is_some() {
-        set.spawn(async move {
-            _ = start_admin_server(bootstrap, configuration_senders, secret_manager).await;
-            Ok(())
-        });
+        spawn_admin_service(&mut set, bootstrap, configuration_senders, secret_manager);
     }
 
     // spawn metrics exporter...
@@ -352,6 +318,64 @@ async fn run_xds_client(info: XDSConfiguration) -> Result<()> {
 
     set.join_all().await;
     Ok(())
+}
+
+fn spawn_xds_client(
+    set: &mut JoinSet<Result<()>>,
+    bootstrap: Bootstrap,
+    node: Node,
+    configuration_senders: Vec<ConfigurationSenders>,
+    secret_manager: Arc<RwLock<SecretManager>>,
+    listener_factories: Vec<orion_lib::ListenerFactory>,
+    clusters: Vec<orion_lib::PartialClusterType>,
+    ads_cluster_names: Vec<String>,
+) {
+    set.spawn(async move {
+        let initial_clusters =
+            configure_initial_resources(bootstrap, listener_factories, clusters, configuration_senders.clone()).await?;
+        if !ads_cluster_names.is_empty() {
+            let mut xds_handler = XdsConfigurationHandler::new(secret_manager, configuration_senders);
+            _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
+        }
+        Ok(())
+    });
+}
+
+fn spawn_access_loggers(set: &mut JoinSet<Result<()>>, bootstrap: Bootstrap, conf: AccessLogConfig) {
+    let listeners = bootstrap.static_resources.listeners;
+    set.spawn(async move {
+        let handles = start_access_loggers(
+            conf.num_instances.get(),
+            conf.queue_length.get(),
+            conf.log_rotation.0.clone(),
+            conf.max_log_files.get(),
+        );
+
+        info!("Access loggers started with {} instances", conf.num_instances);
+
+        let listener_configurations =
+            listeners.iter().map(|l| (l.name.clone(), l.get_access_log_configurations())).collect::<Vec<_>>();
+
+        for (listener_name, access_log_configurations) in listener_configurations {
+            _ = update_configuration(Target::Listener(listener_name.to_compact_string()), access_log_configurations)
+                .await;
+        }
+
+        handles.join_all().await;
+        Ok(())
+    });
+}
+
+fn spawn_admin_service(
+    set: &mut JoinSet<Result<()>>,
+    bootstrap: Bootstrap,
+    configuration_senders: Vec<ConfigurationSenders>,
+    secret_manager: Arc<RwLock<SecretManager>>,
+) {
+    set.spawn(async move {
+        _ = start_admin_server(bootstrap, configuration_senders, secret_manager).await;
+        Ok(())
+    });
 }
 
 async fn configure_initial_resources(
