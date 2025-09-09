@@ -341,6 +341,7 @@ mod config_dump_tests {
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
+                cluster_name: "kdjfk".to_owned(),
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
                     lb_endpoints: vec![LbEndpoint {
@@ -394,6 +395,7 @@ mod config_dump_tests {
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
+                cluster_name: "kdjfk".to_owned(),
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
                     lb_endpoints: vec![LbEndpoint {

@@ -11,6 +11,7 @@ name = "orion"
 path = "src/main.rs"
 
 [features]
+default = ["prometheus", "config-dump"]
 config-dump = []
 dhat-heap   = ["dep:dhat"]
 jemalloc    = ["dep:tikv-jemallocator", "orion-metrics/jemalloc"]
