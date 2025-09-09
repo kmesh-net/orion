@@ -19,6 +19,7 @@ use crate::{
     admin::start_admin_server,
     core_affinity,
     runtime::{self, RuntimeId},
+    signal::{spawn_signal_handler, ShutdownSignal},
     xds_configurator::XdsConfigurationHandler,
 };
 use compact_str::ToCompactString;
@@ -50,8 +51,20 @@ use tracing::{debug, info, warn};
 pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
+    // Set up signal handling and shutdown notification channel
+    let (shutdown_tx, signal_handle) = spawn_signal_handler();
+
     // launch the runtimes...
-    _ = launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes");
+    let sender_guards =
+        launch_runtimes(bootstrap, access_log_config, &shutdown_tx).with_context_msg("failed to launch runtimes");
+
+    // Wait for signal handler to complete
+    if let Err(err) = signal_handle.join() {
+        warn!("Signal handler thread panicked: {:?}", err);
+    }
+
+    // Return the sender guards (if successful) to keep channels alive
+    _ = sender_guards;
 }
 
 fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result<usize> {
@@ -95,7 +108,11 @@ struct ProxyConfiguration {
 
 type SenderGuards = Vec<ConfigurationSenders>;
 
-fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) -> Result<SenderGuards> {
+fn launch_runtimes(
+    bootstrap: Bootstrap,
+    access_log_config: Option<AccessLogConfig>,
+    shutdown_tx: &tokio::sync::broadcast::Sender<ShutdownSignal>,
+) -> Result<SenderGuards> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -158,8 +175,13 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
         bootstrap,
     };
 
-    let services_handle =
-        spawn_services_runtime_from_thread("services", rt_config.num_service_threads.get() as usize, None, config)?;
+    let services_handle = spawn_services_runtime_from_thread(
+        "services",
+        rt_config.num_service_threads.get() as usize,
+        None,
+        config,
+        shutdown_tx.subscribe(),
+    )?;
 
     if !are_metrics_empty {
         info!("Waiting for metrics setup to complete...");
@@ -189,6 +211,7 @@ fn launch_runtimes(bootstrap: Bootstrap, access_log_config: Option<AccessLogConf
                     metrics.clone(),
                     rt_config.affinity_strategy.clone().map(|affinity| (RuntimeId(id), affinity)),
                     config_receivers,
+                    shutdown_tx.subscribe(),
                 )
             })
             .collect::<Result<Vec<_>>>()?
@@ -210,6 +233,7 @@ fn spawn_proxy_runtime_from_thread(
     metrics: Vec<Metrics>,
     affinity_info: Option<(RuntimeId, Affinity)>,
     configuration_receivers: ConfigurationReceivers,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<ShutdownSignal>,
 ) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
 
@@ -220,8 +244,11 @@ fn spawn_proxy_runtime_from_thread(
                 _ = start_proxy(configuration_receivers) => {
                     info!("Proxy Runtime terminated!");
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("CTRL+C (Proxy runtime)!");
+                signal = shutdown_rx.recv() => {
+                    match signal {
+                        Ok(signal) => info!("Received {} signal, shutting down Proxy runtime!", signal),
+                        Err(_) => info!("Shutdown channel closed, shutting down Proxy runtime!"),
+                    }
                 }
             }
         });
@@ -234,6 +261,7 @@ fn spawn_services_runtime_from_thread(
     threads_num: usize,
     affinity_info: Option<(RuntimeId, Affinity)>,
     config: ProxyConfiguration,
+    mut shutdown_rx: tokio::sync::broadcast::Receiver<ShutdownSignal>,
 ) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
     let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
@@ -242,12 +270,15 @@ fn spawn_services_runtime_from_thread(
             tokio::select! {
                 result = run_services(config) => {
                     if let Err(err) = result {
-                        warn!("Error in xds runtime: {err:?}");
+                        warn!("Error in services runtime: {err:?}");
                     }
-                    info!("XDS Runtime terminated!");
+                    info!("Services Runtime terminated!");
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("CTRL+C (xds runtime)!");
+                signal = shutdown_rx.recv() => {
+                    match signal {
+                        Ok(signal) => info!("Received {} signal, shutting down Services runtime!", signal),
+                        Err(_) => info!("Shutdown channel closed, shutting down Services runtime!"),
+                    }
                 }
             }
         });
