@@ -935,9 +935,9 @@ mod envoy_conversions {
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
             let upgrade_config = upgrade_configs.try_into().with_node("upgrade_configs").ok();
             let hash_policy = convert_vec!(hash_policy)?;
-            let authority_rewrite = host_rewrite_specifier
-                .filter(|spec| if let EnvoyHostRewriteSpecifier::AutoHostRewrite(bv) = spec { bv.value } else { true })
-                .map(|spec| match spec {
+            let authority_rewrite = match host_rewrite_specifier {
+                Some(EnvoyHostRewriteSpecifier::AutoHostRewrite(bv)) if !bv.value => Ok(None),
+                Some(spec) => match spec {
                     EnvoyHostRewriteSpecifier::HostRewriteLiteral(literal) => {
                         Authority::from_str(&literal).map(AuthorityRewriteSpecifier::Authority).map_err(|e| {
                             GenericError::from_msg_with_cause(
@@ -957,9 +957,11 @@ mod envoy_conversions {
                     EnvoyHostRewriteSpecifier::HostRewritePathRegex(regex) => {
                         regex.try_into().map(AuthorityRewriteSpecifier::Regex)
                     },
-                })
-                .transpose()
-                .with_node("host_rewrite_specifier")?;
+                }
+                .map(Some),
+                None => Ok(None),
+            }
+            .with_node("host_rewrite_specifier")?;
             Ok(Self {
                 cluster_not_found_response_code,
                 timeout,

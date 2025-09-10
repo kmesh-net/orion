@@ -490,7 +490,7 @@ mod envoy_conversions {
                 // transport_socket,
                 transport_socket_connect_timeout // name,
             )?;
-            let name: CompactString = if name.is_empty() { "default_filter_chain".into() } else { name.into() };
+            let name: CompactString = if name.is_empty() { "".into() } else { name.into() };
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let filter_chain_match = filter_chain_match
