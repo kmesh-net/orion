@@ -4,6 +4,3 @@
 *~
 *.html
 *.log.*
-*.log
-examples/*/send_tlv
-examples/*/*.log

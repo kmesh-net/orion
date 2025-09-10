@@ -26,19 +26,15 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use tokio::io::AsyncReadExt;
 use tracing::{debug, error, trace};
 
-// TLV field lengths
 const TLV_TYPE_LEN: usize = 1;
 const TLV_LENGTH_LEN: usize = 4;
 
-// TLV type constants
 const TLV_TYPE_SERVICE_ADDRESS: u8 = 0x1;
 const TLV_TYPE_ENDING: u8 = 0xfe;
 
-// Content lengths for service address
-const TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN: u32 = 6; // 4 bytes IP + 2 bytes port
-const TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN: u32 = 18; // 16 bytes IP + 2 bytes port
+const TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN: u32 = 6;
+const TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN: u32 = 18;
 
-// Maximum TLV buffer length to prevent attacks
 const MAX_TLV_LENGTH: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,10 +50,6 @@ enum ReadOrParseState {
     SkipFilter,
 }
 
-/// TLV listener filter implementation
-///
-/// This filter processes TLV (Type-Length-Value) encoded data to extract
-/// original destination information from Kmesh waypoint connections.
 pub struct TlvListenerFilter {
     state: TlvParseState,
     expected_length: usize,
@@ -74,7 +66,6 @@ impl Default for TlvListenerFilter {
 }
 
 impl TlvListenerFilter {
-    /// Create a new `TlvListenerFilter` with the specified maximum TLV length
     pub fn new(max_tlv_length: usize) -> Self {
         Self {
             state: TlvParseState::TypeAndLength,
@@ -86,7 +77,152 @@ impl TlvListenerFilter {
         }
     }
 
-    /// Process an incoming stream to extract TLV data and original destination info
+    fn read_u32_be(&self, offset: usize) -> Result<u32> {
+        if offset + 4 > self.buffer.len() {
+            return Err(Error::from(IoError::new(ErrorKind::InvalidData, "Not enough data for u32")));
+        }
+        Ok(u32::from_be_bytes([
+            self.buffer[offset],
+            self.buffer[offset + 1],
+            self.buffer[offset + 2],
+            self.buffer[offset + 3],
+        ]))
+    }
+
+    fn read_u16_be(&self, offset: usize) -> Result<u16> {
+        if offset + 2 > self.buffer.len() {
+            return Err(Error::from(IoError::new(ErrorKind::InvalidData, "Not enough data for u16")));
+        }
+        Ok(u16::from_be_bytes([self.buffer[offset], self.buffer[offset + 1]]))
+    }
+
+    fn validate_service_address_length(content_length: u32) -> bool {
+        content_length == TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN || content_length == TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN
+    }
+
+    fn parse_ipv4_address(&self, content_start: usize) -> Result<SocketAddr> {
+        if content_start + 6 > self.buffer.len() {
+            return Err(Error::from(IoError::new(ErrorKind::InvalidData, "Not enough data for IPv4 address")));
+        }
+
+        let ip_bytes: [u8; 4] = self.buffer[content_start..content_start + 4]
+            .try_into()
+            .map_err(|_| IoError::new(ErrorKind::InvalidData, "Invalid IPv4 bytes"))?;
+        let port = self.read_u16_be(content_start + 4)?;
+
+        let ip = IpAddr::V4(Ipv4Addr::from(ip_bytes));
+        Ok(SocketAddr::new(ip, port))
+    }
+
+    fn parse_ipv6_address(&self, content_start: usize) -> Result<SocketAddr> {
+        if content_start + 18 > self.buffer.len() {
+            return Err(Error::from(IoError::new(ErrorKind::InvalidData, "Not enough data for IPv6 address")));
+        }
+
+        let mut ip_bytes = [0u8; 16];
+        ip_bytes.copy_from_slice(&self.buffer[content_start..content_start + 16]);
+        let port = self.read_u16_be(content_start + 16)?;
+
+        let ip = IpAddr::V6(Ipv6Addr::from(ip_bytes));
+        Ok(SocketAddr::new(ip, port))
+    }
+
+    fn process_service_address_tlv(&mut self) -> ReadOrParseState {
+        if self.expected_length < self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN {
+            self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN;
+            return ReadOrParseState::Done;
+        }
+
+        trace!("Processing TLV_TYPE_SERVICE_ADDRESS");
+
+        let content_length = match self.read_u32_be(self.index + 1) {
+            Ok(len) => len,
+            Err(_) => return ReadOrParseState::Error,
+        };
+
+        trace!("TLV content length: {}", content_length);
+
+        if !Self::validate_service_address_length(content_length) {
+            error!(
+                "Invalid TLV service address content length: {} (expected {} or {})",
+                content_length, TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN, TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN
+            );
+            return ReadOrParseState::Error;
+        }
+
+        self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN + content_length as usize;
+        if self.expected_length > self.max_tlv_length {
+            error!("TLV data exceeds maximum length: {} > {}", self.expected_length, self.max_tlv_length);
+            return ReadOrParseState::Error;
+        }
+
+        self.content_length = content_length;
+        self.index += TLV_TYPE_LEN + TLV_LENGTH_LEN;
+        self.state = TlvParseState::Content;
+        ReadOrParseState::Done
+    }
+
+    fn process_ending_tlv(&mut self) -> ReadOrParseState {
+        trace!("Processing TLV_TYPE_ENDING");
+
+        if self.expected_length < self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN {
+            self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN;
+            return ReadOrParseState::Done;
+        }
+
+        let end_length = match self.read_u32_be(self.index + 1) {
+            Ok(len) => len,
+            Err(_) => return ReadOrParseState::Error,
+        };
+
+        if end_length != 0 {
+            error!("Invalid TLV end marker length: {} (expected 0)", end_length);
+            return ReadOrParseState::Error;
+        }
+
+        ReadOrParseState::Done
+    }
+
+    fn process_tlv_content(&mut self) -> ReadOrParseState {
+        trace!("Parsing TLV content");
+        self.expected_length += TLV_TYPE_LEN;
+        self.index += self.content_length as usize;
+        self.state = TlvParseState::TypeAndLength;
+        ReadOrParseState::Done
+    }
+
+    async fn read_required_data(&mut self, stream: &mut AsyncStream) -> ReadOrParseState {
+        let mut temp_buf = vec![0u8; 512];
+
+        while self.buffer.len() < self.expected_length {
+            let bytes_needed = self.expected_length - self.buffer.len();
+            let read_size = bytes_needed.min(temp_buf.len());
+
+            match stream.read(&mut temp_buf[..read_size]).await {
+                Ok(0) => {
+                    if self.buffer.len() >= self.expected_length {
+                        break;
+                    }
+                    trace!("Connection closed while reading TLV data, skipping filter");
+                    return ReadOrParseState::SkipFilter;
+                },
+                Ok(n) => {
+                    self.buffer.extend_from_slice(&temp_buf[..n]);
+                },
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    trace!("No data available for TLV, skipping filter");
+                    return ReadOrParseState::SkipFilter;
+                },
+                Err(e) => {
+                    error!("Error reading TLV data: {}", e);
+                    return ReadOrParseState::Error;
+                },
+            }
+        }
+
+        ReadOrParseState::Done
+    }
+
     pub async fn process_stream(
         &mut self,
         mut stream: AsyncStream,
@@ -126,37 +262,11 @@ impl TlvListenerFilter {
     }
 
     async fn read_and_parse_tlv(&mut self, stream: &mut AsyncStream) -> ReadOrParseState {
-        let mut temp_buf = vec![0u8; 512]; // Reusable buffer for reading
-
         loop {
-            while self.buffer.len() < self.expected_length {
-                let bytes_needed = self.expected_length - self.buffer.len();
-                let read_size = bytes_needed.min(temp_buf.len());
-
-                match stream.read(&mut temp_buf[..read_size]).await {
-                    Ok(0) => {
-                        if self.buffer.len() >= self.expected_length {
-                            break;
-                        }
-                        trace!("Connection closed while reading TLV data, skipping filter");
-                        return ReadOrParseState::SkipFilter;
-                    },
-                    Ok(n) => {
-                        self.buffer.extend_from_slice(&temp_buf[..n]);
-
-                        if n < bytes_needed && self.buffer.len() < self.expected_length {
-                            // Continue reading more data
-                        }
-                    },
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                        trace!("No data available for TLV, skipping filter");
-                        return ReadOrParseState::SkipFilter;
-                    },
-                    Err(e) => {
-                        error!("Error reading TLV data: {}", e);
-                        return ReadOrParseState::Error;
-                    },
-                }
+            let read_result = self.read_required_data(stream).await;
+            match read_result {
+                ReadOrParseState::Done => {},
+                other => return other,
             }
 
             trace!("Buffer has {} bytes, expected {}", self.buffer.len(), self.expected_length);
@@ -167,124 +277,65 @@ impl TlvListenerFilter {
 
                     let tlv_type = self.buffer[self.index];
 
-                    if tlv_type == TLV_TYPE_SERVICE_ADDRESS {
-                        if self.expected_length < self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN {
-                            self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN;
-                            continue;
-                        }
+                    let parse_result = match tlv_type {
+                        TLV_TYPE_SERVICE_ADDRESS => self.process_service_address_tlv(),
+                        TLV_TYPE_ENDING => return self.process_ending_tlv(),
+                        _ => {
+                            error!("Invalid TLV type: {:#x}", tlv_type);
+                            ReadOrParseState::Error
+                        },
+                    };
 
-                        trace!("Processing TLV_TYPE_SERVICE_ADDRESS");
-
-                        let content_len = u32::from_be_bytes([
-                            self.buffer[self.index + 1],
-                            self.buffer[self.index + 2],
-                            self.buffer[self.index + 3],
-                            self.buffer[self.index + 4],
-                        ]);
-
-                        trace!("TLV content length: {}", content_len);
-
-                        if content_len != TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN
-                            && content_len != TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN
-                        {
-                            error!(
-                                "Invalid TLV service address content length: {} (expected {} or {})",
-                                content_len, TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN, TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN
-                            );
-                            return ReadOrParseState::Error;
-                        }
-
-                        self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN + content_len as usize;
-                        if self.expected_length > self.max_tlv_length {
-                            error!(
-                                "TLV data exceeds maximum length: {} > {}",
-                                self.expected_length, self.max_tlv_length
-                            );
-                            return ReadOrParseState::Error;
-                        }
-
-                        self.content_length = content_len;
-                        self.index += TLV_TYPE_LEN + TLV_LENGTH_LEN;
-                        self.state = TlvParseState::Content;
-                    } else if tlv_type == TLV_TYPE_ENDING {
-                        trace!("Processing TLV_TYPE_ENDING");
-
-                        if self.expected_length < self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN {
-                            self.expected_length = self.index + TLV_TYPE_LEN + TLV_LENGTH_LEN;
-                            continue;
-                        }
-
-                        let end_length = u32::from_be_bytes([
-                            self.buffer[self.index + 1],
-                            self.buffer[self.index + 2],
-                            self.buffer[self.index + 3],
-                            self.buffer[self.index + 4],
-                        ]);
-
-                        if end_length != 0 {
-                            error!("Invalid TLV end marker length: {} (expected 0)", end_length);
-                            return ReadOrParseState::Error;
-                        }
-
-                        return ReadOrParseState::Done;
-                    } else {
-                        error!("Invalid TLV type: {:#x}", tlv_type);
-                        return ReadOrParseState::Error;
+                    match parse_result {
+                        ReadOrParseState::Done => {},
+                        other => return other,
                     }
                 },
-
                 TlvParseState::Content => {
-                    trace!("Parsing TLV content");
-
-                    self.expected_length += TLV_TYPE_LEN;
-                    self.index += self.content_length as usize;
-                    self.state = TlvParseState::TypeAndLength;
+                    let parse_result = self.process_tlv_content();
+                    match parse_result {
+                        ReadOrParseState::Done => {},
+                        other => return other,
+                    }
                 },
             }
         }
     }
 
     fn extract_original_destination(&self) -> Option<SocketAddr> {
-        let mut idx = 0;
-        while idx + TLV_TYPE_LEN + TLV_LENGTH_LEN <= self.buffer.len() {
-            let tlv_type = self.buffer[idx];
+        let mut current_index = 0;
+
+        while current_index + TLV_TYPE_LEN + TLV_LENGTH_LEN <= self.buffer.len() {
+            let tlv_type = self.buffer[current_index];
 
             if tlv_type == TLV_TYPE_ENDING {
                 break;
             }
 
-            let content_len_bytes: [u8; 4] =
-                self.buffer[idx + TLV_TYPE_LEN..idx + TLV_TYPE_LEN + TLV_LENGTH_LEN].try_into().ok()?;
-            let content_len = u32::from_be_bytes(content_len_bytes);
+            let content_length = match self.read_u32_be(current_index + TLV_TYPE_LEN) {
+                Ok(len) => len,
+                Err(_) => return None,
+            };
 
-            let content_start = idx + TLV_TYPE_LEN + TLV_LENGTH_LEN;
-            if content_start + content_len as usize > self.buffer.len() {
+            let content_start = current_index + TLV_TYPE_LEN + TLV_LENGTH_LEN;
+            if content_start + content_length as usize > self.buffer.len() {
                 // Not enough data for content
                 return None;
             }
 
             if tlv_type == TLV_TYPE_SERVICE_ADDRESS {
-                if content_len == TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN {
-                    let ip_bytes: [u8; 4] = self.buffer[content_start..content_start + 4].try_into().ok()?;
-                    let port_bytes: [u8; 2] = self.buffer[content_start + 4..content_start + 6].try_into().ok()?;
+                let socket_addr = match content_length {
+                    TLV_TYPE_SERVICE_ADDRESS_IPV4_LEN => self.parse_ipv4_address(content_start).ok(),
+                    TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN => self.parse_ipv6_address(content_start).ok(),
+                    _ => None,
+                };
 
-                    let ip = IpAddr::V4(Ipv4Addr::from(ip_bytes));
-                    let port = u16::from_be_bytes(port_bytes);
-
-                    return Some(SocketAddr::new(ip, port));
-                } else if content_len == TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN {
-                    let mut ip_bytes = [0u8; 16];
-                    ip_bytes.copy_from_slice(&self.buffer[content_start..content_start + 16]);
-                    let port_bytes: [u8; 2] = self.buffer[content_start + 16..content_start + 18].try_into().ok()?;
-
-                    let ip = IpAddr::V6(Ipv6Addr::from(ip_bytes));
-                    let port = u16::from_be_bytes(port_bytes);
-
-                    return Some(SocketAddr::new(ip, port));
+                if let Some(addr) = socket_addr {
+                    return Some(addr);
                 }
             }
 
-            idx += TLV_TYPE_LEN + TLV_LENGTH_LEN + content_len as usize;
+            current_index += TLV_TYPE_LEN + TLV_LENGTH_LEN + content_length as usize;
         }
 
         None
@@ -375,15 +426,15 @@ mod tests {
         let mut filter = TlvListenerFilter::new(256);
 
         let mut tlv_data = Vec::new();
-        tlv_data.push(TLV_TYPE_SERVICE_ADDRESS); // Type
-        tlv_data.extend_from_slice(&TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN.to_be_bytes()); // Length (18)
+        tlv_data.push(TLV_TYPE_SERVICE_ADDRESS);
+        tlv_data.extend_from_slice(&TLV_TYPE_SERVICE_ADDRESS_IPV6_LEN.to_be_bytes());
 
         tlv_data.extend_from_slice(&[
             0x20, 0x01, 0x0d, 0xb8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
         ]);
-        tlv_data.extend_from_slice(&8080u16.to_be_bytes()); // Port
-        tlv_data.push(TLV_TYPE_ENDING); // End marker type
-        tlv_data.extend_from_slice(&0u32.to_be_bytes()); // End marker length (0)
+        tlv_data.extend_from_slice(&8080u16.to_be_bytes());
+        tlv_data.push(TLV_TYPE_ENDING);
+        tlv_data.extend_from_slice(&0u32.to_be_bytes());
 
         let cursor_adapter = CursorAdapter { cursor: Cursor::new(tlv_data) };
         let stream = Box::new(cursor_adapter) as AsyncStream;
