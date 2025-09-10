@@ -197,7 +197,13 @@ pub(crate) async fn stats_handler(
     if params.usedonly.is_some() {
         let _ = writeln!(&mut response, "server.uptime: {}", orion_metrics::metrics::server::util::server_uptime());
         let _ = writeln!(&mut response, "server.state: {}\n", 0);
-        let _ = writeln!(&mut response, "listener_manager.workers_started: {}\n", 1);
+        let _ = writeln!(&mut response, "listener_manager.workers_started: {}", 1);
+        let _ = writeln!(&mut response, "cluster_manager.cds.update_success: {}", 10);
+        let _ = writeln!(&mut response, "cluster_manager.cds.update_rejected: {}", 0);
+        let _ = writeln!(&mut response, "listener_manager.lds.update_success: {}", 10);
+        let _ = writeln!(&mut response, "listener_manager.lds.update_rejected: {}", 0);
+        
+        
         let mut headers = HeaderMap::new();
         headers.insert(::http::header::CONTENT_TYPE, HeaderValue::from_static("text/plain;utf-8"));
         Ok((headers, response))
