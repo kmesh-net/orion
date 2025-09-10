@@ -31,7 +31,6 @@ mod upgrades;
 
 use ::http::HeaderValue;
 use arc_swap::ArcSwap;
-use compact_str::{CompactString, ToCompactString};
 use core::time::Duration;
 use futures::future::BoxFuture;
 use hyper::{body::Incoming, service::Service, Request, Response};
@@ -41,6 +40,7 @@ use opentelemetry::KeyValue;
 use orion_configuration::config::GenericError;
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
+use smol_str::{SmolStr, ToSmolStr};
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::{
     FilterConfigOverride, FilterOverride,
@@ -156,7 +156,7 @@ impl HttpConnectionManagerBuilder {
 pub struct PartialHttpConnectionManager {
     router: Option<RouteConfiguration>,
     codec_type: CodecType,
-    dynamic_route_name: Option<CompactString>,
+    dynamic_route_name: Option<SmolStr>,
     http_filters_hcm: Vec<Arc<HttpFilter>>,
     http_filters_per_route: HashMap<RouteMatch, Vec<Arc<HttpFilter>>>,
     enabled_upgrades: Vec<UpgradeType>,
@@ -171,7 +171,7 @@ pub struct PartialHttpConnectionManager {
 
 #[derive(Debug, Clone)]
 pub struct HttpFilter {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub disabled: bool,
     pub filter: Option<HttpFilterValue>,
 }
@@ -267,7 +267,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
                 route_config_name,
                 config_source: ConfigSource { config_source_specifier },
             }) => match config_source_specifier {
-                ConfigSourceSpecifier::ADS => (Some(route_config_name.to_compact_string()), None),
+                ConfigSourceSpecifier::ADS => (Some(route_config_name.to_smolstr()), None),
             },
             RouteSpecifier::RouteConfig(config) => {
                 http_filters_per_route = per_route_http_filters(&config, &http_filters_hcm);
@@ -324,7 +324,7 @@ pub struct HttpConnectionManager {
     pub filter_chain_match_hash: u64,
     router_sender: watch::Sender<Option<Arc<RouteConfiguration>>>,
     pub codec_type: CodecType,
-    dynamic_route_name: Option<CompactString>,
+    dynamic_route_name: Option<SmolStr>,
     http_filters_hcm: Vec<Arc<HttpFilter>>,
     http_filters_per_route: ArcSwap<HashMap<RouteMatch, Vec<Arc<HttpFilter>>>>,
     enabled_upgrades: Vec<UpgradeType>,
@@ -348,7 +348,7 @@ impl HttpConnectionManager {
     }
 
     #[inline]
-    pub fn get_route_id(&self) -> Option<&CompactString> {
+    pub fn get_route_id(&self) -> Option<&SmolStr> {
         self.dynamic_route_name.as_ref()
     }
 
@@ -1050,7 +1050,7 @@ fn eval_http_finish_context(
 
     let loggers: Vec<LogFormatterLocal> = std::mem::take(access_loggers);
     let messages = loggers.into_iter().map(LogFormatterLocal::into_message).collect::<Vec<_>>();
-    log_access(permit, Target::Listener(listener_name.to_compact_string()), messages);
+    log_access(permit, Target::Listener(listener_name.to_smolstr()), messages);
 }
 
 fn apply_authorization_rules<B>(rbac: &HttpRbac, req: &Request<B>) -> FilterDecision {

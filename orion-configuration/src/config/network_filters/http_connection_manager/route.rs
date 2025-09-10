@@ -22,13 +22,13 @@ use crate::config::{
     core::{CaseSensitive, DataSource, StringMatcher},
 };
 use bytes::Bytes;
-use compact_str::CompactString;
 use http::{
     uri::{Authority, InvalidUri, PathAndQuery, Scheme},
     HeaderName, Request, StatusCode,
 };
 use regex::Regex;
 use serde::{de::Error, Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -63,7 +63,7 @@ pub enum AuthorityRedirect {
 pub struct RegexMatchAndSubstitute {
     #[serde(with = "serde_regex")]
     pub pattern: Regex,
-    pub substitution: CompactString,
+    pub substitution: SmolStr,
 }
 
 impl PartialEq for RegexMatchAndSubstitute {
@@ -78,7 +78,7 @@ impl Eq for RegexMatchAndSubstitute {}
 #[serde(rename_all = "snake_case")]
 pub enum PathRewriteSpecifier {
     Path(#[serde(with = "http_serde_ext::path_and_query")] PathAndQuery),
-    Prefix(CompactString),
+    Prefix(SmolStr),
     Regex(RegexMatchAndSubstitute),
 }
 
@@ -317,7 +317,7 @@ impl HashPolicy {
                     // Hash the value of the first query key that matches (case-sensitive)
                     //note(hayley): we might slightly improve performance here by urlencoding the name parameter
                     // instead of decoding the query
-                    url::form_urlencoded::parse(query.as_bytes()).find(|(key, _value)| key == name)
+                    url::form_urlencoded::parse(query.as_bytes()).find(|(key, _value)| key.as_ref() == name)
                 })
                 .inspect(|(_key, value)| value.hash(hasher))
                 .is_some(),
@@ -336,7 +336,7 @@ impl HashPolicy {
 pub enum PolicySpecifier {
     SourceIp(bool),
     Header(#[serde(with = "http_serde_ext::header_name")] HeaderName),
-    QueryParameter(CompactString),
+    QueryParameter(SmolStr),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -348,7 +348,7 @@ pub enum QueryParameterMatchSpecifier {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct QueryParameterMatcher {
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(flatten)]
     pub match_specifier: QueryParameterMatchSpecifier,
 }
@@ -402,7 +402,7 @@ impl RouteMatchResult {
 impl QueryParameterMatcher {
     pub fn matches(&self, query: Option<&str>) -> bool {
         let param_value = query.and_then(|q| {
-            url::form_urlencoded::parse(q.as_bytes()).find(|(key, _)| key == self.name).map(|(_, value)| value)
+            url::form_urlencoded::parse(q.as_bytes()).find(|(key, _)| key.as_ref() == self.name).map(|(_, value)| value)
         });
 
         match &self.match_specifier {
@@ -485,10 +485,10 @@ impl PathMatcher {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PathSpecifier {
-    Prefix(CompactString),
-    Exact(CompactString),
+    Prefix(SmolStr),
+    Exact(SmolStr),
     Regex(#[serde(with = "serde_regex")] Regex),
-    PathSeparatedPrefix(CompactString),
+    PathSeparatedPrefix(SmolStr),
 }
 
 impl PartialEq for PathSpecifier {

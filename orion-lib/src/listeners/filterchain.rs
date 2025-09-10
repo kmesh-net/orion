@@ -25,7 +25,6 @@ use crate::{
     transport::AsyncReadWrite,
     AsyncStream, ConversionContext, Error, Result,
 };
-use compact_str::CompactString;
 use futures::TryFutureExt;
 use hyper::{service::Service, Request};
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -44,6 +43,7 @@ use orion_metrics::{
 };
 use rustls::{server::Acceptor, ServerConfig};
 use scopeguard::defer;
+use smol_str::SmolStr;
 use std::{sync::Arc, thread::ThreadId};
 use tracing::{debug, warn};
 
@@ -61,7 +61,7 @@ pub enum ConnectionHandler {
 
 #[derive(Debug, Clone)]
 pub struct Filterchain {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub rbac_filters: Vec<NetworkRbac>,
     pub tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
@@ -87,7 +87,7 @@ impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
 
 #[derive(Debug, Clone)]
 pub struct FilterchainBuilder {
-    name: CompactString,
+    name: SmolStr,
     listener_name: Option<&'static str>,
     filter_chain_match_hash: u64,
     main_filter: MainFilterBuilder,

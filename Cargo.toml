@@ -43,7 +43,7 @@ orion-xds            = { path = "orion-xds" }
 abort-on-drop       = "0.2"
 bounded-integer     = "0.5.8"
 bytes               = "1"
-compact_str         = { version = "0.8.0", features = ["serde"] }
+smol_str            = { version = "0.3.2", features = ["serde"] }
 exponential-backoff = "1.2.0"
 futures             = "0.3"
 http                = "1.0"

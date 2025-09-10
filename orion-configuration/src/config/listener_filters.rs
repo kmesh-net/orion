@@ -16,11 +16,11 @@
 //
 
 use crate::config::{common::ProxyProtocolVersion, transport::ProxyProtocolPassThroughTlvs};
-use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 pub struct ListenerFilter {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub config: ListenerFilterConfig,
 }
 
@@ -49,7 +49,6 @@ mod envoy_conversions {
         common::{ProxyProtocolVersion, *},
         transport::ProxyProtocolPassThroughTlvs,
     };
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::listener::v3::{
@@ -63,6 +62,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use smol_str::SmolStr;
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
@@ -103,7 +103,7 @@ mod envoy_conversions {
         fn try_from(envoy: EnvoyListenerFilter) -> Result<Self, Self::Error> {
             let EnvoyListenerFilter { name, filter_disabled, config_type } = envoy;
             unsupported_field!(filter_disabled)?;
-            let name: CompactString = required!(name)?.into();
+            let name: String = required!(name)?;
             (|| -> Result<_, GenericError> {
                 let config = match required!(config_type) {
                     Ok(EnvoyListenerFilterConfigType::ConfigDiscovery(_)) => {
@@ -114,7 +114,7 @@ mod envoy_conversions {
                     },
                     Err(e) => Err(e),
                 }?;
-                Ok(Self { name: name.clone(), config })
+                Ok(Self { name: SmolStr::new(&name), config })
             })()
             .with_node("config_type")
             .with_name(name)

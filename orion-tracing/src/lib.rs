@@ -35,18 +35,18 @@ use {
 use std::{collections::HashMap, sync::Arc};
 
 use arc_swap::ArcSwap;
-use compact_str::CompactString;
 use opentelemetry::global::BoxedTracer;
 use orion_configuration::config::network_filters::tracing::{SupportedTracingProvider, TracingConfig, TracingKey};
 use parking_lot::Mutex;
+use smol_str::SmolStr;
 use std::result::Result as StdResult;
 use thiserror::Error;
 #[cfg(feature = "tracing")]
-use {compact_str::ToCompactString, orion_error::Result};
+use {orion_error::Result, smol_str::ToSmolStr};
 
 #[allow(dead_code)]
 struct OtelConfig {
-    service_name: CompactString,
+    service_name: SmolStr,
     target_uri: String,
 }
 
@@ -102,14 +102,14 @@ impl TryFrom<&TracingConfig> for OtelConfig {
 }
 
 #[cfg(feature = "tracing")]
-pub fn otel_remove_tracers_by_listeners(listeners: &[CompactString]) -> Result<()> {
+pub fn otel_remove_tracers_by_listeners(listeners: &[SmolStr]) -> Result<()> {
     if !listeners.is_empty() {
         info!("OTEL Tracers: removing listeners configuration...");
         let _lock = GLOBAL_TRACERS.write_lock.lock();
         let map_arc = GLOBAL_TRACERS.tracers.load_full();
         let mut cur_map = (*map_arc).clone();
         info!("Removing tracer for listeners: {listeners:?}");
-        cur_map.retain(|&TracingKey(name, _), _| !listeners.contains(&name.to_compact_string()));
+        cur_map.retain(|&TracingKey(name, _), _| !listeners.contains(&name.to_smolstr()));
         GLOBAL_TRACERS.tracers.store(Arc::new(cur_map));
         info!("OTEL Tracers: removal done.");
     }

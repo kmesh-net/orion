@@ -20,8 +20,8 @@ use std::time::Duration;
 use crate::config::{
     cluster::Cluster, common::is_default, core::Address, listener::Listener, metrics::StatsSink, secret::Secret,
 };
-use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Bootstrap {
@@ -40,15 +40,15 @@ pub struct Bootstrap {
 }
 
 impl Bootstrap {
-    pub fn get_ads_configs(&self) -> &[CompactString] {
+    pub fn get_ads_configs(&self) -> &[SmolStr] {
         self.dynamic_resources.as_ref().map(|dr| dr.grpc_cluster_specifiers.as_slice()).unwrap_or_default()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Node {
-    pub id: CompactString,
-    pub cluster_id: CompactString,
+    pub id: SmolStr,
+    pub cluster_id: SmolStr,
 }
 
 impl Node {
@@ -65,7 +65,7 @@ impl Node {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DynamicResources {
-    pub grpc_cluster_specifiers: Vec<CompactString>,
+    pub grpc_cluster_specifiers: Vec<SmolStr>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -88,7 +88,6 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{Admin, Bootstrap, DynamicResources, Node, StaticResources};
     use crate::config::{common::*, grpc::Duration, metrics::StatsSink};
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::{
         bootstrap::v3::{
             bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
@@ -101,6 +100,7 @@ mod envoy_conversions {
         },
         metrics::v3::stats_sink::ConfigType,
     };
+    use smol_str::SmolStr;
 
     impl Bootstrap {
         pub fn deserialize_from_envoy<R: std::io::Read>(rdr: R) -> Result<Self, GenericError> {
@@ -310,7 +310,7 @@ mod envoy_conversions {
                                 )
                                 .with_node("target_specifier")?;
                                 let cluster_name = required!(cluster_name).with_node("target_specifier")?;
-                                cluster_specifiers.push(CompactString::from(cluster_name))
+                                cluster_specifiers.push(SmolStr::from(cluster_name))
                             },
                             EnvoyGrpcTargetSpecifier::GoogleGrpc(_) => {
                                 return Err(GenericError::unsupported_variant("GoogleGrpc"))

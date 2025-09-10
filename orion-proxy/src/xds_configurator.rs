@@ -16,8 +16,6 @@
 //
 
 use abort_on_drop::ChildTask;
-#[cfg(feature = "tracing")]
-use compact_str::ToCompactString;
 use futures::future::join_all;
 use orion_configuration::config::{bootstrap::Node, cluster::ClusterSpecifier, Listener};
 use orion_lib::{
@@ -37,6 +35,8 @@ use orion_xds::{
     },
 };
 use parking_lot::RwLock;
+#[cfg(feature = "tracing")]
+use smol_str::ToSmolStr;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     select,
@@ -307,7 +307,7 @@ impl XdsConfigurationHandler {
 
     #[cfg(feature = "tracing")]
     fn tracer_listener_remove(&self, id: &str) {
-        orion_tracing::otel_remove_tracers_by_listeners(&[id.to_compact_string()])
+        orion_tracing::otel_remove_tracers_by_listeners(&[id.to_smolstr()])
             .unwrap_or_else(|err| warn!("Failed to remove tracer for listener {id}: {err}"));
     }
 

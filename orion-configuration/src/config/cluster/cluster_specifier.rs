@@ -15,21 +15,21 @@
 //
 //
 
-use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::{borrow::Cow, num::NonZeroU32};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ClusterSpecifier {
-    Cluster(CompactString),
+    Cluster(SmolStr),
     WeightedCluster(Vec<WeightedClusterSpecifier>),
 }
 
 impl ClusterSpecifier {
     pub fn name(&self) -> Cow<'_, str> {
         match self {
-            ClusterSpecifier::Cluster(name) => name.into(),
+            ClusterSpecifier::Cluster(name) => name.as_str().into(),
             ClusterSpecifier::WeightedCluster(clusters) => {
                 clusters.iter().map(|c| c.cluster.as_str()).collect::<Vec<_>>().join(",").into()
             },
@@ -39,7 +39,7 @@ impl ClusterSpecifier {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct WeightedClusterSpecifier {
-    pub cluster: CompactString,
+    pub cluster: SmolStr,
     pub weight: NonZeroU32,
 }
 
@@ -48,7 +48,6 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{ClusterSpecifier, WeightedClusterSpecifier};
     use crate::config::common::*;
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::route::v3::{
             route_action::ClusterSpecifier as EnvoyClusterSpecifier,
@@ -59,6 +58,7 @@ mod envoy_conversions {
             WeightedCluster as EnvoyTcpWeightedCluster,
         },
     };
+    use smol_str::{SmolStr, ToSmolStr};
 
     impl TryFrom<EnvoyWeightedCluster> for ClusterSpecifier {
         type Error = GenericError;
@@ -84,9 +84,7 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyClusterSpecifier) -> Result<Self, Self::Error> {
             match value {
-                EnvoyClusterSpecifier::Cluster(cluster) => {
-                    required!(cluster).map(CompactString::from).map(Self::Cluster)
-                },
+                EnvoyClusterSpecifier::Cluster(cluster) => required!(cluster).map(SmolStr::from).map(Self::Cluster),
                 EnvoyClusterSpecifier::WeightedClusters(envoy) => envoy.try_into(),
                 EnvoyClusterSpecifier::ClusterHeader(_) => Err(GenericError::unsupported_variant("ClusterHeader")),
                 EnvoyClusterSpecifier::ClusterSpecifierPlugin(_) => {
@@ -126,7 +124,7 @@ mod envoy_conversions {
                 typed_per_filter_config,
                 host_rewrite_specifier
             )?;
-            let cluster: CompactString = required!(name)?.into();
+            let cluster: String = required!(name)?;
             (|| -> Result<_, GenericError> {
                 // we could allow for default = 1 if missing in ng to allow equaly balanced clusters with shorthand notation
                 let weight = weight.map(|x| x.value).ok_or(GenericError::MissingField("weight"))?;
@@ -134,7 +132,7 @@ mod envoy_conversions {
                     .try_into()
                     .map_err(|_| GenericError::from_msg("clusterweight has to be > 0"))
                     .with_node("weight")?;
-                Ok(Self { cluster: cluster.clone(), weight })
+                Ok(Self { cluster: cluster.to_smolstr(), weight })
             })()
             .with_name(cluster)
         }

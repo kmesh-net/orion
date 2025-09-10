@@ -18,12 +18,12 @@
 use super::secret::{TlsCertificate, ValidationContext};
 use crate::config::{cluster, common::*};
 use base64::Engine as _;
-use compact_str::CompactString;
 use serde::{
     de::{self, MapAccess, Visitor},
     ser::SerializeStruct,
     Deserialize, Serialize,
 };
+use smol_str::SmolStr;
 use std::{
     ffi::{CStr, CString},
     str::FromStr,
@@ -202,14 +202,14 @@ impl Default for TlsParameters {
 }
 
 pub struct SdsConfig {
-    pub name: CompactString,
+    pub name: SmolStr,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Secrets {
     #[serde(rename = "tls_certificates_sds")]
-    SdsConfig(Vec<CompactString>),
+    SdsConfig(Vec<SmolStr>),
     #[serde(rename = "tls_certificates")]
     Certificates(Vec<TlsCertificate>),
 }
@@ -243,7 +243,7 @@ impl From<Vec<TlsCertificate>> for Secrets {
 #[serde(rename_all = "snake_case")]
 pub enum CommonTlsValidationContext {
     #[serde(rename = "validation_context_sds")]
-    SdsConfig(CompactString),
+    SdsConfig(SmolStr),
     ValidationContext(ValidationContext),
 }
 
@@ -292,7 +292,6 @@ mod envoy_conversions {
         SdsConfig, Secrets, TlsCertificate, TlsParameters, TlsVersion, TlvEntry, UpstreamProxyProtocolConfig,
     };
     use crate::config::{cluster, common::*};
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::core::v3::{
@@ -314,6 +313,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use smol_str::SmolStr;
 
     impl BindDevice {
         const fn socket_option() -> (i64, i64) {
@@ -459,9 +459,9 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoySdsSecretConfig) -> Result<Self, Self::Error> {
             let EnvoySdsSecretConfig { name, sds_config } = value;
-            let name: CompactString = required!(name)?.into();
+            let name: String = required!(name)?;
             unsupported_field!(sds_config).with_name(name.clone())?;
-            Ok(Self { name })
+            Ok(Self { name: SmolStr::from(name) })
         }
     }
 

@@ -67,7 +67,7 @@ use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
 use {
-    hyper_util::client::legacy::pool::{ConnectionEvent, EventHandler, Tag},
+    hyper_util::client::legacy::pool::{ConnectionEvent, Tag},
     hyper_util::client::legacy::PoolKey,
     std::any::Any,
 };

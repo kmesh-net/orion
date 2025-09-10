@@ -25,9 +25,9 @@ use super::{
 };
 use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
-use compact_str::CompactString;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize, Serializer};
+use smol_str::SmolStr;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{
     collections::HashMap,
@@ -39,7 +39,7 @@ use orion_interner::StringInterner;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Listener {
-    pub name: CompactString,
+    pub name: SmolStr,
     pub address: SocketAddr,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
@@ -133,7 +133,7 @@ mod serde_filterchains {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FilterChain {
     pub filter_chain_match_hash: u64,
-    pub name: CompactString,
+    pub name: SmolStr,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub tls_config: Option<listener::TlsConfig>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
@@ -145,7 +145,7 @@ pub struct FilterChain {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct ServerNameMatch {
     //eg example.com
-    name: CompactString,
+    name: SmolStr,
     // should we also match on anything.example.com? (but not anythingexample.com)
     match_subdomains: bool,
 }
@@ -324,7 +324,6 @@ mod envoy_conversions {
         transport::SupportedEnvoyTransportSocket,
         util::{envoy_u32_to_u16, u32_to_u16},
     };
-    use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::{
@@ -345,6 +344,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use smol_str::SmolStr;
 
     impl TryFrom<EnvoyListener> for Listener {
         type Error = GenericError;
@@ -421,7 +421,7 @@ mod envoy_conversions {
                 bypass_overload_manager,
                 fcds_config
             )?;
-            let name: CompactString = required!(name)?.into();
+            let name: String = required!(name)?;
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let address = Address::into_addr(convert_opt!(address)?)?;
@@ -462,7 +462,14 @@ mod envoy_conversions {
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
-                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector, proxy_protocol_config })
+                Ok(Self {
+                    name: name.into(),
+                    address,
+                    filter_chains,
+                    bind_device,
+                    with_tls_inspector,
+                    proxy_protocol_config,
+                })
             }())
             .with_name(name)
         }
@@ -490,7 +497,7 @@ mod envoy_conversions {
                 // transport_socket,
                 transport_socket_connect_timeout // name,
             )?;
-            let name: CompactString = required!(name)?.into();
+            let name = required!(name)?;
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let filter_chain_match = filter_chain_match
@@ -573,7 +580,13 @@ mod envoy_conversions {
                 filter_chain_match.hash(&mut s);
                 Ok(FilterChainWrapper((
                     filter_chain_match,
-                    FilterChain { filter_chain_match_hash: s.finish(), name, rbac, terminal_filter, tls_config },
+                    FilterChain {
+                        filter_chain_match_hash: s.finish(),
+                        name: SmolStr::new(&name),
+                        rbac,
+                        terminal_filter,
+                        tls_config,
+                    },
                 )))
             }())
             .with_name(name)
@@ -639,7 +652,7 @@ mod envoy_conversions {
     #[derive(Debug, Clone)]
     struct Filter {
         #[allow(unused)]
-        pub name: Option<CompactString>,
+        pub name: Option<SmolStr>,
         pub filter: SupportedEnvoyFilter,
     }
 
@@ -647,7 +660,7 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: EnvoyFilter) -> Result<Self, Self::Error> {
             let EnvoyFilter { name, config_type } = envoy;
-            let name = name.is_used().then_some(CompactString::from(name));
+            let name = name.is_used().then_some(name);
 
             let result = (|| -> Result<_, GenericError> {
                 let filter: SupportedEnvoyFilter = match required!(config_type)? {
@@ -655,7 +668,7 @@ mod envoy_conversions {
                     EnvoyConfigType::TypedConfig(typed_config) => SupportedEnvoyFilter::try_from(typed_config),
                 }
                 .with_node("config_type")?;
-                Ok(Self { name: name.clone(), filter })
+                Ok(Self { name: name.as_ref().map(SmolStr::new), filter })
             })();
 
             if let Some(name) = name {
