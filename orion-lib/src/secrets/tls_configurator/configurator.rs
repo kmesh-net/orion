@@ -54,7 +54,7 @@ pub fn get_crypto_key_provider() -> Result<&'static dyn KeyProvider> {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-struct IgnoreCertVerifier(Verifier);
+pub struct IgnoreCertVerifier(pub Verifier);
 
 impl ServerCertVerifier for IgnoreCertVerifier {
     fn verify_server_cert(

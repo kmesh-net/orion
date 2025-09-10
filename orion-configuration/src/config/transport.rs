@@ -478,8 +478,14 @@ mod envoy_conversions {
                 EnvoyValidationContextType::ValidationContextSdsSecretConfig(x) => {
                     SdsConfig::try_from(x).map(|sds| Self::SdsConfig(sds.name))
                 },
-                EnvoyValidationContextType::CombinedValidationContext(_combined_context) => {
-                    Err(GenericError::unsupported_variant("CombinedValidationContext"))
+                EnvoyValidationContextType::CombinedValidationContext(combined_context) => {
+                    if let Some(context) = combined_context.default_validation_context{
+                        context.try_into().map(Self::ValidationContext)
+                    }else if let Some(context) = combined_context.validation_context_sds_secret_config{
+                        SdsConfig::try_from(context).map(|sds| Self::SdsConfig(sds.name))
+                    }else{
+                        Err(GenericError::Message("CombinedValidationContext at least one validation method needs to be set".into()))    
+                    }     
                 },
                 EnvoyValidationContextType::ValidationContextCertificateProvider(_) => {
                     Err(GenericError::unsupported_variant("ValidationContextCertificateProvider"))

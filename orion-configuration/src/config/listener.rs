@@ -180,6 +180,10 @@ pub struct FilterChainMatch {
     pub source_prefix_ranges: Vec<IpNet>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub source_ports: Vec<u16>,
+    
+    pub transport_protocol: String,
+    pub application_protocols: Vec<String>,
+
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -348,6 +352,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use tracing::warn;
 
     impl TryFrom<EnvoyListener> for Listener {
         type Error = GenericError;
@@ -428,12 +433,14 @@ mod envoy_conversions {
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let address = Address::into_addr(convert_opt!(address)?)?;
+                let envoy_filter_chains = filter_chains.clone();
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();
 
                 // This is a hard requirement from Envoy as otherwise it can't pick which filterchain to use.
                 if filter_chains.len() != n_filter_chains {
+                    warn!("Duplicate filter chains {:?}", envoy_filter_chains);
                     return Err(GenericError::from_msg("filter chain contains duplicate filter_chain_match entries")
                         .with_node("filter_chains"));
                 }
@@ -598,8 +605,8 @@ mod envoy_conversions {
                 source_prefix_ranges,
                 source_ports,
                 server_names,
-                transport_protocol: _,
-                application_protocols: _,
+                transport_protocol,
+                application_protocols,
             } = envoy;
             unsupported_field!(
                 // destination_port,
@@ -636,7 +643,7 @@ mod envoy_conversions {
                 .map(|envoy| CidrRange::try_from(envoy).map(CidrRange::into_ipnet))
                 .collect::<Result<_, _>>()
                 .with_node("source_prefix_ranges")?;
-            Ok(Self { server_names, destination_port, source_ports, destination_prefix_ranges, source_prefix_ranges })
+            Ok(Self { server_names, destination_port, source_ports, destination_prefix_ranges, source_prefix_ranges, transport_protocol, application_protocols })
         }
     }
 

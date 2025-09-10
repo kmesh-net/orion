@@ -189,7 +189,15 @@ mod config_dump_tests {
         let redacted = redact_secrets(vec![secret.clone()]);
         match &redacted[0].kind {
             Type::ValidationContext(vc) => {
-                assert_eq!(vc.trusted_ca(), &DataSource::InlineString("ca_data".into()));
+                match vc{
+                    ValidationContext::TrustedCA(data_source) => {
+                        assert_eq!(data_source, &DataSource::InlineString("ca_data".into()));
+                    },
+                    ValidationContext::None => {
+                        assert!(false)
+                    },
+                }
+                
             },
             Type::TlsCertificate(_) => unreachable!(),
         }

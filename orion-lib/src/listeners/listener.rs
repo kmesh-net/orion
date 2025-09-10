@@ -612,6 +612,8 @@ socket_options:
                     ],
                     source_prefix_ranges: Vec::new(),
                     source_ports: Vec::new(),
+                    transport_protocol:String::new(),
+                    application_protocols: vec![]
                 },
                 0,
             ),

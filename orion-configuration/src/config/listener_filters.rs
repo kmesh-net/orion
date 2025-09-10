@@ -87,10 +87,12 @@ mod envoy_conversions {
                 },
                 "type.googleapis.com/udpa.type.v1.TypedStruct"
                 | "type.googleapis.com/stats.PluginConfig"
-                | "type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector" => {
+                | "type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector" 
+                | "type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst" => {
                     info!("Ignored Istio type {}", typed_config.type_url);
                     Ok(SupportedEnvoyListenerFilter::Ignored)
                 },
+
 
                 _ => {
                     return Err(GenericError::unsupported_variant(format!(
@@ -117,8 +119,8 @@ mod envoy_conversions {
     impl TryFrom<EnvoyListenerFilter> for ListenerFilter {
         type Error = GenericError;
         fn try_from(envoy: EnvoyListenerFilter) -> Result<Self, Self::Error> {
-            let EnvoyListenerFilter { name, filter_disabled, config_type } = envoy;
-            unsupported_field!(filter_disabled)?;
+            let EnvoyListenerFilter { name, filter_disabled: _istio_ignore, config_type } = envoy;
+            //unsupported_field!(filter_disabled)?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let config = match required!(config_type) {
@@ -143,12 +145,12 @@ mod envoy_conversions {
             match value {
                 SupportedEnvoyListenerFilter::TlsInspector(EnvoyTlsInspector {
                     enable_ja3_fingerprinting,
-                    initial_read_buffer_size,
+                    initial_read_buffer_size: _istio_ignore,
                     enable_ja4_fingerprinting,
                 }) => {
                     // both fields are optional, and unsupported, but serde_yaml requires that at least one field is populated
                     // so allow for enable_ja3_fingerprinting: false
-                    unsupported_field!(initial_read_buffer_size, enable_ja4_fingerprinting)?;
+                    unsupported_field!(enable_ja4_fingerprinting)?;
                     if enable_ja3_fingerprinting.is_some_and(|b| b.value) {
                         return Err(GenericError::UnsupportedField("enable_ja3_fingerprinting"));
                     }
