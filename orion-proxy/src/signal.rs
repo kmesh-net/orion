@@ -152,6 +152,7 @@ pub fn trigger_manual_shutdown(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pingora_timeout::fast_timeout::fast_timeout;
     use std::time::Duration;
 
     #[tokio::test]
@@ -163,7 +164,7 @@ mod tests {
         trigger_manual_shutdown(&shutdown_tx).expect("Failed to trigger manual shutdown");
 
         // Should receive the shutdown signal
-        let signal = tokio::time::timeout(Duration::from_millis(100), shutdown_rx.recv())
+        let signal = fast_timeout(Duration::from_millis(100), shutdown_rx.recv())
             .await
             .expect("Timeout waiting for shutdown signal")
             .expect("Failed to receive shutdown signal");

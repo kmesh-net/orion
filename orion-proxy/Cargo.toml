@@ -34,6 +34,8 @@ parking_lot                    = "0.12.3"
 tokio.workspace                = true
 tower.workspace                = true
 tracing.workspace              = true
+pingora-timeout                = "0.3.0"
+
 
 axum = "0.8.1"
 compact_str.workspace = true

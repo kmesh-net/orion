@@ -2325,6 +2325,7 @@ dependencies = [
  "orion-tracing",
  "orion-xds",
  "parking_lot",
+ "pingora-timeout",
  "prometheus",
  "regex",
  "serde",
