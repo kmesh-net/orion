@@ -126,7 +126,7 @@ fn launch_runtimes(
         .collect::<HashMap<_, _>>();
 
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
-    let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into() });
+    let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into(), metadata: None });
 
     let (secret_manager, listener_factories, clusters) =
         get_listeners_and_clusters(bootstrap.clone()).with_context_msg("Failed to get listeners and clusters")?;

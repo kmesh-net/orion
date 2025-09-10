@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let (mut worker, mut client, _subscription_manager) = start_aggregate_client(
-        Node { id: "node1".into(), cluster_id: "cluster_id".into() },
+        Node { id: "node1".into(), cluster_id: "cluster_id".into(), metadata: None },
         "http://127.0.0.1:50051".parse()?,
     )
     .await?;

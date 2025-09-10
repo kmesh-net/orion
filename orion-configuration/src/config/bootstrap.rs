@@ -48,10 +48,20 @@ impl Bootstrap {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Node {
     pub id: CompactString,
     pub cluster_id: CompactString,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub metadata: Option<orion_data_plane_api::envoy_data_plane_api::google::protobuf::Struct>,
+}
+
+impl Eq for Node {}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.cluster_id == other.cluster_id
+    }
 }
 
 impl Node {
@@ -229,7 +239,7 @@ mod envoy_conversions {
             let EnvoyNode {
                 id,
                 cluster,
-                metadata: _,
+                metadata,
                 dynamic_parameters,
                 locality: _,
                 user_agent_name,
@@ -253,7 +263,7 @@ mod envoy_conversions {
 
             let id = required!(id)?.into();
             let cluster = required!(cluster)?.into();
-            Ok(Self { id, cluster_id: cluster })
+            Ok(Self { id, cluster_id: cluster, metadata })
         }
     }
     impl TryFrom<EnvoyDynamicResources> for DynamicResources {
