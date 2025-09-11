@@ -478,15 +478,17 @@ mod envoy_conversions {
                 }
 
                 let load_assignment = load_assignment.map(ClusterLoadAssignment::try_from);
-                let cla = match load_assignment{
-                    Some(Ok(cla)) => Some(cla),
+                let mut cla = match load_assignment{
+                    Some(Ok(cla)) => cla,
                     Some(Err(e))=> return Err(e),
-                    None => None,
+                    None => ClusterLoadAssignment{ endpoints: vec![], cluster_name: String::new() },
                 };
+
+                cla.cluster_name = name.to_string();
                 
                 let discovery_settings = ClusterDiscoveryType::try_from((
                     discovery_type,
-                    cla,
+                    Some(cla),
                     original_dst_config,
                 ))
                 .with_node("cluster_discovery_type")?;
