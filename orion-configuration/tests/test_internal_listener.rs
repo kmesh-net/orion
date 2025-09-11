@@ -33,6 +33,8 @@ fn test_internal_listener_serialization() {
         bind_device: None,
         with_tls_inspector: false,
         proxy_protocol_config: None,
+        with_tlv_listener_filter: false,
+        tlv_listener_filter_config: None,
     };
 
     let yaml = serde_yaml::to_string(&listener).unwrap();
@@ -125,6 +127,8 @@ fn test_complete_internal_listener_config() {
         bind_device: None,
         with_tls_inspector: false,
         proxy_protocol_config: None,
+        with_tlv_listener_filter: false,
+        tlv_listener_filter_config: None,
     };
 
     let internal_addr = InternalEndpointAddress {
