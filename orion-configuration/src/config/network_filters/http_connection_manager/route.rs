@@ -936,7 +936,13 @@ mod envoy_conversions {
             let upgrade_config = upgrade_configs.try_into().with_node("upgrade_configs").ok();
             let hash_policy = convert_vec!(hash_policy)?;
             let authority_rewrite = match host_rewrite_specifier {
-                Some(EnvoyHostRewriteSpecifier::AutoHostRewrite(bv)) if !bv.value => Ok(None),
+                Some(EnvoyHostRewriteSpecifier::AutoHostRewrite(bv)) => {
+                    if bv.value {
+                        Ok(Some(AuthorityRewriteSpecifier::AutoHostRewrite))
+                    } else {
+                        Ok(None)
+                    }
+                },
                 Some(spec) => match spec {
                     EnvoyHostRewriteSpecifier::HostRewriteLiteral(literal) => {
                         Authority::from_str(&literal).map(AuthorityRewriteSpecifier::Authority).map_err(|e| {
@@ -946,7 +952,6 @@ mod envoy_conversions {
                             )
                         })
                     },
-                    EnvoyHostRewriteSpecifier::AutoHostRewrite(_) => Ok(AuthorityRewriteSpecifier::AutoHostRewrite),
                     EnvoyHostRewriteSpecifier::HostRewriteHeader(header) => match HeaderName::from_str(&header) {
                         Ok(_) => Ok(AuthorityRewriteSpecifier::Header(header.into())),
                         Err(e) => Err(GenericError::from_msg_with_cause(
@@ -957,6 +962,7 @@ mod envoy_conversions {
                     EnvoyHostRewriteSpecifier::HostRewritePathRegex(regex) => {
                         regex.try_into().map(AuthorityRewriteSpecifier::Regex)
                     },
+                    EnvoyHostRewriteSpecifier::AutoHostRewrite(_) => unreachable!(),
                 }
                 .map(Some),
                 None => Ok(None),
