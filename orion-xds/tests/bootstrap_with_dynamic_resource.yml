@@ -1,0 +1,110 @@
+dynamic_resources:
+  lds_config:
+    resource_api_version: V3
+    api_config_source:
+      api_type: GRPC
+      transport_api_version: V3
+      grpc_services:
+        - envoy_grpc:
+            cluster_name: lds_cluster
+  cds_config:
+    resource_api_version: V3
+    api_config_source:
+      api_type: GRPC
+      transport_api_version: V3
+      grpc_services:
+        - envoy_grpc:
+            cluster_name: cds_cluster
+
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 10000 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                codec_type: AUTO
+                rds:
+                  route_config_name: local_route
+                  config_source:
+                    resource_api_version: V3
+                    api_config_source:
+                      api_type: GRPC
+                      transport_api_version: V3
+                      grpc_services:
+                        - envoy_grpc:
+                            cluster_name: rds_cluster
+  clusters:
+    - name: rds_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              # Configure an HTTP/2 keep-alive to detect connection issues and reconnect
+              # to the admin server if the connection is no longer responsive.
+              connection_keepalive:
+                interval: 30s
+                timeout: 5s
+      load_assignment:
+        cluster_name: rds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 5679
+    - name: cds_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              # Configure an HTTP/2 keep-alive to detect connection issues and reconnect
+              # to the admin server if the connection is no longer responsive.
+              connection_keepalive:
+                interval: 30s
+                timeout: 5s
+      load_assignment:
+        cluster_name: cds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 5678
+    - name: lds_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options:
+              # Configure an HTTP/2 keep-alive to detect connection issues and reconnect
+              # to the admin server if the connection is no longer responsive.
+              connection_keepalive:
+                interval: 30s
+                timeout: 5s
+      load_assignment:
+        cluster_name: lds_cluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 5677

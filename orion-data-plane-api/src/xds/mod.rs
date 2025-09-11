@@ -18,6 +18,4 @@
 //
 //
 
-pub mod bindings;
-pub mod client;
 pub mod model;

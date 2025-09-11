@@ -1,0 +1,59 @@
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 10000 }
+        filter_chains:
+          - filters:
+              - name: envoy.filters.network.tcp_proxy
+                typed_config:
+                  "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                  stat_prefix: destination
+                  weighted_clusters:
+                      - cluster_weight:
+                          name: some_service_0
+                          weight: 25
+                      - cluster_weight:
+                          name: some_service_1
+                          weight: 75
+  clusters:
+    - name: some_service_0
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: some_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 1200
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 1201
+    - name: some_service_1
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: some_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.2
+                      port_value: 1200
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.2
+                      port_value: 1201

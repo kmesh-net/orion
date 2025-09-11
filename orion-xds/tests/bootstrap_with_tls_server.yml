@@ -1,0 +1,20 @@
+
+static_resources:
+  listeners:
+    - name: listener_https
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 8443 }
+      filterChains:
+        - transportSocket:
+            name: envoy.transport_sockets.tls
+            typedConfig:
+              '@type': type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              commonTlsContext:
+                tlsParams:
+                  tlsMinimumProtocolVersion: TLSv1_3
+                  tlsMaximumProtocolVersion: TLSv1_3
+                tlsCertificates:
+                  - certificateChain:
+                      filename: ./tests/server.crt
+                    privateKey:
+                      filename: ./tests/server.key

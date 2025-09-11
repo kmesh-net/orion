@@ -2402,6 +2402,7 @@ dependencies = [
  "bytes",
  "futures",
  "http",
+ "hyper-util",
  "orion-configuration",
  "orion-data-plane-api",
  "orion-error",
