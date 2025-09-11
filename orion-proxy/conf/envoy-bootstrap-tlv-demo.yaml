@@ -1,0 +1,81 @@
+static_resources:
+  listeners:
+    - name: listener_tlv_proxy_protocol
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8080 }
+      listener_filters:
+        - name: envoy.filters.listener.proxy_protocol
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol
+            allow_requests_without_proxy_protocol: false
+            stat_prefix: proxy_protocol
+            pass_through_tlvs:
+              match_type: INCLUDE_ALL
+              tlv_type:
+                - 1   # AWS VPC ID
+                - 2   # AWS Instance ID  
+                - 3   # Custom Application Data
+                - 32  # SSL
+                - 33  # SSL Version
+                - 34  # SSL CN
+                - 35  # SSL Cipher
+                - 36  # SSL SIG ALG
+                - 37  # SSL KEY ALG
+      filter_chains:
+        - name: filter_chain_tlv_demo
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http_tlv
+                codec_type: HTTP1
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                      start_child_span: false
+                route_config:
+                  name: tlv_demo_route
+                  virtual_hosts:
+                    - name: tlv_backend
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/health"
+                          direct_response:
+                            status: 200
+                            body:
+                              inline_string: "TLV Proxy Protocol Demo - Healthy 🚀"
+                        - match:
+                            prefix: "/tlv-info"
+                          direct_response:
+                            status: 200
+                            body:
+                              inline_string: "This endpoint receives TLV data from proxy protocol"
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: backend_cluster
+
+  clusters:
+    - name: backend_cluster
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 9001
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 9002
+
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }

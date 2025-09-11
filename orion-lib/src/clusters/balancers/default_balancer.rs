@@ -233,8 +233,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -296,8 +296,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -359,8 +359,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -422,8 +422,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -485,8 +485,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -548,8 +548,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
@@ -611,8 +611,8 @@ mod test {
             .into_iter()
             .filter_map(|r| {
                 r.map(|f| match &f.address {
-                    EndpointAddressType::Socket(authority) => authority.to_string(),
-                    EndpointAddressType::Internal(internal) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
+                    EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
                 })
             })
             .collect();
