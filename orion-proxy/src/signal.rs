@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::thread::{self, JoinHandle};
-use tokio::sync::broadcast;
 use tracing::{info, warn};
 
 /// Signal types that can trigger shutdown
@@ -25,8 +23,6 @@ pub enum ShutdownSignal {
     /// SIGTERM signal (Unix only)
     #[cfg(unix)]
     Terminate,
-    /// Manual shutdown request
-    Manual,
 }
 
 impl std::fmt::Display for ShutdownSignal {
@@ -35,65 +31,23 @@ impl std::fmt::Display for ShutdownSignal {
             ShutdownSignal::Interrupt => write!(f, "SIGINT (CTRL+C)"),
             #[cfg(unix)]
             ShutdownSignal::Terminate => write!(f, "SIGTERM"),
-            ShutdownSignal::Manual => write!(f, "Manual"),
         }
     }
 }
 
-/// Spawns a signal handler thread that listens for shutdown signals and notifies
-/// all subscribers via a broadcast channel.
+/// `wait_signal` listens for shutdown signals
 ///
 /// On Unix platforms, this listens for both SIGINT (CTRL+C) and SIGTERM.
 /// On Windows, this only listens for CTRL+C.
-///
-/// Returns a tuple of:
-/// - `broadcast::Sender<ShutdownSignal>`: Used to create receivers for shutdown notifications
-/// - `JoinHandle<()>`: Handle to the signal handler thread
-pub fn spawn_signal_handler() -> (broadcast::Sender<ShutdownSignal>, JoinHandle<()>) {
-    let (shutdown_tx, _) = broadcast::channel::<ShutdownSignal>(16);
-    let signal_shutdown_tx = shutdown_tx.clone();
-
-    let signal_handle = thread::Builder::new()
-        .name("signal_handler".to_owned())
-        .spawn(move || {
-            let rt = match tokio::runtime::Runtime::new() {
-                Ok(rt) => rt,
-                Err(e) => {
-                    warn!("Failed to create signal handler runtime: {}", e);
-                    return;
-                },
-            };
-
-            rt.block_on(async {
-                if let Err(e) = listen_for_signals(signal_shutdown_tx).await {
-                    warn!("Signal handler error: {}", e);
-                }
-            });
-        })
-        .expect("Failed to spawn signal handler thread");
-
-    (shutdown_tx, signal_handle)
-}
-
-/// Cross-platform signal listening implementation
-async fn listen_for_signals(
-    shutdown_tx: broadcast::Sender<ShutdownSignal>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    #[cfg(unix)]
-    {
-        listen_for_signals_unix(shutdown_tx).await
-    }
-    #[cfg(not(unix))]
-    {
-        listen_for_signals_windows(shutdown_tx).await
+pub async fn wait_signal() {
+    if let Err(e) = listen_for_signals().await {
+        warn!("Signal handler error: {}", e);
     }
 }
 
 /// Unix-specific signal handling (SIGINT and SIGTERM)
 #[cfg(unix)]
-async fn listen_for_signals_unix(
-    shutdown_tx: broadcast::Sender<ShutdownSignal>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn listen_for_signals() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::signal::unix::{signal, SignalKind};
 
     let mut sigint = signal(SignalKind::interrupt())?;
@@ -102,15 +56,9 @@ async fn listen_for_signals_unix(
     tokio::select! {
         _ = sigint.recv() => {
             info!("Received {} signal, initiating shutdown...", ShutdownSignal::Interrupt);
-            if let Err(e) = shutdown_tx.send(ShutdownSignal::Interrupt) {
-                warn!("Failed to send shutdown signal: {}", e);
-            }
         }
         _ = sigterm.recv() => {
             info!("Received {} signal, initiating shutdown...", ShutdownSignal::Terminate);
-            if let Err(e) = shutdown_tx.send(ShutdownSignal::Terminate) {
-                warn!("Failed to send shutdown signal: {}", e);
-            }
         }
     }
 
@@ -119,34 +67,12 @@ async fn listen_for_signals_unix(
 
 /// Windows-specific signal handling (CTRL+C only)
 #[cfg(not(unix))]
-async fn listen_for_signals_windows(
-    shutdown_tx: broadcast::Sender<ShutdownSignal>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn listen_for_signals() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Err(e) = tokio::signal::ctrl_c().await {
         return Err(format!("Failed to listen for CTRL+C: {}", e).into());
     }
 
-    info!("Received {} signal, initiating shutdown...", ShutdownSignal::Interrupt);
-    if let Err(e) = shutdown_tx.send(ShutdownSignal::Interrupt) {
-        warn!("Failed to send shutdown signal: {}", e);
-    }
-
     Ok(())
-}
-
-/// Creates a shutdown receiver from the broadcast sender
-pub fn create_shutdown_receiver(
-    shutdown_tx: &broadcast::Sender<ShutdownSignal>,
-) -> broadcast::Receiver<ShutdownSignal> {
-    shutdown_tx.subscribe()
-}
-
-/// Utility function to manually trigger shutdown (useful for testing or graceful shutdown)
-pub fn trigger_manual_shutdown(
-    shutdown_tx: &broadcast::Sender<ShutdownSignal>,
-) -> Result<(), broadcast::error::SendError<ShutdownSignal>> {
-    info!("Triggering manual shutdown...");
-    shutdown_tx.send(ShutdownSignal::Manual).map(|_| ())
 }
 
 #[cfg(test)]
@@ -155,28 +81,46 @@ mod tests {
     use pingora_timeout::fast_timeout::fast_timeout;
     use std::time::Duration;
 
+    // These tests send real POSIX signals; mark ignored so they are only run explicitly:
+    // cargo test --package orion-proxy --lib -- --ignored test_wait_signal_sigint
+    #[cfg(unix)]
+    #[ignore]
     #[tokio::test]
-    async fn test_manual_shutdown() {
-        let (shutdown_tx, _handle) = spawn_signal_handler();
-        let mut shutdown_rx = create_shutdown_receiver(&shutdown_tx);
-
-        // Trigger manual shutdown
-        trigger_manual_shutdown(&shutdown_tx).expect("Failed to trigger manual shutdown");
-
-        // Should receive the shutdown signal
-        let signal = fast_timeout(Duration::from_millis(100), shutdown_rx.recv())
+    async fn test_wait_signal_sigint() {
+        let handle = tokio::spawn(async {
+            wait_signal().await;
+        });
+        // Give the signal handler a brief moment to install
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        unsafe {
+            libc::kill(libc::getpid(), libc::SIGINT);
+        }
+        fast_timeout(Duration::from_secs(1), handle)
             .await
-            .expect("Timeout waiting for shutdown signal")
-            .expect("Failed to receive shutdown signal");
+            .expect("timeout waiting for wait_signal to return")
+            .expect("wait_signal task panicked");
+    }
 
-        matches!(signal, ShutdownSignal::Manual);
+    #[cfg(unix)]
+    #[ignore]
+    #[tokio::test]
+    async fn test_wait_signal_sigterm() {
+        let handle = tokio::spawn(async {
+            wait_signal().await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        unsafe {
+            libc::kill(libc::getpid(), libc::SIGTERM);
+        }
+        fast_timeout(Duration::from_secs(1), handle)
+            .await
+            .expect("timeout waiting for wait_signal to return")
+            .expect("wait_signal task panicked");
     }
 
     #[test]
-    fn test_signal_display() {
+    fn test_display_variants() {
         assert_eq!(format!("{}", ShutdownSignal::Interrupt), "SIGINT (CTRL+C)");
-        assert_eq!(format!("{}", ShutdownSignal::Manual), "Manual");
-
         #[cfg(unix)]
         assert_eq!(format!("{}", ShutdownSignal::Terminate), "SIGTERM");
     }

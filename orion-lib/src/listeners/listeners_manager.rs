@@ -55,26 +55,30 @@ impl ListenerInfo {
 }
 
 pub struct ListenersManager {
-    configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+    listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     listener_handles: BTreeMap<&'static str, ListenerInfo>,
 }
 
 impl ListenersManager {
     pub fn new(
-        configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+        listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
         route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     ) -> Self {
-        ListenersManager { configuration_channel, route_configuration_channel, listener_handles: BTreeMap::new() }
+        ListenersManager {
+            listener_configuration_channel,
+            route_configuration_channel,
+            listener_handles: BTreeMap::new(),
+        }
     }
 
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self, ct: tokio_util::sync::CancellationToken) -> Result<()> {
         let (tx_secret_updates, _) = broadcast::channel(16);
         let (tx_route_updates, _) = broadcast::channel(16);
-
+        // TODO: create child token for each listener?
         loop {
             tokio::select! {
-                Some(listener_configuration_change) = self.configuration_channel.recv() => {
+                Some(listener_configuration_change) = self.listener_configuration_channel.recv() => {
                     match listener_configuration_change {
                         ListenerConfigurationChange::Added(boxed) => {
                             let (factory, listener_conf) = *boxed;
@@ -110,9 +114,9 @@ impl ListenersManager {
                         warn!("Internal problem when updating a route: {e}");
                     }
                 },
-                else => {
-                    warn!("All listener manager channels are closed...exiting");
-                    return Err("All listener manager channels are closed...exiting".into());
+                _ = ct.cancelled() => {
+                    warn!("Listener manager exiting");
+                    return Ok(());
                 }
             }
         }

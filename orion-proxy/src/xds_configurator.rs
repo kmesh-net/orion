@@ -15,7 +15,6 @@
 //
 //
 
-use abort_on_drop::ChildTask;
 #[cfg(feature = "tracing")]
 use compact_str::ToCompactString;
 use futures::future::join_all;

@@ -19,7 +19,7 @@ use crate::{
     admin::start_admin_server,
     core_affinity,
     runtime::{self, RuntimeId},
-    signal::{spawn_signal_handler, ShutdownSignal},
+    signal::wait_signal,
     xds_configurator::XdsConfigurationHandler,
 };
 use compact_str::ToCompactString;
@@ -51,20 +51,20 @@ use tracing::{debug, info, warn};
 pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
-    // Set up signal handling and shutdown notification channel
-    let (shutdown_tx, signal_handle) = spawn_signal_handler();
+    let ct = tokio_util::sync::CancellationToken::new();
+    let ct_clone = ct.clone();
+    tokio::spawn(async move {
+        // Set up signal handling and shutdown notification channel
+        wait_signal().await;
+        // Trigger cancellation
+        ct_clone.cancel();
+    });
 
     // launch the runtimes...
-    let sender_guards =
-        launch_runtimes(bootstrap, access_log_config, &shutdown_tx).with_context_msg("failed to launch runtimes");
-
-    // Wait for signal handler to complete
-    if let Err(err) = signal_handle.join() {
-        warn!("Signal handler thread panicked: {:?}", err);
+    let res = launch_runtimes(bootstrap, access_log_config, ct).with_context_msg("failed to launch runtimes");
+    if let Err(err) = res {
+        warn!("Error running orion: {err}");
     }
-
-    // Return the sender guards (if successful) to keep channels alive
-    _ = sender_guards;
 }
 
 fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result<usize> {
@@ -106,13 +106,11 @@ struct ProxyConfiguration {
     metrics: Vec<Metrics>,
 }
 
-type SenderGuards = Vec<ConfigurationSenders>;
-
 fn launch_runtimes(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
-    shutdown_tx: &tokio::sync::broadcast::Sender<ShutdownSignal>,
-) -> Result<SenderGuards> {
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<()> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -122,11 +120,6 @@ fn launch_runtimes(
 
     let (config_senders, config_receivers): (Vec<ConfigurationSenders>, Vec<ConfigurationReceivers>) =
         (0..num_runtimes).map(|_| new_configuration_channel(100)).collect::<Vec<_>>().into_iter().unzip();
-
-    // keep a copy of the senders to avoid them being dropped if no services are configured...
-    //
-
-    let sender_guards = config_senders.clone();
 
     // launch services runtime...
     //
@@ -180,7 +173,7 @@ fn launch_runtimes(
         rt_config.num_service_threads.get() as usize,
         None,
         config,
-        shutdown_tx.subscribe(),
+        ct.clone(),
     )?;
 
     if !are_metrics_empty {
@@ -211,7 +204,7 @@ fn launch_runtimes(
                     metrics.clone(),
                     rt_config.affinity_strategy.clone().map(|affinity| (RuntimeId(id), affinity)),
                     config_receivers,
-                    shutdown_tx.subscribe(),
+                    ct.clone(),
                 )
             })
             .collect::<Result<Vec<_>>>()?
@@ -224,7 +217,7 @@ fn launch_runtimes(
             warn!("Closing handler with error {err:?}");
         }
     }
-    Ok(sender_guards)
+    Ok(())
 }
 
 fn spawn_proxy_runtime_from_thread(
@@ -233,7 +226,7 @@ fn spawn_proxy_runtime_from_thread(
     metrics: Vec<Metrics>,
     affinity_info: Option<(RuntimeId, Affinity)>,
     configuration_receivers: ConfigurationReceivers,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<ShutdownSignal>,
+    ct: tokio_util::sync::CancellationToken,
 ) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
 
@@ -241,14 +234,11 @@ fn spawn_proxy_runtime_from_thread(
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, Some(metrics));
         rt.block_on(async {
             tokio::select! {
-                _ = start_proxy(configuration_receivers) => {
+                _ = start_proxy(configuration_receivers, ct.clone()) => {
                     info!("Proxy Runtime terminated!");
                 }
-                signal = shutdown_rx.recv() => {
-                    match signal {
-                        Ok(signal) => info!("Received {} signal, shutting down Proxy runtime!", signal),
-                        Err(_) => info!("Shutdown channel closed, shutting down Proxy runtime!"),
-                    }
+                _ = ct.cancelled() => {
+                    info!("Shutdown channel closed, shutting down Proxy runtime!");
                 }
             }
         });
@@ -261,7 +251,7 @@ fn spawn_services_runtime_from_thread(
     threads_num: usize,
     affinity_info: Option<(RuntimeId, Affinity)>,
     config: ProxyConfiguration,
-    mut shutdown_rx: tokio::sync::broadcast::Receiver<ShutdownSignal>,
+    ct: tokio_util::sync::CancellationToken,
 ) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
     let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
@@ -274,11 +264,8 @@ fn spawn_services_runtime_from_thread(
                     }
                     info!("Services Runtime terminated!");
                 }
-                signal = shutdown_rx.recv() => {
-                    match signal {
-                        Ok(signal) => info!("Received {} signal, shutting down Services runtime!", signal),
-                        Err(_) => info!("Shutdown channel closed, shutting down Services runtime!"),
-                    }
+                _ = ct.cancelled() => {
+                    info!("Shutdown channel closed, shutting down Services runtime!");
                 }
             }
         });
@@ -435,7 +422,10 @@ async fn configure_initial_resources(
     clusters.into_iter().map(orion_lib::clusters::add_cluster).collect::<Result<_>>()
 }
 
-async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {
-    orion_lib::start_listener_manager(configuration_receivers).await?;
+async fn start_proxy(
+    configuration_receivers: ConfigurationReceivers,
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<()> {
+    orion_lib::start_listener_manager(configuration_receivers, ct).await?;
     Ok(())
 }
