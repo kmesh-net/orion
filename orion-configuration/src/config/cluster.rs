@@ -291,6 +291,7 @@ mod envoy_conversions {
     };
 
     use http::HeaderName;
+    use tracing::warn;
     use std::{collections::BTreeSet, num::NonZeroU32};
 
     impl TryFrom<EnvoyCluster> for Cluster {
@@ -730,8 +731,9 @@ mod envoy_conversions {
                     "Static clusters are required to have a cluster load assignment configured")),
                                 
                 (EnvoyDiscoveryType::Eds, None) => Ok(Self::Eds(None)),
-                (EnvoyDiscoveryType::Eds, Some(_)) => {
-                    Err(GenericError::from_msg("EDS clusters can't have a static cluster load assignment configured"))
+                (EnvoyDiscoveryType::Eds, Some(cla)) => {
+                    warn!("Creating EDS cluster and skippint static endpoints {cla:?}");
+                    Ok(Self::Eds(None))                    
                 },
                 (EnvoyDiscoveryType::LogicalDns, _) => Err(GenericError::unsupported_variant("LogicalDns")),
                 (EnvoyDiscoveryType::StrictDns, Some(cla)) => Ok(ClusterDiscoveryType::StrictDns(cla)),

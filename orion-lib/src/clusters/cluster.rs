@@ -29,7 +29,7 @@ use crate::clusters::clusters_manager::{RoutingContext, RoutingRequirement};
 use orion_configuration::config::cluster::{
     Cluster as ClusterConfig, ClusterDiscoveryType, ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 use webpki::types::ServerName;
 
 use super::health::HealthStatus;
@@ -124,8 +124,16 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                 load_balancing_policy,
                 config,
             })),
-            ClusterDiscoveryType::Eds(Some(_)) => {
-                Err("EDS clusters can't have a static cluster load assignment configured".into())
+            ClusterDiscoveryType::Eds(Some(cla)) => {
+                warn!("Creating EDS cluster and skippint static endpoints {cla:?}");
+                Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
+                    name: cluster.name.to_static_str(),
+                    bind_device,
+                    transport_socket,
+                    health_check,
+                    load_balancing_policy,
+                    config,
+                }))
             },
             ClusterDiscoveryType::OriginalDst(_) => {
                 let server_name = transport_socket
