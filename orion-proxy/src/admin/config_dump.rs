@@ -90,9 +90,9 @@ pub async fn get_config_dump(State(admin_state): State<AdminState>) -> Json<Valu
         .iter()
         .flat_map(|cluster| match &cluster.discovery_settings {
             ClusterDiscoveryType::Static(load_assignment)
-            | ClusterDiscoveryType::Eds(Some(load_assignment))
+            | ClusterDiscoveryType::Eds(Some(load_assignment), _)
             | ClusterDiscoveryType::StrictDns(load_assignment) => load_assignment.endpoints.clone(),
-            ClusterDiscoveryType::Eds(None) | ClusterDiscoveryType::OriginalDst(_) => vec![],
+            ClusterDiscoveryType::Eds(None, _) | ClusterDiscoveryType::OriginalDst(_) => vec![],
         })
         .collect();
     config.endpoints = (!endpoints.is_empty()).then_some(endpoints);
@@ -188,16 +188,13 @@ mod config_dump_tests {
         };
         let redacted = redact_secrets(vec![secret.clone()]);
         match &redacted[0].kind {
-            Type::ValidationContext(vc) => {
-                match vc{
-                    ValidationContext::TrustedCA(data_source) => {
-                        assert_eq!(data_source, &DataSource::InlineString("ca_data".into()));
-                    },
-                    ValidationContext::None => {
-                        assert!(false)
-                    },
-                }
-                
+            Type::ValidationContext(vc) => match vc {
+                ValidationContext::TrustedCA(data_source) => {
+                    assert_eq!(data_source, &DataSource::InlineString("ca_data".into()));
+                },
+                ValidationContext::None => {
+                    assert!(false)
+                },
             },
             Type::TlsCertificate(_) => unreachable!(),
         }

@@ -85,11 +85,22 @@ pub fn deserialize_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
     serde_path_to_error::deserialize(serde_yaml::Deserializer::from_reader(&file)).map_err(crate::Error::from)
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ConfigSource {
+    pub config_source_specifier: ConfigSourceSpecifier,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum ConfigSourceSpecifier {
+    ADS,
+}
+
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     use std::path::Path;
 
     use super::{deserialize_yaml, log::AccessLogConfig, Bootstrap, Config};
+    use crate::config::common::envoy_conversions::IsUsed;
     use crate::{
         config::{log::LogConfig, runtime::Runtime},
         options::Options,
@@ -97,8 +108,14 @@ mod envoy_conversions {
     };
     use orion_data_plane_api::decode::from_serde_deserializer;
     pub use orion_data_plane_api::envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
+    use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::{
+        config_source::ConfigSourceSpecifier as EnvoyConfigSourceSpecifier, AggregatedConfigSource,
+        ConfigSource as EnvoyConfigSource,
+    };
     use orion_error::{Context, ErrorInfo};
     use serde::Deserialize;
+
+    use crate::config::{self, convert_opt, unsupported_field, ConfigSource, ConfigSourceSpecifier, GenericError};
 
     #[derive(Deserialize)]
     struct Wrapper(#[serde(deserialize_with = "from_serde_deserializer")] EnvoyBootstrap);
@@ -164,6 +181,43 @@ mod envoy_conversions {
             Ok(config.apply_options(opt))
         }
     }
+
+    impl TryFrom<EnvoyConfigSource> for ConfigSource {
+        type Error = GenericError;
+        fn try_from(
+            value: EnvoyConfigSource,
+        ) -> std::result::Result<config::ConfigSource, config::common::GenericError> {
+            let EnvoyConfigSource {
+                authorities,
+                initial_fetch_timeout: _,
+                resource_api_version: _,
+                config_source_specifier,
+            } = value;
+            unsupported_field!(authorities)?;
+            let config_source_specifier = convert_opt!(config_source_specifier)?;
+            Ok(Self { config_source_specifier })
+        }
+    }
+
+    impl TryFrom<EnvoyConfigSourceSpecifier> for ConfigSourceSpecifier {
+        type Error = GenericError;
+        fn try_from(
+            value: EnvoyConfigSourceSpecifier,
+        ) -> std::result::Result<config::ConfigSourceSpecifier, config::common::GenericError> {
+            match value {
+                EnvoyConfigSourceSpecifier::Ads(AggregatedConfigSource {}) => Ok(Self::ADS),
+                EnvoyConfigSourceSpecifier::ApiConfigSource(_) => {
+                    Err(GenericError::unsupported_variant("ApiConfigSource"))
+                },
+                EnvoyConfigSourceSpecifier::Path(_) => Err(GenericError::unsupported_variant("Path")),
+                EnvoyConfigSourceSpecifier::PathConfigSource(_) => {
+                    Err(GenericError::unsupported_variant("PathConfigSource"))
+                },
+                EnvoyConfigSourceSpecifier::Self_(_) => Err(GenericError::unsupported_variant("Self_")),
+            }
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use crate::{config::Config, options::Options, Result};

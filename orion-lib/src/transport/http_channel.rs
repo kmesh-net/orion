@@ -286,7 +286,7 @@ impl HttpChannelBuilder {
 
         match &self.address {
             Some(Address::Pipe(name, _)) => {
-                let client_builder = self.configure_hyper_client();
+                let _client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
                 let uri: hyper::Uri = Uri::new(name.clone(), "").into();
                 let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));

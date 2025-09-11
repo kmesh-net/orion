@@ -116,16 +116,16 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                 }))
             },
 
-            ClusterDiscoveryType::Eds(None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
-                name: cluster.name.to_static_str(),
-                bind_device,
-                transport_socket,
-                health_check,
-                load_balancing_policy,
-                config,
-            })),
-            ClusterDiscoveryType::Eds(Some(cla)) => {
-                warn!("Creating EDS cluster and skippint static endpoints {cla:?}");
+            // ClusterDiscoveryType::Eds(None, None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
+            //     name: cluster.name.to_static_str(),
+            //     bind_device,
+            //     transport_socket,
+            //     health_check,
+            //     load_balancing_policy,
+            //     config,
+            // })),
+            ClusterDiscoveryType::Eds(cla, eds) => {
+                warn!("Creating EDS cluster and skippint static endpoints {cla:?} {eds:?}");
                 Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
                     name: cluster.name.to_static_str(),
                     bind_device,
@@ -186,7 +186,7 @@ impl TryFrom<&ClusterType> for ClusterConfig {
             ClusterType::Dynamic(dynamic_cluster) => {
                 let cla: ClusterLoadAssignmentConfig = dynamic_cluster.try_into()?;
                 let mut config = dynamic_cluster.config.clone();
-                config.discovery_settings = ClusterDiscoveryType::Eds(Some(cla));
+                config.discovery_settings = ClusterDiscoveryType::Eds(Some(cla), None);
                 Ok(config)
             },
             ClusterType::OnDemand(original_dst_cluster) => Ok(original_dst_cluster.config.clone()),

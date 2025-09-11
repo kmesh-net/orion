@@ -36,6 +36,7 @@ use std::{collections::HashMap, str::FromStr, time::Duration};
 use crate::config::{
     common::*,
     network_filters::{access_log::AccessLog, tracing::TracingConfig},
+    ConfigSource,
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -393,16 +394,6 @@ pub struct RdsSpecifier {
     pub config_source: ConfigSource,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ConfigSource {
-    pub config_source_specifier: ConfigSourceSpecifier,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum ConfigSourceSpecifier {
-    ADS,
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -578,8 +569,8 @@ mod envoy_conversions {
             router::Router, FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, SupportedEnvoyFilter,
             SupportedEnvoyHttpFilter,
         },
-        CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn,
-        RetryPolicy, Route, RouteConfiguration, RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
+        CodecType, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn, RetryPolicy, Route, RouteConfiguration,
+        RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
     };
     use crate::config::{
         common::*,
@@ -589,15 +580,9 @@ mod envoy_conversions {
     use compact_str::CompactString;
     use http::HeaderName;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
-        config::{
-            core::v3::{
-                config_source::ConfigSourceSpecifier as EnvoyConfigSourceSpecifier, AggregatedConfigSource,
-                ConfigSource as EnvoyConfigSource,
-            },
-            route::v3::{
-                retry_policy::RetryBackOff as EnvoyRetryBackoff, RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute,
-                RouteConfiguration as EnvoyRouteConfiguration, VirtualHost as EnvoyVirtualHost,
-            },
+        config::route::v3::{
+            retry_policy::RetryBackOff as EnvoyRetryBackoff, RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute,
+            RouteConfiguration as EnvoyRouteConfiguration, VirtualHost as EnvoyVirtualHost,
         },
         extensions::filters::network::http_connection_manager::v3::{
             http_connection_manager::{CodecType as EnvoyCodecType, RouteSpecifier as EnvoyRouteSpecifier},
@@ -1229,37 +1214,6 @@ mod envoy_conversions {
             let route_config_name = required!(route_config_name)?.into();
             let config_source = convert_opt!(config_source)?;
             Ok(Self { route_config_name, config_source })
-        }
-    }
-    impl TryFrom<EnvoyConfigSource> for ConfigSource {
-        type Error = GenericError;
-        fn try_from(value: EnvoyConfigSource) -> Result<Self, Self::Error> {
-            let EnvoyConfigSource {
-                authorities,
-                initial_fetch_timeout: _,
-                resource_api_version: _,
-                config_source_specifier,
-            } = value;
-            unsupported_field!(authorities)?;
-            let config_source_specifier = convert_opt!(config_source_specifier)?;
-            Ok(Self { config_source_specifier })
-        }
-    }
-
-    impl TryFrom<EnvoyConfigSourceSpecifier> for ConfigSourceSpecifier {
-        type Error = GenericError;
-        fn try_from(value: EnvoyConfigSourceSpecifier) -> Result<Self, Self::Error> {
-            match value {
-                EnvoyConfigSourceSpecifier::Ads(AggregatedConfigSource {}) => Ok(Self::ADS),
-                EnvoyConfigSourceSpecifier::ApiConfigSource(_) => {
-                    Err(GenericError::unsupported_variant("ApiConfigSource"))
-                },
-                EnvoyConfigSourceSpecifier::Path(_) => Err(GenericError::unsupported_variant("Path")),
-                EnvoyConfigSourceSpecifier::PathConfigSource(_) => {
-                    Err(GenericError::unsupported_variant("PathConfigSource"))
-                },
-                EnvoyConfigSourceSpecifier::Self_(_) => Err(GenericError::unsupported_variant("Self_")),
-            }
         }
     }
 }

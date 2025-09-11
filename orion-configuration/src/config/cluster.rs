@@ -25,7 +25,8 @@ pub use http_protocol_options::HttpProtocolOptions;
 pub mod cluster_specifier;
 pub use cluster_specifier::ClusterSpecifier;
 
-use crate::config::core::Address;
+
+use crate::config::{core::Address, ConfigSource};
 
 use super::{
     common::{is_default, MetadataKey},
@@ -34,7 +35,7 @@ use super::{
 };
 
 use compact_str::CompactString;
-use http::HeaderName;
+use http::{HeaderName};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt::Display, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -68,6 +69,14 @@ pub struct ClusterLoadAssignment {
     )]
     pub endpoints: Vec<LocalityLbEndpoints>,
     pub cluster_name: String,
+}
+
+
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EdsClusterConfig {        
+    pub service_name: String,    
+    pub config_source: Option<ConfigSource>,     
 }
 
 fn simplify_locality_lb_endpoints<S: Serializer>(
@@ -183,7 +192,7 @@ pub enum ClusterDiscoveryType {
     // serializable type when returning the EDS cluster running configuration
     // through admin config_dump API
     #[serde(rename = "EDS")]
-    Eds(Option<ClusterLoadAssignment>),
+    Eds(Option<ClusterLoadAssignment>, Option<EdsClusterConfig>),
     #[serde(rename = "ORIGINAL_DST")]
     OriginalDst(OriginalDstConfig),
 }
@@ -256,12 +265,9 @@ mod envoy_conversions {
         LocalityLbEndpoints, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret,
     };
     use crate::config::{
-        common::*,
-        core::Address,
-        transport::{
+        cluster::EdsClusterConfig, common::*, core::Address, transport::{
             BindDevice, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket, UpstreamTransportSocketConfig,
-        },
-        util::duration_from_envoy,
+        }, util::duration_from_envoy, ConfigSource
     };
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
@@ -269,8 +275,7 @@ mod envoy_conversions {
             config::{
                 cluster::v3::{
                     cluster::{
-                        ClusterDiscoveryType as EnvoyClusterDiscoveryType, DiscoveryType as EnvoyDiscoveryType,
-                        LbConfig as EnvoyLbConfig, LbPolicy as EnvoyLbPolicy,
+                        ClusterDiscoveryType as EnvoyClusterDiscoveryType, DiscoveryType as EnvoyDiscoveryType, EdsClusterConfig as EnvoyEdsClusterConfig , LbConfig as EnvoyLbConfig, LbPolicy as EnvoyLbPolicy
                     },
                     Cluster as EnvoyCluster,
                 },
@@ -301,7 +306,7 @@ mod envoy_conversions {
                 transport_socket_matches: _,
                 name,
                 alt_stat_name: _,
-                eds_cluster_config: _,
+                eds_cluster_config,
                 connect_timeout,
                 per_connection_buffer_limit_bytes,
                 lb_policy,
@@ -491,6 +496,7 @@ mod envoy_conversions {
                     discovery_type,
                     Some(cla),
                     original_dst_config,
+                    eds_cluster_config
                 ))
                 .with_node("cluster_discovery_type")?;
                 //fixme(hayley): the envoy protobuf documentation says:
@@ -670,6 +676,22 @@ mod envoy_conversions {
         }
     }
 
+    impl TryFrom<EnvoyEdsClusterConfig> for EdsClusterConfig{
+        type Error = GenericError;
+    
+        fn try_from(value: EnvoyEdsClusterConfig) -> Result<Self, Self::Error> {
+            let config_source = if let Some(c) = value.eds_config{
+                Some(ConfigSource::try_from(c)?)
+            }else{
+                None
+            };            
+            Ok(EdsClusterConfig{
+                service_name: value.service_name,
+                config_source,
+            })
+        }
+    }
+
     impl TryFrom<EnvoyLbEndpoint> for LbEndpoint {
         type Error = GenericError;
         fn try_from(value: EnvoyLbEndpoint) -> Result<Self, Self::Error> {
@@ -697,10 +719,10 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<(EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>)> for ClusterDiscoveryType {
+    impl TryFrom<(EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>, Option<EnvoyEdsClusterConfig>)> for ClusterDiscoveryType {
         type Error = GenericError;
         fn try_from(
-            (discovery, cla, odc): (EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>),
+            (discovery, cla, odc, ecc): (EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>, Option<EnvoyEdsClusterConfig>),
         ) -> Result<Self, Self::Error> {
             match (discovery, cla) {
                 (EnvoyDiscoveryType::Static, Some(cla)) => {
@@ -730,10 +752,17 @@ mod envoy_conversions {
                 (EnvoyDiscoveryType::Static, None) => Err(GenericError::from_msg(
                     "Static clusters are required to have a cluster load assignment configured")),
                                 
-                (EnvoyDiscoveryType::Eds, None) => Ok(Self::Eds(None)),
-                (EnvoyDiscoveryType::Eds, Some(cla)) => {
-                    warn!("Creating EDS cluster and skippint static endpoints {cla:?}");
-                    Ok(Self::Eds(None))                    
+                (EnvoyDiscoveryType::Eds, cla) => {
+                    if let Some(cla) = cla{
+                        warn!("Creating EDS cluster and skippint static endpoints {cla:?}");    
+                    }
+                    if let Some(ecc) = ecc{
+                        Ok(Self::Eds(None, Some(EdsClusterConfig::try_from(ecc)?)))                                            
+                    }else{
+                        Ok(Self::Eds(None, None))                                            
+                    }
+                    
+
                 },
                 (EnvoyDiscoveryType::LogicalDns, _) => Err(GenericError::unsupported_variant("LogicalDns")),
                 (EnvoyDiscoveryType::StrictDns, Some(cla)) => Ok(ClusterDiscoveryType::StrictDns(cla)),

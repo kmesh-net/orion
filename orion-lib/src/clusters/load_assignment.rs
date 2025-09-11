@@ -486,9 +486,9 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
         let endpoints: Vec<_> =
             cla.endpoints.into_iter().map(PartialLocalityLbEndpoints::try_from).collect::<Result<_>>()?;
 
-        if endpoints.is_empty() {
-            return Err("At least one locality must be specified".into());
-        }
+        // if endpoints.is_empty() {
+        //     return Err("At least one locality must be specified".into());
+        // }
 
         Ok(Self { endpoints })
     }

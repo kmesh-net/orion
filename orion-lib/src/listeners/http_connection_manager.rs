@@ -41,7 +41,7 @@ use hyper::{body::Incoming, service::Service, Request, Response};
 use opentelemetry::global::BoxedSpan;
 use opentelemetry::trace::{Span, Status};
 use opentelemetry::KeyValue;
-use orion_configuration::config::GenericError;
+use orion_configuration::config::{ConfigSource, ConfigSourceSpecifier, GenericError};
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
 
@@ -56,8 +56,7 @@ use orion_configuration::config::network_filters::{
     http_connection_manager::{
         http_filters::{http_rbac::HttpRbac, HttpFilter as HttpFilterConfig, HttpFilterType},
         route::{Action, RouteMatchResult},
-        CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager as HttpConnectionManagerConfig,
-        RdsSpecifier, RouteSpecifier, UpgradeType,
+        CodecType, HttpConnectionManager as HttpConnectionManagerConfig, RdsSpecifier, RouteSpecifier, UpgradeType,
     },
 };
 use orion_format::context::{
