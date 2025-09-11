@@ -254,18 +254,18 @@ mod tests {
         // initialize the logger pool with one channel for access log messages
         let handles = start_access_loggers(8, 100, Rotation::NEVER, 3);
 
+        let access_log_file = AccessLogConf::File("/tmp/test-access.log".into());
         // send a new configuration for the logger(s)
-        update_configuration(
-            Target::Listener("test".into()),
-            vec![AccessLogConf::File("test-access.log".into()), AccessLogConf::Stderr],
-        )
-        .await
-        .unwrap();
+        update_configuration(Target::Listener("test".into()), vec![access_log_file, AccessLogConf::Stderr])
+            .await
+            .unwrap();
 
         let permit = log_access_reserve_single().await;
         // log the formatted message to file and stdout...
         log_access(permit, Target::Listener("test".into()), vec![message.clone(), message.clone()]);
 
         _ = timeout(Duration::from_secs(2), handles.join_all()).await;
+        // remove the log file after the test
+        let _ = std::fs::remove_file("/tmp/test-access.log");
     }
 }
