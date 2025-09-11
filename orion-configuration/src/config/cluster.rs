@@ -477,9 +477,16 @@ mod envoy_conversions {
                     }
                 }
 
+                let load_assignment = load_assignment.map(ClusterLoadAssignment::try_from);
+                let cla = match load_assignment{
+                    Some(Ok(cla)) => Some(cla),
+                    Some(Err(e))=> return Err(e),
+                    None => None,
+                };
+                
                 let discovery_settings = ClusterDiscoveryType::try_from((
                     discovery_type,
-                    load_assignment.map(ClusterLoadAssignment::try_from).transpose().with_node("load_assignment")?,
+                    cla,
                     original_dst_config,
                 ))
                 .with_node("cluster_discovery_type")?;
@@ -718,8 +725,8 @@ mod envoy_conversions {
                     }
                 },
                 (EnvoyDiscoveryType::Static, None) => Err(GenericError::from_msg(
-                    "Static clusters are required to have a cluster load assignment configured",
-                )),
+                    "Static clusters are required to have a cluster load assignment configured")),
+                                
                 (EnvoyDiscoveryType::Eds, None) => Ok(Self::Eds(None)),
                 (EnvoyDiscoveryType::Eds, Some(_)) => {
                     Err(GenericError::from_msg("EDS clusters can't have a static cluster load assignment configured"))
