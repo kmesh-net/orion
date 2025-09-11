@@ -243,6 +243,7 @@ impl Listener {
                     filter_chains,
                     with_tls_inspector,
                     proxy_protocol_config,
+                    with_tlv_listener_filter,
                     route_updates_receiver,
                     secret_updates_receiver,
                 )
@@ -255,6 +256,7 @@ impl Listener {
                     internal_config,
                     filter_chains,
                     with_tls_inspector,
+                    with_tlv_listener_filter,
                     route_updates_receiver,
                     secret_updates_receiver,
                 )
@@ -269,6 +271,7 @@ impl Listener {
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         with_tls_inspector: bool,
         proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
+        with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
@@ -332,6 +335,7 @@ impl Listener {
         _internal_config: InternalListenerConfig,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         _with_tls_inspector: bool,
+        with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
