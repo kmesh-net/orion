@@ -4,3 +4,5 @@
 *~
 *.html
 *.log.*
+.vscode
+.DS_Store

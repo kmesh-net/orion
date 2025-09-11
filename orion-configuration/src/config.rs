@@ -189,19 +189,6 @@ mod envoy_conversions {
                         Options::from_path_to_envoy(path.clone())
                     })?;
                     let serialized = serde_yaml::to_string(&new_conf)?;
-                    tracing::info!("\n{serialized}\n");
-                    if !path.ends_with("new.yaml") {
-                        let new_path = format!(
-                            "../orion-proxy/conf/{}-new.yaml",
-                            path.file_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .trim_end_matches(".yaml")
-                                .replace("envoy-", "orion-")
-                        );
-                        std::fs::write(new_path, serialized.as_bytes())?;
-                    }
                     let deserialized: Config = serde_yaml::from_str(&serialized)?;
                     assert_eq!(new_conf, deserialized, "failed to roundtrip config transcoding");
                 } else {
