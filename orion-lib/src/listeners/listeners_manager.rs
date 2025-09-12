@@ -18,7 +18,9 @@
 use std::collections::BTreeMap;
 
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, info, warn};
+#[cfg(debug_assertions)]
+use tracing::debug;
+use tracing::{info, warn};
 
 use orion_configuration::config::{
     network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
@@ -181,6 +183,8 @@ mod tests {
             bind_device: None,
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info.clone()).unwrap();
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
@@ -220,6 +224,8 @@ mod tests {
             bind_device: None,
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info).unwrap();
 

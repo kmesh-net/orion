@@ -22,7 +22,7 @@ use super::{
 use crate::{
     listeners::filter_state::DownstreamConnectionMetadata,
     secrets::{TlsConfigurator, WantsToBuildServer},
-    transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader},
+    transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader, TlvListenerFilter},
     ConversionContext, Error, Result, RouteConfigurationChange,
 };
 use opentelemetry::KeyValue;
@@ -60,6 +60,7 @@ struct PartialListener {
     filter_chains: HashMap<FilterChainMatch, FilterchainBuilder>,
     with_tls_inspector: bool,
     proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
+    with_tlv_listener_filter: bool,
 }
 #[derive(Debug, Clone)]
 pub struct ListenerFactory {
@@ -74,7 +75,9 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
         let addr = listener.address;
         let with_tls_inspector = listener.with_tls_inspector;
         let proxy_protocol_config = listener.proxy_protocol_config;
+        let with_tlv_listener_filter = listener.with_tlv_listener_filter;
         debug!("Listener {name} :TLS Inspector is {with_tls_inspector}");
+        debug!("Listener {name} :TLV listener filter is {with_tlv_listener_filter}");
 
         let filter_chains: HashMap<FilterChainMatch, _> = listener
             .filter_chains
@@ -99,6 +102,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
+            with_tlv_listener_filter,
         })
     }
 }
@@ -116,6 +120,7 @@ impl ListenerFactory {
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
+            with_tlv_listener_filter,
         } = self.listener;
 
         let filter_chains = filter_chains
@@ -130,6 +135,7 @@ impl ListenerFactory {
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
+            with_tlv_listener_filter,
             route_updates_receiver,
             secret_updates_receiver,
         })
@@ -152,6 +158,7 @@ pub struct Listener {
     pub filter_chains: HashMap<FilterChainMatch, FilterchainType>,
     with_tls_inspector: bool,
     proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
+    with_tlv_listener_filter: bool,
     route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
     secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
 }
@@ -171,6 +178,7 @@ impl Listener {
             filter_chains: HashMap::new(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
             route_updates_receiver: route_rx,
             secret_updates_receiver: secret_rx,
         }
@@ -191,6 +199,7 @@ impl Listener {
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
+            with_tlv_listener_filter,
             mut route_updates_receiver,
             mut secret_updates_receiver,
         } = self;
@@ -227,7 +236,7 @@ impl Listener {
                             //  we could optimize a little here by either splitting up the filter_chain selection and rbac into the parts that can run
                             // before we have the ClientHello and the ones after. since we might already have enough info to decide to drop the connection
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
-                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, Box::new(stream), start));
+                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, with_tlv_listener_filter, local_address, peer_addr, Box::new(stream), start));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -348,6 +357,7 @@ impl Listener {
         filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
         with_tls_inspector: bool,
         proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
+        with_tlv_listener_filter: bool,
         local_address: SocketAddr,
         peer_addr: SocketAddr,
         mut stream: AsyncStream,
@@ -375,6 +385,16 @@ impl Listener {
         } else {
             DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address }
         };
+
+        let downstream_metadata = if with_tlv_listener_filter {
+            let mut tlv_filter = TlvListenerFilter::default();
+            let (new_stream, tlv_metadata) = tlv_filter.process_stream(stream, local_address, peer_addr).await?;
+            stream = new_stream;
+            tlv_metadata
+        } else {
+            downstream_metadata
+        };
+
         let downstream_metadata = Arc::new(downstream_metadata);
 
         let server_name = if with_tls_inspector {
