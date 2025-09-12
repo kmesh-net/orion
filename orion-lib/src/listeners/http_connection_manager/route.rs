@@ -97,16 +97,32 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     } else {
                         None
                     };
-                    if path_and_query_replacement.is_some() {
+
+                    let authority_replacement = if let Some(authority_rewrite) = &self.authority_rewrite {
+                        authority_rewrite
+                            .apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
+                            .with_context_msg("invalid authority after rewrite")?
+                    } else {
+                        None
+                    };
+
+                    if path_and_query_replacement.is_some() || authority_replacement.is_some() {
                         parts.uri = {
-                            let UriParts { scheme, authority, path_and_query: _, .. } = parts.uri.into_parts();
+                            let UriParts { scheme, authority, path_and_query, .. } = parts.uri.into_parts();
                             let mut new_parts = UriParts::default();
                             new_parts.scheme = scheme;
-                            new_parts.authority = authority;
-                            new_parts.path_and_query = path_and_query_replacement;
-                            Uri::from_parts(new_parts).with_context_msg("failed to replace request path_and_query")?
+                            new_parts.authority = authority_replacement.clone().or(authority);
+                            new_parts.path_and_query = path_and_query_replacement.or(path_and_query);
+                            Uri::from_parts(new_parts).with_context_msg("failed to replace request URI")?
                         }
                     }
+
+                    if let Some(new_authority) = &authority_replacement {
+                        let header_value = http::HeaderValue::from_str(new_authority.as_str())
+                            .with_context_msg("failed to create Host header value")?;
+                        parts.headers.insert(http::header::HOST, header_value);
+                    }
+
                     Request::from_parts(parts, body.map_into())
                 };
 
