@@ -23,6 +23,7 @@ mod admin;
 mod core_affinity;
 mod proxy;
 mod runtime;
+mod signal;
 mod xds_configurator;
 
 pub fn run() -> Result<()> {

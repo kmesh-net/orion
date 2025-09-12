@@ -15,7 +15,6 @@
 //
 //
 
-use abort_on_drop::ChildTask;
 #[cfg(feature = "tracing")]
 use compact_str::ToCompactString;
 use futures::future::join_all;
@@ -138,11 +137,10 @@ impl XdsConfigurationHandler {
             tokio::time::sleep(RETRY_INTERVAL).await;
         };
 
-        let _xds_worker: ChildTask<_> = tokio::spawn(async move {
+        tokio::spawn(async move {
             let subscribe = worker.run().await;
             info!("Worker exited {subscribe:?}");
-        })
-        .into();
+        });
 
         loop {
             select! {
