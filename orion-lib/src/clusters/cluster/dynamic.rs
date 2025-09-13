@@ -19,7 +19,7 @@ use http::uri::Authority;
 
 use orion_configuration::config::{
     cluster::{
-        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck, HealthStatus,
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthCheck, HealthStatus,
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
     core::envoy_conversions::Address,
@@ -171,7 +171,7 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
                         let load_balancing_weight = std::num::NonZeroU32::new(ep.weight)
                             .ok_or_else(|| format!("Invalid load balancing weight: {}", ep.weight))?;
                         Ok(LbEndpointConfig {
-                            address: Address::try_from(&ep.authority)?,
+                            address: EndpointAddress::Socket(Address::try_from(ep.authority())?.into_socket_addr()?),
                             health_status: ep.health_status,
                             load_balancing_weight,
                         })
