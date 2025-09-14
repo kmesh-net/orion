@@ -88,7 +88,13 @@ impl LbEndpoint {
     pub fn authority(&self) -> &Authority {
         match &self.address {
             EndpointAddressType::Socket(authority, _, _) => authority,
-            EndpointAddressType::Internal(_, _) => panic!("Internal endpoints don't have authorities"),
+            EndpointAddressType::Internal(_, _) => {
+                // For internal endpoints, return a static dummy authority and log a warning
+                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
+                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
+                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
+                authority
+            },
         }
     }
 }
@@ -104,9 +110,11 @@ impl EndpointWithAuthority for LbEndpoint {
         match &self.address {
             EndpointAddressType::Socket(authority, _, _) => authority,
             EndpointAddressType::Internal(_, _) => {
-                // For internal endpoints, we'll use a placeholder authority
-                // This might need to be handled differently based on the balancer requirements
-                panic!("Internal endpoints don't have authorities")
+                // For internal endpoints, return a static dummy authority and log a warning
+                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
+                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
+                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
+                authority
             },
         }
     }

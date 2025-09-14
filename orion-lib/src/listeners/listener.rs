@@ -193,7 +193,7 @@ impl Listener {
         use std::net::{IpAddr, Ipv4Addr};
         Listener {
             name: name.into(),
-            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0)),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)),
             bind_device: None,
             filter_chains: HashMap::new(),
             with_tls_inspector: false,
