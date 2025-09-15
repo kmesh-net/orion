@@ -145,25 +145,20 @@ impl ListenersManager {
 
         let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
 
-        self.listener_handles.entry(listener_name.clone()).or_insert_with(Vec::new).push(listener_info);
-
-        info!(
-            "Listener {} now has {} active version(s)",
-            listener_name,
-            self.listener_handles.get(&listener_name).unwrap().len()
-        );
+        let versions = self.listener_handles.entry(listener_name.clone()).or_default();
+        versions.push(listener_info);
+        info!("Listener {} now has {} active version(s)", listener_name, versions.len());
 
         Ok(())
     }
 
     pub fn stop_listener(&mut self, listener_name: &str) -> Result<()> {
-        if let Some(listeners) = self.listener_handles.get_mut(listener_name) {
+        if let Some(listeners) = self.listener_handles.remove(listener_name) {
             info!("Stopping all {} version(s) of listener {}", listeners.len(), listener_name);
-            for listener_info in listeners.drain(..) {
+            for listener_info in listeners {
                 info!("Stopping listener {} version {}", listener_name, listener_info.version);
                 listener_info.handle.abort();
             }
-            self.listener_handles.remove(listener_name);
         } else {
             info!("No listeners found with name {}", listener_name);
         }
@@ -182,6 +177,19 @@ mod tests {
     use super::*;
     use orion_configuration::config::Listener as ListenerConfig;
     use tracing_test::traced_test;
+
+    fn create_test_listener_config(name: &str, port: u16) -> ListenerConfig {
+        ListenerConfig {
+            name: name.into(),
+            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+            filter_chains: HashMap::default(),
+            bind_device: None,
+            with_tls_inspector: false,
+            proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
+        }
+    }
 
     #[traced_test]
     #[tokio::test]
@@ -281,16 +289,7 @@ mod tests {
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx1, secb_rx) = broadcast::channel(chan);
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
-        let l1_info = ListenerConfig {
-            name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
-            filter_chains: HashMap::default(),
-            bind_device: None,
-            with_tls_inspector: false,
-            proxy_protocol_config: None,
-            with_tlv_listener_filter: false,
-            tlv_listener_filter_config: None,
-        };
+        let l1_info = create_test_listener_config(name, 1234);
         man.start_listener(l1, l1_info).unwrap();
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
@@ -298,16 +297,7 @@ mod tests {
         let (routeb_tx2, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx2, secb_rx) = broadcast::channel(chan);
         let l2 = Listener::test_listener(name, routeb_rx, secb_rx);
-        let l2_info = ListenerConfig {
-            name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235), // Different port
-            filter_chains: HashMap::default(),
-            bind_device: None,
-            with_tls_inspector: false,
-            proxy_protocol_config: None,
-            with_tlv_listener_filter: false,
-            tlv_listener_filter_config: None,
-        };
+        let l2_info = create_test_listener_config(name, 1235);
         man.start_listener(l2, l2_info).unwrap();
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
@@ -315,16 +305,7 @@ mod tests {
         let (routeb_tx3, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx3, secb_rx) = broadcast::channel(chan);
         let l3 = Listener::test_listener(name, routeb_rx, secb_rx);
-        let l3_info = ListenerConfig {
-            name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1236), // Different port
-            filter_chains: HashMap::default(),
-            bind_device: None,
-            with_tls_inspector: false,
-            proxy_protocol_config: None,
-            with_tlv_listener_filter: false,
-            tlv_listener_filter_config: None,
-        };
+        let l3_info = create_test_listener_config(name, 1236);
         man.start_listener(l3, l3_info).unwrap();
         assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
