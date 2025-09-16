@@ -609,7 +609,7 @@ mod envoy_conversions {
             let EnvoyClusterLoadAssignment { cluster_name, endpoints, named_endpoints, policy } = value;
             unsupported_field!(named_endpoints, policy)?;
             let ret = (|| -> Result<_, _> {
-                let endpoints: Vec<LocalityLbEndpoints> = convert_non_empty_vec!(endpoints)?;
+                let endpoints: Vec<LocalityLbEndpoints> = convert_vec!(endpoints)?;
                 if !endpoints.is_empty() {
                     let set_of_priorities = endpoints.iter().map(|e| e.priority).collect::<BTreeSet<u32>>();
                     let n_entries = set_of_priorities.len();
@@ -635,15 +635,15 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyLocalityLbEndpoints) -> Result<Self, Self::Error> {
             let EnvoyLocalityLbEndpoints {
-                locality,
+                locality:_,
                 lb_endpoints,
-                load_balancing_weight,
+                load_balancing_weight:_,
                 priority,
                 proximity,
                 lb_config,
-                metadata,
+                metadata:_,
             } = value;
-            unsupported_field!(locality, load_balancing_weight, proximity, lb_config, metadata)?;
+            unsupported_field!(proximity, lb_config)?;
             let lb_endpoints: Vec<LbEndpoint> = convert_non_empty_vec!(lb_endpoints)?;
             let mut sum = 0u32;
             for lb_endpoint in &lb_endpoints {
@@ -695,8 +695,8 @@ mod envoy_conversions {
     impl TryFrom<EnvoyLbEndpoint> for LbEndpoint {
         type Error = GenericError;
         fn try_from(value: EnvoyLbEndpoint) -> Result<Self, Self::Error> {
-            let EnvoyLbEndpoint { health_status, metadata, load_balancing_weight, host_identifier } = value;
-            unsupported_field!(metadata)?;
+            let EnvoyLbEndpoint { health_status, metadata: _istio_ignore, load_balancing_weight, host_identifier } = value;
+            
             let address = match required!(host_identifier)? {
                 EnvoyHostIdentifier::Endpoint(EnvoyEndpoint {
                     address,

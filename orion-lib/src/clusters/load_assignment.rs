@@ -361,6 +361,11 @@ pub struct ClusterLoadAssignment {
 pub struct PartialClusterLoadAssignment {
     endpoints: Vec<PartialLocalityLbEndpoints>,
 }
+impl PartialClusterLoadAssignment{
+    pub fn is_empty(&self)->bool{
+        self.endpoints.is_empty()
+    }
+}
 
 impl ClusterLoadAssignment {
     pub fn get_http_channel(&mut self, hash: Option<HashState>) -> Result<HttpChannel> {

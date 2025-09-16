@@ -269,7 +269,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
     ) {
         match event {
             SubscriptionEvent::Subscribe(type_url, resource_id) => {
-                debug!(type_url = type_url.to_string(), resource_id, "processing new subscription");
+                debug!("processing new subscription type_url={} {resource_id}", type_url.to_string());
                 let is_new = state.subscriptions.entry(type_url).or_default().insert(resource_id.clone());
                 if is_new {
                     if let Err(err) = discovery_requests_tx
@@ -286,7 +286,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 }
             },
             SubscriptionEvent::Unsubscribe(type_url, resource_id) => {
-                debug!(type_url = type_url.to_string(), resource_id, "processing unsubscribe");
+                debug!("processing unsubscribe type_url={} {resource_id}", type_url.to_string());                
                 let was_subscribed = state.subscriptions.entry(type_url).or_default().remove(resource_id.as_str());
                 if was_subscribed {
                     if let Err(err) = discovery_requests_tx
@@ -353,8 +353,9 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                                     warn!(type_url = type_url.to_string(), error_msg, nonce, "rejecting configs with nack response");
                                     Some(StatusBuilder::invalid_argument().with_message(error_msg).build())
                                 };
-                                let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                                    .with_nounce(nonce.clone())
+                                                                
+                                let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)                                                                    
+                                    .with_nonce(nonce.clone())
                                     .with_error_detail(maybe_error)
                                     .build();
                                 if let Err(err) = acknowledgments_tx.send(upstream_response).await {
@@ -373,7 +374,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                                 .join("; ");
                         let error_msg = format!("timed out trying to apply resource updates for [{version_info}]");
                         let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                            .with_nounce(nonce.clone())
+                            .with_nonce(nonce.clone())
                             .with_error_detail(Some(StatusBuilder::unspecified_error().with_message(error_msg).build()))
                             .build();
                         let _ = acknowledgments_tx.send(upstream_response).await;
@@ -389,7 +390,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     error_msg, nonce, "decoding error, rejecting configs with nack response"
                 );
                 let upstream_nack_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
-                    .with_nounce(nonce)
+                    .with_nonce(nonce)
                     .with_error_detail(Some(StatusBuilder::invalid_argument().with_message(error_msg).build()))
                     .build();
                 if let Err(err) = acknowledgments_tx.send(upstream_nack_response).await {

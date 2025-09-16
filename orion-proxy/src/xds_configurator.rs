@@ -141,7 +141,7 @@ impl XdsConfigurationHandler {
 
         let mut cluster_names = ads_cluster_names.into_iter().cycle();
 
-        let (mut worker, mut client, _subscription_manager) = loop {
+        let (mut worker, mut client, subscription_manager) = loop {
             let Some(cluster_name) = cluster_names.next() else {
                 info!("No xDS clusters configured");
                 return Ok(());
@@ -167,7 +167,7 @@ impl XdsConfigurationHandler {
                     info!("Got notification {xds_update:?}");
                     let XdsUpdateEvent { ack_channel, updates } = xds_update;
                     // Box::pin because the future from self.process_updates() is very large
-                    let rejected_updates = Box::pin(self.process_updates(updates)).await;
+                    let rejected_updates = Box::pin(self.process_updates(updates, &subscription_manager)).await;
                     let _ = ack_channel.send(rejected_updates);
                 },
                 Some(health_update) = self.health_updates_receiver.recv() => Self::process_health_event(&health_update),
@@ -180,17 +180,17 @@ impl XdsConfigurationHandler {
         Ok(())
     }
 
-    async fn process_updates(&mut self, updates: Vec<XdsResourceUpdate>) -> Vec<RejectedConfig> {
+    async fn process_updates(&mut self, updates: Vec<XdsResourceUpdate>, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Vec<RejectedConfig> {
         let mut rejected_updates = Vec::new();
         for update in updates {
             match update {
                 XdsResourceUpdate::Update(id, resource, _) => {
-                    if let Err(e) = self.process_update_event(&id, resource).await {
+                    if let Err(e) = self.process_update_event(&id, resource, subscibtion_manager).await {
                         rejected_updates.push(RejectedConfig::from((id, e)));
                     }
                 },
                 XdsResourceUpdate::Remove(id, resource) => {
-                    if let Err(e) = self.process_remove_event(&id, resource).await {
+                    if let Err(e) = self.process_remove_event(&id, resource, subscibtion_manager).await {
                         rejected_updates.push(RejectedConfig::from((id, e)));
                     }
                 },
@@ -199,9 +199,11 @@ impl XdsConfigurationHandler {
         rejected_updates
     }
 
-    async fn process_remove_event(&mut self, id: &str, resource: TypeUrl) -> Result<()> {
+    async fn process_remove_event(&mut self, id: &str, resource: TypeUrl, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Result<()> {
         match resource {
             orion_xds::xds::model::TypeUrl::Cluster => {
+                let maybe_unsubscribed = subscibtion_manager.subscribe(id.to_owned(), TypeUrl::ClusterLoadAssignment).await;
+                debug!("Updating unsubscribed for {id} {} {maybe_unsubscribed:?} ", TypeUrl::ClusterLoadAssignment);
                 orion_lib::clusters::remove_cluster(id)?;
                 self.health_manager.stop_cluster(id).await;
                 Ok(())
@@ -235,7 +237,7 @@ impl XdsConfigurationHandler {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn process_update_event(&mut self, _: &str, resource: XdsResourcePayload) -> Result<()> {
+    async fn process_update_event(&mut self, _: &str, resource: XdsResourcePayload, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Result<()> {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
                 debug!("Got update for listener {id} {:?}", listener);
@@ -264,7 +266,12 @@ impl XdsConfigurationHandler {
                 debug!("Got update for cluster: {id}: {:#?}", cluster);
                 let cluster_builder = PartialClusterType::try_from((cluster, &*self.secret_manager.read()));
                 match cluster_builder {
-                    Ok(cluster) => self.add_cluster(cluster).await,
+                    Ok(cluster) => {
+                        let maybe_subscribed = subscibtion_manager.subscribe(id.clone(), TypeUrl::ClusterLoadAssignment).await;
+                        debug!("Updating subscription for {id} {} {maybe_subscribed:?} ", TypeUrl::ClusterLoadAssignment);
+                        self.add_cluster(cluster).await
+                        
+                    },
                     Err(err) => {
                         warn!("Got invalid update for cluster {id}");
                         Err(err)

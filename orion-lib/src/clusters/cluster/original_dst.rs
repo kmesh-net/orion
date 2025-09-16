@@ -121,7 +121,7 @@ struct HttpChannelConfig {
 pub struct OriginalDstCluster {
     pub name: &'static str,
     http_config: HttpChannelConfig,
-    transport_socket: UpstreamTransportSocketConfigurator,
+    pub transport_socket: UpstreamTransportSocketConfigurator,
     bind_device: Option<BindDevice>,
     cleanup_interval: Duration,
     endpoints: lrumap::LruMap<EndpointAddress, Endpoint>,
@@ -130,6 +130,8 @@ pub struct OriginalDstCluster {
     last_cleanup_time: Instant,
     pub config: orion_configuration::config::cluster::Cluster,
 }
+
+
 
 impl ClusterOps for OriginalDstCluster {
     fn get_name(&self) -> &'static str {

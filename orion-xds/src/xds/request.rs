@@ -82,7 +82,7 @@ impl DeltaDiscoveryRequestBuilder {
         self
     }
 
-    pub fn with_nounce(mut self, nounce: String) -> Self {
+    pub fn with_nonce(mut self, nounce: String) -> Self {
         self.nounce = Some(nounce);
         self
     }

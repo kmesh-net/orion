@@ -41,7 +41,7 @@ use std::{
     cell::RefCell,
     collections::{btree_map::Entry as BTreeEntry, BTreeMap},
 };
-use tracing::warn;
+use tracing::{info, warn};
 
 type ClusterID = &'static str;
 type ClustersMap = BTreeMap<ClusterID, ClusterType>;
@@ -124,16 +124,31 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                     cla.build().map(|cla| dynamic_cluster.change_load_assignment(Some(cla)))?;
                     Ok(cluster.clone())
                 },
-                ClusterType::Static(_) => {
-                    let msg = format!("{name} Attempt to change CLA for static cluster");
+                ClusterType::Static(static_cluster) => {                                        
+                    let msg = format!("{name} Attempt to change CLA for Static cluster ");
                     warn!(msg);
-                    Err(msg.into())
+                    let cla = ClusterLoadAssignmentBuilder::builder()
+                        .with_cla(cla.clone())
+                        .with_transport_socket(static_cluster.transport_socket.clone())
+                        .with_cluster_name(static_cluster.name)
+                        .with_bind_device(None)
+                        .with_lb_policy(orion_configuration::config::cluster::LbPolicy::RoundRobin)
+                        .prepare();
+                    cla.build().map(|cla|static_cluster.change_load_assignment(cla))?;
+                    Ok(cluster.clone())
                 },
-                ClusterType::OnDemand(_) => {
-                    let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster");
-                    warn!(msg);
-                    Err(msg.into())
-                },
+                ClusterType::OnDemand(original_dst_cluster) => {
+                    
+                    if cla.is_empty(){
+                        let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster {cla:?}");
+                        info!(msg);
+                        Ok(ClusterType::OnDemand(original_dst_cluster.clone()))
+                    }else{
+                        let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster ...but endpoints are not empty {cla:?}");
+                        warn!(msg);
+                        Err(msg.into())
+                    }                                        
+                }
             }
         } else {
             let msg = format!("{name} No cluster found");
