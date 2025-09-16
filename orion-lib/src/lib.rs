@@ -140,7 +140,11 @@ pub async fn start_listener_manager(
         configuration_receivers;
 
     tracing::debug!("listeners manager starting");
-    let mgr = ListenersManager::new(listener_configuration_receiver, route_configuration_receiver);
+    let mgr = ListenersManager::new(
+        listener_configuration_receiver,
+        route_configuration_receiver,
+        listeners::listeners_manager::ListenerManagerConfig::default(),
+    );
     mgr.start(ct).await.map_err(|err| {
         tracing::warn!(error = %err, "listeners manager exited with error");
         err
