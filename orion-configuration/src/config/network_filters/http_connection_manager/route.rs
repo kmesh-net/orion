@@ -755,6 +755,21 @@ mod tests {
         let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
         assert_eq!(result, Some(Authority::from_str("api.rewritten.com").unwrap()));
     }
+
+    #[test]
+    fn test_authority_rewrite_regex_no_host_header() {
+        let regex = RegexMatchAndSubstitute {
+            pattern: Regex::new(r"^([^.]+)\.original\.com$").unwrap(),
+            substitution: "${1}.rewritten.com".into(),
+        };
+        let authority_rewrite = AuthorityRewriteSpecifier::Regex(regex);
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "/path".parse::<http::Uri>().unwrap();
+        let headers = http::HeaderMap::new();
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        assert_eq!(result, None);
+    }
 }
 
 #[cfg(feature = "envoy-conversions")]
