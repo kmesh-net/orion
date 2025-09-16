@@ -15,7 +15,9 @@
 //
 //
 
-use multimap::MultiMap;
+use std::collections::HashMap;
+use std::time::Duration;
+
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
@@ -43,6 +45,30 @@ pub enum TlsContextChange {
     Updated((String, TransportSecret)),
 }
 
+#[derive(Debug, Clone)]
+pub struct ListenerManagerConfig {
+    pub max_versions_per_listener: usize,
+    pub cleanup_policy: CleanupPolicy,
+    pub cleanup_interval: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub enum CleanupPolicy {
+    CountBasedOnly(usize),
+    TimeBasedOnly(Duration),
+    Hybrid { timeout: Duration, max_count: usize },
+}
+
+impl Default for ListenerManagerConfig {
+    fn default() -> Self {
+        Self {
+            max_versions_per_listener: 2,
+            cleanup_policy: CleanupPolicy::CountBasedOnly(2),
+            cleanup_interval: Duration::from_secs(60),
+        }
+    }
+}
+
 struct ListenerInfo {
     handle: abort_on_drop::ChildTask<()>,
     listener_conf: ListenerConfig,
@@ -59,18 +85,21 @@ pub struct ListenersManager {
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     listener_handles: MultiMap<String, ListenerInfo>,
     version_counter: u64,
+    config: ListenerManagerConfig,
 }
 
 impl ListenersManager {
     pub fn new(
         listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
         route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
+        config: ListenerManagerConfig,
     ) -> Self {
         ListenersManager {
             listener_configuration_channel,
             route_configuration_channel,
             listener_handles: MultiMap::new(),
             version_counter: 0,
+            config,
         }
     }
 
@@ -148,6 +177,8 @@ impl ListenersManager {
         let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
         info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
+        self.cleanup_old_versions(&listener_name);
+
         Ok(())
     }
 
@@ -163,6 +194,54 @@ impl ListenersManager {
         }
 
         Ok(())
+    }
+
+    fn cleanup_old_versions(&mut self, listener_name: &str) {
+        if let Some(versions) = self.listener_handles.get_mut(listener_name) {
+            let original_count = versions.len();
+
+            match &self.config.cleanup_policy {
+                CleanupPolicy::CountBasedOnly(max_count) => {
+                    if versions.len() > *max_count {
+                        let to_remove = versions.len() - max_count;
+                        for _ in 0..to_remove {
+                            let old = versions.remove(0);
+                            info!("Cleaning up old listener {} version {} (count limit)", listener_name, old.version);
+                        }
+                    }
+                },
+                CleanupPolicy::TimeBasedOnly(_timeout) => {
+                    // TODO: Implement time-based cleanup when we have connection tracking
+                    // For now, behave like count-based with default limit
+                    if versions.len() > self.config.max_versions_per_listener {
+                        let to_remove = versions.len() - self.config.max_versions_per_listener;
+                        for _ in 0..to_remove {
+                            let old = versions.remove(0);
+                            info!("Cleaning up old listener {} version {} (time limit)", listener_name, old.version);
+                        }
+                    }
+                },
+                CleanupPolicy::Hybrid { max_count, .. } => {
+                    if versions.len() > *max_count {
+                        let to_remove = versions.len() - max_count;
+                        for _ in 0..to_remove {
+                            let old = versions.remove(0);
+                            info!("Cleaning up old listener {} version {} (hybrid limit)", listener_name, old.version);
+                        }
+                    }
+                },
+            }
+
+            let cleaned_count = original_count - versions.len();
+            if cleaned_count > 0 {
+                info!(
+                    "Cleaned up {} old versions of listener {}, {} versions remaining",
+                    cleaned_count,
+                    listener_name,
+                    versions.len()
+                );
+            }
+        }
     }
 }
 
@@ -198,7 +277,8 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let mut man = ListenersManager::new(conf_rx, route_rx);
+        let config = ListenerManagerConfig::default();
+        let mut man = ListenersManager::new(conf_rx, route_rx, config);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -244,7 +324,8 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let mut man = ListenersManager::new(conf_rx, route_rx);
+        let config = ListenerManagerConfig::default();
+        let mut man = ListenersManager::new(conf_rx, route_rx, config);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -289,7 +370,12 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let mut man = ListenersManager::new(conf_rx, route_rx);
+        let config = ListenerManagerConfig {
+            max_versions_per_listener: 2,
+            cleanup_policy: CleanupPolicy::CountBasedOnly(2),
+            cleanup_interval: Duration::from_secs(60),
+        };
+        let mut man = ListenersManager::new(conf_rx, route_rx, config);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -315,15 +401,52 @@ mod tests {
         assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
 
-        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        // After adding 3rd listener, first should be cleaned up due to max_versions_per_listener = 2
+        // So routeb_tx1 should be closed (is_err), but routeb_tx2 and routeb_tx3 should work
+        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_err());
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
-        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 3);
+        // Should only have 2 versions due to cleanup policy (max_count: 2)
+        assert_eq!(man.listener_handles.get(name).unwrap().len(), 2);
 
         man.stop_listener(name).unwrap();
 
         assert!(man.listener_handles.get_vec(name).is_none());
+
+        tokio::task::yield_now().await;
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_cleanup_policy_enforcement() {
+        let chan = 10;
+        let name = "cleanup-test-listener";
+
+        let (_conf_tx, conf_rx) = mpsc::channel(chan);
+        let (_route_tx, route_rx) = mpsc::channel(chan);
+        let config = ListenerManagerConfig {
+            max_versions_per_listener: 3,
+            cleanup_policy: CleanupPolicy::CountBasedOnly(3),
+            cleanup_interval: Duration::from_secs(60),
+        };
+        let mut man = ListenersManager::new(conf_rx, route_rx, config);
+
+        // Add 5 listeners, should only keep 3 due to cleanup policy
+        for i in 1..=5 {
+            let (_routeb_tx, routeb_rx) = broadcast::channel(chan);
+            let (_secb_tx, secb_rx) = broadcast::channel(chan);
+            let listener = Listener::test_listener(name, routeb_rx, secb_rx);
+            let listener_info = create_test_listener_config(name, 1230 + i);
+            man.start_listener(listener, listener_info).unwrap();
+            tokio::task::yield_now().await;
+        }
+
+        // Should only have 3 versions due to cleanup policy
+        assert_eq!(man.listener_handles.get(name).unwrap().len(), 3);
+
+        man.stop_listener(name).unwrap();
+        assert!(man.listener_handles.get(name).is_none());
 
         tokio::task::yield_now().await;
     }
