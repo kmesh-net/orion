@@ -15,7 +15,7 @@
 //
 //
 
-use std::collections::HashMap;
+use multimap::MultiMap;
 use std::time::Duration;
 
 use tokio::sync::{broadcast, mpsc};
@@ -55,8 +55,6 @@ pub struct ListenerManagerConfig {
 #[derive(Debug, Clone)]
 pub enum CleanupPolicy {
     CountBasedOnly(usize),
-    TimeBasedOnly(Duration),
-    Hybrid { timeout: Duration, max_count: usize },
 }
 
 impl Default for ListenerManagerConfig {
@@ -83,7 +81,7 @@ impl ListenerInfo {
 pub struct ListenersManager {
     listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
-    listener_handles: HashMap<String, Vec<ListenerInfo>>,
+    listener_handles: MultiMap<String, ListenerInfo>,
     version_counter: u64,
     config: ListenerManagerConfig,
 }
@@ -92,12 +90,19 @@ impl ListenersManager {
     pub fn new(
         listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
         route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
+    ) -> Self {
+        Self::with_config(listener_configuration_channel, route_configuration_channel, ListenerManagerConfig::default())
+    }
+
+    pub fn with_config(
+        listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+        route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
         config: ListenerManagerConfig,
     ) -> Self {
         ListenersManager {
             listener_configuration_channel,
             route_configuration_channel,
-            listener_handles: HashMap::new(),
+            listener_handles: MultiMap::new(),
             version_counter: 0,
             config,
         }
@@ -131,9 +136,8 @@ impl ListenersManager {
                         },
                         ListenerConfigurationChange::GetConfiguration(config_dump_tx) => {
                             let listeners: Vec<ListenerConfig> = self.listener_handles
-                                .values()
-                                .flatten()
-                                .map(|info| info.listener_conf.clone())
+                                .iter()
+                                .map(|(_, info)| info.listener_conf.clone())
                                 .collect();
                             config_dump_tx.send(ConfigDump { listeners: Some(listeners), ..Default::default() }).await?;
                         },
@@ -162,20 +166,17 @@ impl ListenersManager {
         self.version_counter += 1;
         let version = self.version_counter;
 
-        info!("Starting new version {} of listener {}", version, listener_name);
-
-        let listener_name_clone = listener_name.clone();
-
+        let listener_name_for_async = listener_name.clone();
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
-            warn!("Listener {} version {} exited: {}", listener_name_clone, version, error);
+            info!("Listener {} version {} exited: {}", listener_name_for_async, version, error);
         });
 
         let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
 
-        let versions = self.listener_handles.entry(listener_name.clone()).or_default();
-        versions.push(listener_info);
-        info!("Listener {} now has {} active version(s)", listener_name, versions.len());
+        self.listener_handles.insert(listener_name.clone(), listener_info);
+        let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
+        info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
         self.cleanup_old_versions(&listener_name);
 
@@ -197,48 +198,33 @@ impl ListenersManager {
     }
 
     fn cleanup_old_versions(&mut self, listener_name: &str) {
-        if let Some(versions) = self.listener_handles.get_mut(listener_name) {
+        if let Some(mut versions) = self.listener_handles.remove(listener_name) {
             let original_count = versions.len();
 
             match &self.config.cleanup_policy {
                 CleanupPolicy::CountBasedOnly(max_count) => {
                     if versions.len() > *max_count {
                         let to_remove = versions.len() - max_count;
-                        for _ in 0..to_remove {
-                            let old = versions.remove(0);
+                        let removed = versions.drain(0..to_remove).collect::<Vec<_>>();
+                        for old in removed {
                             info!("Cleaning up old listener {} version {} (count limit)", listener_name, old.version);
-                        }
-                    }
-                },
-                CleanupPolicy::TimeBasedOnly(_timeout) => {
-                    // TODO: Implement time-based cleanup when we have connection tracking
-                    // For now, behave like count-based with default limit
-                    if versions.len() > self.config.max_versions_per_listener {
-                        let to_remove = versions.len() - self.config.max_versions_per_listener;
-                        for _ in 0..to_remove {
-                            let old = versions.remove(0);
-                            info!("Cleaning up old listener {} version {} (time limit)", listener_name, old.version);
-                        }
-                    }
-                },
-                CleanupPolicy::Hybrid { max_count, .. } => {
-                    if versions.len() > *max_count {
-                        let to_remove = versions.len() - max_count;
-                        for _ in 0..to_remove {
-                            let old = versions.remove(0);
-                            info!("Cleaning up old listener {} version {} (hybrid limit)", listener_name, old.version);
                         }
                     }
                 },
             }
 
-            let cleaned_count = original_count - versions.len();
-            if cleaned_count > 0 {
+            // Re-insert the remaining versions
+            for version in versions {
+                self.listener_handles.insert(listener_name.to_string(), version);
+            }
+
+            let remaining_count = self.listener_handles.get_vec(listener_name).map(|v| v.len()).unwrap_or(0);
+            if original_count != remaining_count {
                 info!(
-                    "Cleaned up {} old versions of listener {}, {} versions remaining",
-                    cleaned_count,
+                    "Cleaned up {} old version(s) of listener {}, {} remaining",
+                    original_count - remaining_count,
                     listener_name,
-                    versions.len()
+                    remaining_count
                 );
             }
         }
@@ -277,8 +263,7 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let config = ListenerManagerConfig::default();
-        let mut man = ListenersManager::new(conf_rx, route_rx, config);
+        let mut man = ListenersManager::new(conf_rx, route_rx);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -309,7 +294,7 @@ mod tests {
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
-        assert_eq!(man.listener_handles.get(name).unwrap().len(), 2);
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 2);
         tokio::task::yield_now().await;
     }
 
@@ -321,8 +306,7 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let config = ListenerManagerConfig::default();
-        let mut man = ListenersManager::new(conf_rx, route_rx, config);
+        let mut man = ListenersManager::new(conf_rx, route_rx);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -369,7 +353,7 @@ mod tests {
             cleanup_policy: CleanupPolicy::CountBasedOnly(2),
             cleanup_interval: Duration::from_secs(60),
         };
-        let mut man = ListenersManager::new(conf_rx, route_rx, config);
+        let mut man = ListenersManager::with_config(conf_rx, route_rx, config);
 
         let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
         let (_secb_tx1, secb_rx) = broadcast::channel(chan);
@@ -402,11 +386,11 @@ mod tests {
         assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
         // Should only have 2 versions due to cleanup policy (max_count: 2)
-        assert_eq!(man.listener_handles.get(name).unwrap().len(), 2);
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 2);
 
         man.stop_listener(name).unwrap();
 
-        assert!(man.listener_handles.get(name).is_none());
+        assert!(man.listener_handles.get_vec(name).is_none());
 
         tokio::task::yield_now().await;
     }
@@ -424,7 +408,7 @@ mod tests {
             cleanup_policy: CleanupPolicy::CountBasedOnly(3),
             cleanup_interval: Duration::from_secs(60),
         };
-        let mut man = ListenersManager::new(conf_rx, route_rx, config);
+        let mut man = ListenersManager::with_config(conf_rx, route_rx, config);
 
         // Add 5 listeners, should only keep 3 due to cleanup policy
         for i in 1..=5 {
@@ -437,10 +421,10 @@ mod tests {
         }
 
         // Should only have 3 versions due to cleanup policy
-        assert_eq!(man.listener_handles.get(name).unwrap().len(), 3);
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 3);
 
         man.stop_listener(name).unwrap();
-        assert!(man.listener_handles.get(name).is_none());
+        assert!(man.listener_handles.get_vec(name).is_none());
 
         tokio::task::yield_now().await;
     }

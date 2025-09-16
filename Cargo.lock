@@ -1897,6 +1897,9 @@ name = "multimap"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "nohash"
@@ -2234,6 +2237,7 @@ dependencies = [
  "hyper-util",
  "ipnet",
  "lru_time_cache",
+ "multimap",
  "once_cell",
  "opentelemetry",
  "orion-configuration",
