@@ -278,8 +278,7 @@ enum ErrorImpl {
 impl ErrorTrait for ErrorImpl {
     fn source(&self) -> Option<&(dyn ErrorTrait + 'static)> {
         match self {
-            Self::Error(err) => err.source(),
-            Self::Context(_, err) => err.source(),
+            Self::Error(err) | Self::Context(_, err) => Some(err.as_ref()),
         }
     }
 }
