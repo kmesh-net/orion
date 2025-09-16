@@ -25,12 +25,12 @@ use crate::{
     transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader, TlvListenerFilter},
     ConversionContext, Error, Result, RouteConfigurationChange,
 };
-use compact_str::CompactString;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
     listener::{FilterChainMatch, Listener as ListenerConfig, MatchResult},
     listener_filters::DownstreamProxyProtocolConfig,
 };
+use orion_interner::StringInterner;
 
 use orion_metrics::{
     metrics::{http, listeners},
@@ -56,7 +56,7 @@ use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone)]
 struct PartialListener {
-    name: CompactString,
+    name: &'static str,
     address: ListenerAddress,
     bind_device: Option<BindDevice>,
     filter_chains: HashMap<FilterChainMatch, FilterchainBuilder>,
@@ -84,7 +84,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
     type Error = Error;
     fn try_from(ctx: ConversionContext<'_, ListenerConfig>) -> std::result::Result<Self, Self::Error> {
         let ConversionContext { envoy_object: listener, secret_manager } = ctx;
-        let name = listener.name.clone();
+        let name = listener.name.to_static_str();
         let address = match listener.address {
             orion_configuration::config::listener::ListenerAddress::Socket(socket_addr) => {
                 ListenerAddress::Socket(socket_addr)
@@ -145,7 +145,7 @@ impl ListenerFactory {
 
         let filter_chains = filter_chains
             .into_iter()
-            .map(|fc| fc.1.with_listener_name(&name).build().map(|x| (fc.0, x)))
+            .map(|fc| fc.1.with_listener_name(name).build().map(|x| (fc.0, x)))
             .collect::<Result<HashMap<_, _>>>()?;
 
         Ok(Listener {
@@ -172,7 +172,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for ListenerFactory {
 
 #[derive(Debug)]
 pub struct Listener {
-    name: CompactString,
+    name: &'static str,
     address: ListenerAddress,
     bind_device: Option<BindDevice>,
     pub filter_chains: HashMap<FilterChainMatch, FilterchainType>,
@@ -192,7 +192,7 @@ impl Listener {
     ) -> Self {
         use std::net::{IpAddr, Ipv4Addr};
         Listener {
-            name: name.into(),
+            name,
             address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0)),
             bind_device: None,
             filter_chains: HashMap::new(),
@@ -204,8 +204,8 @@ impl Listener {
         }
     }
 
-    pub fn get_name(&self) -> &CompactString {
-        &self.name
+    pub fn get_name(&self) -> &'static str {
+        self.name
     }
     pub fn get_socket(&self) -> Option<(&std::net::SocketAddr, Option<&BindDevice>)> {
         match &self.address {
@@ -266,7 +266,7 @@ impl Listener {
     }
 
     async fn run_socket_listener(
-        name: CompactString,
+        name: &'static str,
         listener: TcpListener,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         with_tls_inspector: bool,
@@ -276,7 +276,7 @@ impl Listener {
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
         let mut filter_chains = Arc::new(filter_chains);
-        let listener_name = name.clone();
+        let listener_name = name;
 
         loop {
             tokio::select! {
@@ -289,8 +289,8 @@ impl Listener {
 
                             // This is a new downstream connection...
                             let shard_id = std::thread::current().id();
-                            with_metric!(listeners::DOWNSTREAM_CX_TOTAL, add, 1, shard_id,&[KeyValue::new("listener", listener_name.to_string())]);
-                            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id,&[KeyValue::new("listener", listener_name.to_string())]);
+                            with_metric!(listeners::DOWNSTREAM_CX_TOTAL, add, 1, shard_id,&[KeyValue::new("listener", listener_name)]);
+                            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, add, 1, shard_id,&[KeyValue::new("listener", listener_name)]);
 
                             let filter_chains = Arc::clone(&filter_chains);
                             let proxy_protocol_config = proxy_protocol_config.clone();
@@ -303,7 +303,7 @@ impl Listener {
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
                             let local_address = listener.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().expect("Failed to parse fallback address"));
                             let start = Instant::now();
-                            tokio::spawn(Self::process_listener_update(listener_name.to_string(), filter_chains, with_tls_inspector, proxy_protocol_config, with_tlv_listener_filter, local_address, peer_addr, Box::new(stream), start));
+                            tokio::spawn(Self::process_listener_update(listener_name, filter_chains, with_tls_inspector, proxy_protocol_config, with_tlv_listener_filter, local_address, peer_addr, Box::new(stream), start));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -331,7 +331,7 @@ impl Listener {
     }
 
     async fn run_internal_listener(
-        name: CompactString,
+        name: &'static str,
         _internal_config: InternalListenerConfig,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         _with_tls_inspector: bool,
@@ -458,7 +458,7 @@ impl Listener {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::too_many_arguments)]
     async fn process_listener_update(
-        listener_name: String,
+        listener_name: &'static str,
         filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
         with_tls_inspector: bool,
         proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
@@ -475,11 +475,11 @@ impl Listener {
                             with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
             with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
             if ssl.load(Ordering::Relaxed) {
-                with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
+                with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
             }
             let ms = u64::try_from(start_instant.elapsed().as_millis())
                 .unwrap_or(u64::MAX);
-            with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name.to_string())]);
+            with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
         }
 
         let server_name = if with_tls_inspector {
@@ -493,14 +493,14 @@ impl Listener {
                         add,
                         1,
                         shard_id,
-                        &[KeyValue::new("listener", listener_name.to_string())]
+                        &[KeyValue::new("listener", listener_name)]
                     );
                     with_metric!(
                         http::DOWNSTREAM_CX_SSL_ACTIVE,
                         add,
                         1,
                         shard_id,
-                        &[KeyValue::new("listener", listener_name.to_string())]
+                        &[KeyValue::new("listener", listener_name)]
                     );
                     ssl.store(true, Ordering::Relaxed);
                     Some(sni)
@@ -519,7 +519,7 @@ impl Listener {
                         add,
                         1,
                         shard_id,
-                        &[KeyValue::new("listener", listener_name.to_string())]
+                        &[KeyValue::new("listener", listener_name)]
                     );
                     ssl.store(true, Ordering::Relaxed);
                     None
@@ -577,7 +577,7 @@ impl Listener {
                 add,
                 1,
                 shard_id,
-                &[KeyValue::new("listener", listener_name.to_string())]
+                &[KeyValue::new("listener", listener_name)]
             );
             warn!("{listener_name} : No match for {peer_addr} {local_address}");
         }
