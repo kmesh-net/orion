@@ -1,0 +1,74 @@
+runtime:
+  num_cpus: 1
+  num_runtimes: 1
+
+logging:
+  log_level: "debug"
+
+bootstrap_extensions:
+  - internal_listener:
+      buffer_size_kb: 2048
+
+admin:
+  address: "127.0.0.1:9901"
+
+static_resources:
+  listeners:
+    - name: "external_gateway_listener"
+      address: "0.0.0.0:10000"
+      filter_chains:
+        - name: "gateway_filter_chain"
+          terminal_filter:
+            http_connection_manager:
+              route_config:
+                name: "gateway_route"
+                virtual_hosts:
+                  - name: "services"
+                    domains: ["*"]
+                    routes:
+                      - match:
+                          prefix: "/service-a"
+                        route:
+                          cluster: "internal_service_a_cluster"
+                      - match:
+                          prefix: "/"
+                        direct_response:
+                          status: 200
+                          body: "Internal Listener Demo Active"
+
+    - name: "internal_mesh_listener"
+      address:
+        internal:
+          buffer_size_kb: 1024
+      filter_chains:
+        - name: "internal_proxy_chain"
+          terminal_filter:
+            tcp_proxy:
+              cluster: "internal_backend_cluster"
+
+  clusters:
+    - name: "internal_service_a_cluster"
+      type: STATIC
+      transport_socket:
+        internal_upstream:
+          passthrough_metadata:
+            - kind: HOST
+              name: "envoy.filters.listener.original_dst"
+          transport_socket:
+            raw_buffer: {}
+      load_assignment:
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    internal:
+                      server_listener_name: "internal_mesh_listener"
+                      endpoint_id: "service_a_endpoint_1"
+
+    - name: "internal_backend_cluster"
+      type: STATIC
+      load_assignment:
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address: "127.0.0.1:8080"

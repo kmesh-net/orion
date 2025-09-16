@@ -125,13 +125,13 @@ impl ListenersManager {
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name().clone();
+        let listener_name = listener.get_name();
         if let Some((addr, dev)) = listener.get_socket() {
             info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
         } else {
             info!("Internal listener {}", listener_name);
         }
-        let listener_name_for_spawn = listener_name.clone();
+        let listener_name_for_spawn = listener_name;
         // spawn the task for this listener address, this will spawn additional task per connection
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
