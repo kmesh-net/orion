@@ -73,8 +73,13 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
     trie_mapstr!(trie, "PROTOCOL", Operator::Protocol, Category::DOWNSTREAM_REQUEST);
     trie_mapstr!(trie, "UPSTREAM_PROTOCOL", Operator::UpstreamProtocol, Category::UPSTREAM_REQUEST);
     trie_mapstr!(trie, "RESPONSE_CODE", Operator::ResponseCode, Category::DOWNSTREAM_RESPONSE);
-    trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Operator::ResponseCodeDetails, Category::UNSUPPORTED);
-    trie_mapstr!(trie, "CONNECTION_TERMINATION_DETAILS", Operator::ConnectionTerminationDetails, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "RESPONSE_CODE_DETAILS", Operator::ResponseCodeDetails, Category::FINISH_CONTEXT);
+    trie_mapstr!(
+        trie,
+        "CONNECTION_TERMINATION_DETAILS",
+        Operator::ConnectionTerminationDetails,
+        Category::FINISH_CONTEXT
+    );
     trie_mapstr!(trie, "BYTES_SENT", Operator::BytesSent, Category::FINISH_CONTEXT);
     trie_mapstr!(trie, "UPSTREAM_WIRE_BYTES_SENT", Operator::UpstreamWireBytesSent, Category::UNSUPPORTED);
     trie_mapstr!(trie, "UPSTREAM_HEADER_BYTES_SENT", Operator::UpstreamHeaderBytesSent, Category::UNSUPPORTED);
@@ -164,8 +169,8 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
     trie_mapstr!(trie, "CONNECTION_ID", Operator::ConnectionId, Category::DOWNSTREAM_CONTEXT);
     trie_mapstr!(trie, "REQUEST_HEADERS_BYTES", Operator::RequestHeadersBytes, Category::DOWNSTREAM_REQUEST);
     trie_mapstr!(trie, "RESPONSE_HEADERS_BYTES", Operator::ResponseHeadersBytes, Category::DOWNSTREAM_RESPONSE);
-    trie_mapstr!(trie, "REQUESTED_SERVER_NAME", Operator::RequestedServerName, Category::UNSUPPORTED);
-    trie_mapstr!(trie, "ROUTE_NAME", Operator::RouteName, Category::UNSUPPORTED);
+    trie_mapstr!(trie, "REQUESTED_SERVER_NAME", Operator::RequestedServerName, Category::DOWNSTREAM_REQUEST);
+    trie_mapstr!(trie, "ROUTE_NAME", Operator::RouteName, Category::UPSTREAM_CONTEXT);
     trie_mapstr!(trie, "UPSTREAM_PEER_URI_SAN", Operator::UpstreamPeerUriSan, Category::UNSUPPORTED);
     trie_mapstr!(trie, "UPSTREAM_PEER_DNS_SAN", Operator::UpstreamPeerDnsSan, Category::UNSUPPORTED);
     trie_mapstr!(trie, "UPSTREAM_PEER_IP_SAN", Operator::UpstreamPeerIpSan, Category::UNSUPPORTED);
@@ -220,7 +225,7 @@ static ENVOY_PATTERNS: LazyLock<Trie<u8, (Operator, Category, usize, bool)>> = L
         trie,
         "UPSTREAM_TRANSPORT_FAILURE_REASON",
         Operator::UpstreamTransportFailureReason,
-        Category::UNSUPPORTED
+        Category::FINISH_CONTEXT
     );
     trie_mapstr!(trie, "HOSTNAME", Operator::Hostname, Category::UNSUPPORTED);
     trie_mapstr!(trie, "FILTER_CHAIN_NAME", Operator::FilterChainName, Category::UNSUPPORTED);

@@ -22,7 +22,8 @@ use super::{
 };
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
-    clusters::retry_policy::{EventError, RetryCondition, TryInferFrom},
+    clusters::retry_policy::RetryCondition,
+    event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
         http_connection_manager::{RequestHandler, TransactionHandler},
         synthetic_http_response::SyntheticHttpResponse,
@@ -369,34 +370,6 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
     }
 }
 
-// fn update_upstream_stats(
-//     client_stats: &ClientEndpointStats,
-//     cluster_name: &'static str,
-//     shard_id: (ThreadId, Authority),
-//     is_tls: bool,
-// ) {
-//     let total = client_stats.total_cx.load(std::sync::atomic::Ordering::Relaxed) as u64;
-//     let destroy = client_stats.destroy_cx.load(std::sync::atomic::Ordering::Relaxed) as u64;
-//     let active = total.saturating_sub(destroy);
-//
-//     with_metric!(
-//         clusters::UPSTREAM_CX_TOTAL,
-//         store,
-//         total,
-//         shard_id.clone(),
-//         &[KeyValue::new("clusters", cluster_name)]
-//     );
-//     with_metric!(
-//         clusters::UPSTREAM_CX_DESTROY,
-//         store,
-//         destroy,
-//         shard_id.clone(),
-//         &[KeyValue::new("clusters", cluster_name)]
-//     );
-//
-//     with_metric!(clusters::UPSTREAM_CX_ACTIVE, store, active, shard_id, &[KeyValue::new("clusters", cluster_name)]);
-// }
-
 impl HttpChannel {
     /// Send the request and return the Result, either the Response or an Error,
     /// along with the time spent for possible retransmissions. Note: the returned
@@ -553,15 +526,19 @@ impl HttpChannel {
                         ResponseFlagsLong(&response_flags.0).to_smolstr(),
                         ResponseFlagsShort(&response_flags.0).to_smolstr()
                     );
+
                     match event_error {
-                        EventError::RefusedStream | EventError::ConnectFailure(_) | EventError::ConnectTimeout(_) => {
-                            Ok(SyntheticHttpResponse::service_unavailable(response_flags).into_response(version))
-                        },
+                        EventError::RefusedStream | EventError::IoError(_) | EventError::ConnectTimeout(_) => Ok(
+                            SyntheticHttpResponse::service_unavailable(EventKind::Error(event_error), response_flags)
+                                .into_response(version),
+                        ),
                         EventError::PerTryTimeout | EventError::RouteTimeout => {
-                            Ok(SyntheticHttpResponse::gateway_timeout(response_flags).into_response(version))
+                            Ok(SyntheticHttpResponse::gateway_timeout(EventKind::Error(event_error), response_flags)
+                                .into_response(version))
                         },
                         EventError::Reset | EventError::Http3PostConnectFailure => {
-                            Ok(SyntheticHttpResponse::bad_gateway(response_flags).into_response(version))
+                            Ok(SyntheticHttpResponse::bad_gateway(EventKind::Error(event_error), response_flags)
+                                .into_response(version))
                         },
                     }
                 } else {

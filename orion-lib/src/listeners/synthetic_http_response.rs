@@ -19,11 +19,12 @@ use bytes::Bytes;
 use http::{HeaderValue, Response, StatusCode, Version as HttpVersion};
 use http_body_util::Full;
 
-use crate::{body::response_flags::ResponseFlags, PolyBody};
+use crate::{body::response_flags::ResponseFlags, event_error::EventKind, PolyBody};
 
 #[derive(Clone, Debug)]
 pub struct SyntheticHttpResponse {
     http_status: StatusCode,
+    event_kind: EventKind,
     response_flags: ResponseFlags,
     body: Bytes,
     close_connection: bool,
@@ -32,23 +33,30 @@ pub struct SyntheticHttpResponse {
 // === impl SyntheticHttpResponse ===
 
 impl SyntheticHttpResponse {
-    pub fn internal_error(response_flags: ResponseFlags) -> Self {
+    pub fn internal_error(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
         Self {
             http_status: StatusCode::INTERNAL_SERVER_ERROR,
+            event_kind,
             response_flags,
             body: Bytes::default(),
             close_connection: true,
         }
     }
 
-    pub fn bad_gateway(response_flags: ResponseFlags) -> Self {
-        Self { http_status: StatusCode::BAD_GATEWAY, response_flags, body: Bytes::default(), close_connection: true }
+    pub fn bad_gateway(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
+        Self {
+            http_status: StatusCode::BAD_GATEWAY,
+            event_kind,
+            response_flags,
+            body: Bytes::default(),
+            close_connection: true,
+        }
     }
 
-    #[allow(dead_code)]
-    pub fn forbidden(msg: &str) -> Self {
+    pub fn forbidden(event_kind: EventKind, msg: &str) -> Self {
         Self {
             http_status: StatusCode::FORBIDDEN,
+            event_kind,
             response_flags: ResponseFlags::default(),
             body: Bytes::copy_from_slice(msg.as_bytes()),
             //should this close actually? the connection seems to stay open since it's only triggered for a single http
@@ -57,56 +65,61 @@ impl SyntheticHttpResponse {
     }
 
     #[allow(dead_code)]
-    pub fn service_unavailable(response_flags: ResponseFlags) -> Self {
+    pub fn service_unavailable(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
         Self {
             http_status: StatusCode::SERVICE_UNAVAILABLE,
+            event_kind,
             response_flags,
             body: Bytes::default(),
             close_connection: true,
         }
     }
 
-    pub fn gateway_timeout(response_flags: ResponseFlags) -> Self {
+    pub fn gateway_timeout(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
         Self {
             http_status: StatusCode::GATEWAY_TIMEOUT,
+            event_kind,
             response_flags,
             body: Bytes::default(),
             close_connection: true,
         }
     }
 
-    pub fn not_found() -> Self {
+    pub fn not_found(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
         Self {
             http_status: StatusCode::NOT_FOUND,
-            response_flags: ResponseFlags::default(),
+            event_kind,
+            response_flags,
             body: Bytes::default(),
             close_connection: false,
         }
     }
 
     #[allow(dead_code)]
-    pub fn upgrade_required() -> Self {
+    pub fn upgrade_required(event_kind: EventKind) -> Self {
         Self {
             http_status: StatusCode::UPGRADE_REQUIRED,
+            event_kind,
             response_flags: ResponseFlags::default(),
             body: Bytes::default(),
             close_connection: true,
         }
     }
 
-    #[allow(dead_code)]
-    pub fn bad_request() -> Self {
+    pub fn bad_request(event_kind: EventKind) -> Self {
         Self {
             http_status: StatusCode::BAD_REQUEST,
+            event_kind,
             response_flags: ResponseFlags::default(),
             body: Bytes::default(),
             close_connection: true,
         }
     }
 
-    pub fn not_allowed(response_flags: ResponseFlags) -> Self {
+    pub fn not_allowed(event_kind: EventKind, response_flags: ResponseFlags) -> Self {
         Self {
             http_status: StatusCode::METHOD_NOT_ALLOWED,
+            event_kind,
             response_flags,
             body: Bytes::default(),
             close_connection: true,
@@ -114,20 +127,9 @@ impl SyntheticHttpResponse {
     }
 
     #[allow(dead_code)]
-    pub fn custom_error(http_status: StatusCode, response_flags: ResponseFlags) -> Self {
-        Self { http_status, response_flags, body: Bytes::default(), close_connection: false }
+    pub fn custom_error(http_status: StatusCode, event_kind: EventKind, response_flags: ResponseFlags) -> Self {
+        Self { http_status, event_kind, response_flags, body: Bytes::default(), close_connection: false }
     }
-
-    // #[inline]
-    // fn header_error_message(&self) -> Option<HeaderValue> {
-    //     match self.header_error_message {
-    //         Some(Cow::Borrowed(msg)) => Some(HeaderValue::from_static(msg)),
-    //         Some(Cow::Owned(ref msg)) => {
-    //             Some(HeaderValue::from_str(msg).unwrap_or_else(|_| HeaderValue::from_static("unexpected error")))
-    //         },
-    //         None => None,
-    //     }
-    // }
 
     #[inline]
     pub fn into_response(self, version: http::Version) -> Response<PolyBody> {
@@ -135,6 +137,7 @@ impl SyntheticHttpResponse {
         *rsp.status_mut() = self.http_status;
         *rsp.version_mut() = version;
         rsp.extensions_mut().insert(self.response_flags);
+        rsp.extensions_mut().insert(Some(self.event_kind));
         if self.close_connection && (version == HttpVersion::HTTP_10 || version == HttpVersion::HTTP_11) {
             // Notify the (proxy or non-proxy) client that the connection will be closed.
             rsp.headers_mut().insert(http::header::CONNECTION, HeaderValue::from_static("close"));

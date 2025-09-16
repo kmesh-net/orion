@@ -28,12 +28,16 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::body::response_flags::{BodyKind, ResponseFlags};
+use crate::event_error::TryInferFrom;
+use crate::{
+    body::response_flags::{BodyKind, ResponseFlags},
+    event_error::EventError,
+};
 
-type MetricsClosure = Box<dyn FnOnce(u64, ResponseFlags) + Send + 'static>;
+type MetricsClosure = Box<dyn FnOnce(u64, Option<EventError>, ResponseFlags) + Send + 'static>;
 
 pub struct MetricsState {
-    kind: BodyKind,
+    body_kind: BodyKind,
     bytes_counter: AtomicU64,
     on_complete: Mutex<Option<MetricsClosure>>,
 }
@@ -47,15 +51,15 @@ pub struct DropGuard {
 
 impl Drop for DropGuard {
     fn drop(&mut self) {
-        trigger_on_complete(&self.state, ResponseFlags::default());
+        trigger_on_complete(&self.state, None, ResponseFlags::default());
     }
 }
 
-fn trigger_on_complete(state: &Arc<MetricsState>, flags: ResponseFlags) {
+fn trigger_on_complete(state: &Arc<MetricsState>, event_error: Option<EventError>, flags: ResponseFlags) {
     let mut guard = state.on_complete.lock();
     if let Some(closure) = guard.take() {
         let bytes = state.bytes_counter.load(Ordering::Relaxed);
-        closure(bytes, flags);
+        closure(bytes, event_error, flags);
     }
 }
 
@@ -70,10 +74,10 @@ pub struct BodyWithMetrics<B> {
 impl<B> BodyWithMetrics<B> {
     pub fn new<F>(kind: BodyKind, inner: B, on_complete: F) -> Self
     where
-        F: FnOnce(u64, ResponseFlags) + Send + 'static,
+        F: FnOnce(u64, Option<EventError>, ResponseFlags) + Send + 'static,
     {
         let state = Arc::new(MetricsState {
-            kind,
+            body_kind: kind,
             bytes_counter: AtomicU64::new(0),
             on_complete: Mutex::new(Some(Box::new(on_complete))),
         });
@@ -92,6 +96,7 @@ impl<B> BodyWithMetrics<B> {
 impl<B> Body for BodyWithMetrics<B>
 where
     B: Body,
+    <B as http_body::Body>::Error: std::error::Error + Send + Sync + 'static,
     ResponseFlags: for<'a> From<(&'a <B as Body>::Error, BodyKind)>,
 {
     type Data = B::Data;
@@ -108,11 +113,12 @@ where
                 }
             },
             Poll::Ready(None) => {
-                trigger_on_complete(this.state, ResponseFlags::default());
+                trigger_on_complete(this.state, None, ResponseFlags::default());
             },
             Poll::Ready(Some(Err(err))) => {
-                let flags = ResponseFlags::from((err, this.state.kind));
-                trigger_on_complete(this.state, flags);
+                let event_error = EventError::try_infer_from(err);
+                let flags = ResponseFlags::from((err, this.state.body_kind));
+                trigger_on_complete(this.state, event_error, flags);
             },
             Poll::Pending => {},
         }

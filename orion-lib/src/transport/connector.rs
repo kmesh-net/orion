@@ -34,7 +34,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
 use tracing::debug;
 
-use crate::clusters::retry_policy::{elapsed, EventError};
+use crate::event_error::{elapsed, EventError};
 
 use super::{bind_device::BindDevice, resolve};
 
@@ -61,6 +61,7 @@ pub struct LocalConnectorWithDNSResolver {
 }
 
 impl LocalConnectorWithDNSResolver {
+    #[allow(clippy::too_many_lines)]
     pub fn connect(
         &self,
     ) -> impl Future<Output = std::result::Result<(TcpStream, &'static str), WithContext<ConnectError>>> + 'static {
@@ -149,7 +150,7 @@ impl LocalConnectorWithDNSResolver {
                             })
                             .map_into()
                     })? // Result<TcpStream, io::Error>
-                    .map_err(|orig| EventError::ConnectFailure(io::Error::new(orig.kind(), orig.to_string())))
+                    .map_err(|orig| EventError::IoError(io::Error::new(orig.kind(), orig.to_string())))
                     .map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {
@@ -162,7 +163,7 @@ impl LocalConnectorWithDNSResolver {
             } else {
                 sock.connect(addr)
                     .await
-                    .map_err(|orig| EventError::ConnectFailure(io::Error::new(orig.kind(), orig.to_string())))
+                    .map_err(|orig| EventError::IoError(io::Error::new(orig.kind(), orig.to_string())))
                     .map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {

@@ -59,6 +59,9 @@ fn main() -> Result<(), BoxError> {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let fmt = LogFormatter::try_new(DEF_FMT, false)?;
@@ -71,7 +74,7 @@ fn main() -> Result<(), BoxError> {
     for _ in 0..TOTAL {
         let mut fmt = black_box(fmt.local_clone());
         black_box(eval_format(
-            &DownstreamContext { request: &request, request_head_size: 0, trace_id: None },
+            &DownstreamContext { request: &request, request_head_size: 0, trace_id: None, server_name: None },
             &DownstreamResponse { response: &response, response_head_size: 0 },
             &start,
             &end,

@@ -578,11 +578,9 @@ mod tests {
 
                 assert_eq!(tlv_data.get(&TlvType::Custom(0x10)), Some(&b"added_config_tlv".to_vec()));
                 assert_eq!(tlv_data.get(&TlvType::Custom(0x11)), Some(&b"another_added_tlv".to_vec()));
-
                 assert_eq!(tlv_data.get(&TlvType::NoOp), Some(&b"noop_data".to_vec()));
                 assert_eq!(tlv_data.get(&TlvType::Custom(0x01)), Some(&b"custom_type_1".to_vec()));
                 assert_eq!(tlv_data.get(&TlvType::Custom(0x02)), Some(&b"custom_type_2".to_vec()));
-
                 assert_eq!(tlv_data.get(&TlvType::Custom(0x03)), None);
             },
             _ => unreachable!("Expected FromProxyProtocol metadata"),
