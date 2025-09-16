@@ -18,7 +18,9 @@
 use std::collections::BTreeMap;
 
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, info, warn};
+#[cfg(debug_assertions)]
+use tracing::debug;
+use tracing::{info, warn};
 
 use orion_configuration::config::{
     network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
@@ -55,26 +57,30 @@ impl ListenerInfo {
 }
 
 pub struct ListenersManager {
-    configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+    listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     listener_handles: BTreeMap<&'static str, ListenerInfo>,
 }
 
 impl ListenersManager {
     pub fn new(
-        configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+        listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
         route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     ) -> Self {
-        ListenersManager { configuration_channel, route_configuration_channel, listener_handles: BTreeMap::new() }
+        ListenersManager {
+            listener_configuration_channel,
+            route_configuration_channel,
+            listener_handles: BTreeMap::new(),
+        }
     }
 
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self, ct: tokio_util::sync::CancellationToken) -> Result<()> {
         let (tx_secret_updates, _) = broadcast::channel(16);
         let (tx_route_updates, _) = broadcast::channel(16);
-
+        // TODO: create child token for each listener?
         loop {
             tokio::select! {
-                Some(listener_configuration_change) = self.configuration_channel.recv() => {
+                Some(listener_configuration_change) = self.listener_configuration_channel.recv() => {
                     match listener_configuration_change {
                         ListenerConfigurationChange::Added(boxed) => {
                             let (factory, listener_conf) = *boxed;
@@ -110,9 +116,9 @@ impl ListenersManager {
                         warn!("Internal problem when updating a route: {e}");
                     }
                 },
-                else => {
-                    warn!("All listener manager channels are closed...exiting");
-                    return Err("All listener manager channels are closed...exiting".into());
+                _ = ct.cancelled() => {
+                    warn!("Listener manager exiting");
+                    return Ok(());
                 }
             }
         }
@@ -181,6 +187,8 @@ mod tests {
             bind_device: None,
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info.clone()).unwrap();
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
@@ -220,6 +228,8 @@ mod tests {
             bind_device: None,
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info).unwrap();
 

@@ -218,9 +218,8 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
 
     async fn continuously_discover_resources(&mut self, state: &mut DiscoveryClientState) -> Result<(), XdsError> {
         let (discovery_requests_tx, mut discovery_requests_rx) = mpsc::channel::<DeltaDiscoveryRequest>(100);
-
         let initial_requests = self.build_initial_discovery_requests(state);
-        let outbound_request_stream = async_stream::stream! {
+        let request_stream = async_stream::stream! {
             for request in initial_requests {
                 info!("sending initial discovery request {request:?}");
                 yield request;
@@ -231,12 +230,8 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             }
             warn!("outbound discovery request stream has ended!");
         };
-        let mut inbound_response_stream = self
-            .client_binding
-            .delta_request(outbound_request_stream)
-            .await
-            .map_err(XdsError::GrpcStatus)?
-            .into_inner();
+        let mut response_stream =
+            self.client_binding.delta_request(request_stream).await.map_err(XdsError::GrpcStatus)?.into_inner();
         info!("xDS stream established");
         state.reset_backoff();
 
@@ -245,14 +240,14 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 Some(event) = self.subscriptions_rx.recv() => {
                     self.process_subscription_event(event, state, &discovery_requests_tx).await;
                 }
-                discovered = inbound_response_stream.message() => {
+                discovered = response_stream.message() => {
                     let payload = discovered?;
                     let discovery_response = payload.ok_or(XdsError::UnknownResourceType("empty payload received".to_owned()))?;
                     self.process_discovery_response(discovery_response, &discovery_requests_tx, state).await?;
-                },
+                }
                 else => {
-                    warn!("xDS channels are closed...exiting");
-                    return Ok(())
+                    warn!("xDS stream has ended");
+                    return Ok(());
                 }
             }
         }
@@ -313,7 +308,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
         info!(type_url = type_url.to_string(), size = response.resources.len(), "received config resources from xDS");
         let for_removal = Self::process_resource_ids_for_removal(state, &response, type_url);
 
-        match Self::decode_pending_updates(&response, type_url) {
+        match Self::decode_response(&response, type_url) {
             Ok(mut decoded_updates) => {
                 let (internal_ack_tx, internal_ack_rx) = oneshot::channel::<Vec<RejectedConfig>>();
 
@@ -441,7 +436,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             .collect()
     }
 
-    fn decode_pending_updates(
+    fn decode_response(
         response: &DeltaDiscoveryResponse,
         type_url: TypeUrl,
     ) -> Result<Vec<XdsResourceUpdate>, Vec<RejectedConfig>> {

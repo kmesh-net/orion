@@ -34,6 +34,8 @@ parking_lot                    = "0.12.3"
 tokio.workspace                = true
 tower.workspace                = true
 tracing.workspace              = true
+pingora-timeout                = "0.3.0"
+
 
 axum = "0.8.1"
 compact_str.workspace = true
@@ -52,6 +54,7 @@ tracing-subscriber = { workspace = true, features = [
   "registry",
   "std",
 ] }
+tokio-util = "0.7.16"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }
@@ -64,6 +67,9 @@ affinity = "0.1.2"
 axum-test              = "17.2.0"
 orion-data-plane-api.workspace = true
 tracing-test.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
 
 [lints]
 workspace = true

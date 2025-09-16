@@ -33,6 +33,12 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
+    FromTlv {
+        original_destination_address: SocketAddr,
+        tlv_data: HashMap<u8, Vec<u8>>,
+        proxy_peer_address: SocketAddr,
+        proxy_local_address: SocketAddr,
+    },
 }
 
 impl DownstreamConnectionMetadata {
@@ -40,12 +46,14 @@ impl DownstreamConnectionMetadata {
         match self {
             Self::FromSocket { peer_address, .. } => *peer_address,
             Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
+            Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
         }
     }
     pub fn local_address(&self) -> SocketAddr {
         match self {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
+            Self::FromTlv { original_destination_address, .. } => *original_destination_address,
         }
     }
 }
