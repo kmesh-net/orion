@@ -247,6 +247,23 @@ impl XdsConfigurationHandler {
                 match factory {
                     Ok(factory) => {
                         let change = ListenerConfigurationChange::Added(Box::new((factory, listener.clone())));
+                        let subscriptions  = listener.filter_chains.values().filter_map(|fc|
+                            match &fc.terminal_filter{
+                                orion_configuration::config::listener::MainFilter::Http(http_connection_manager) => match &http_connection_manager.route_specifier{
+                                    orion_configuration::config::network_filters::http_connection_manager::RouteSpecifier::Rds(rds_specifier) => Some(async {
+                                        let id= rds_specifier.route_config_name.to_string();
+                                        let maybe_subscribed = subscibtion_manager.subscribe(id.clone(), TypeUrl::RouteConfiguration).await;
+                                        debug!("Updating subscription for {id} {} {maybe_subscribed:?} ", TypeUrl::RouteConfiguration);
+                                }),
+                                    _ => None,
+                                }
+
+                                orion_configuration::config::listener::MainFilter::Tcp(_) => None,
+                            }
+                        ).collect::<Vec<_>>();
+
+                        let _res = join_all(subscriptions).await;
+                            
                         let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
                         // update access logs configuration...
                         self.access_log_listener_update(&id, &listener).await;

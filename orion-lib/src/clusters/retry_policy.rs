@@ -25,6 +25,7 @@ use orion_configuration::config::network_filters::http_connection_manager::{Retr
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 
 use tokio::time::error::Elapsed;
+use tracing::warn;
 
 use crate::{body::response_flags::ResponseFlags, Error as BoxError};
 use std::{error::Error, io};
@@ -277,6 +278,9 @@ impl<B: Body> RetryCondition<'_, B> {
                         return true;
                     }
                 },
+                _ => {
+                    warn!("Unsupported retry policy {policy:?}");
+                }        
             }
         }
         false
