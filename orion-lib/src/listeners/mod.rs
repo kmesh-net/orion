@@ -16,6 +16,7 @@
 //
 
 pub(crate) mod access_log;
+pub(crate) mod drain_signaling;
 pub(crate) mod filter_state;
 pub(crate) mod filterchain;
 pub(crate) mod http_connection_manager;

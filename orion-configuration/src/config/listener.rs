@@ -37,10 +37,20 @@ use std::{
 
 use orion_interner::StringInterner;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DrainType {
+    #[default]
+    Default,
+    ModifyOnly,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Listener {
     pub name: CompactString,
     pub address: SocketAddr,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub version_info: Option<String>,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -53,6 +63,8 @@ pub struct Listener {
     pub with_tlv_listener_filter: bool,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub tlv_listener_filter_config: Option<super::listener_filters::TlvListenerFilterConfig>,
+    #[serde(default)]
+    pub drain_type: DrainType,
 }
 
 impl Listener {
@@ -320,7 +332,7 @@ mod envoy_conversions {
     use std::hash::{DefaultHasher, Hash, Hasher};
     use std::str::FromStr;
 
-    use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
+    use super::{DrainType, FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
     use crate::config::{
         common::*,
         core::{Address, CidrRange},
@@ -401,7 +413,7 @@ mod envoy_conversions {
                 per_connection_buffer_limit_bytes,
                 metadata,
                 deprecated_v1,
-                drain_type,
+                // drain_type,
                 // listener_filters,
                 listener_filters_timeout,
                 continue_on_listener_filters_timeout,
@@ -476,6 +488,7 @@ mod envoy_conversions {
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
+                let drain_type = DrainType::try_from(drain_type).unwrap_or_default();
                 Ok(Self {
                     name,
                     address,
@@ -485,9 +498,23 @@ mod envoy_conversions {
                     proxy_protocol_config,
                     with_tlv_listener_filter,
                     tlv_listener_filter_config,
+                    drain_type,
+                    version_info: None,
                 })
             }())
             .with_name(name)
+        }
+    }
+
+    impl TryFrom<i32> for DrainType {
+        type Error = GenericError;
+
+        fn try_from(value: i32) -> Result<Self, Self::Error> {
+            match value {
+                0 => Ok(DrainType::Default),
+                1 => Ok(DrainType::ModifyOnly),
+                _ => Err(GenericError::from_msg(format!("Unknown drain type: {}", value))),
+            }
         }
     }
 

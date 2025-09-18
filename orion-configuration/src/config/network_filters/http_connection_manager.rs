@@ -51,6 +51,9 @@ pub struct HttpConnectionManager {
     #[serde(with = "humantime_serde")]
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub request_timeout: Option<Duration>,
+    #[serde(with = "humantime_serde")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub drain_timeout: Option<Duration>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub http_filters: Vec<HttpFilter>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -564,6 +567,61 @@ mod tests {
         assert!(MatchHostScoreLPM::Wildcard < MatchHostScoreLPM::Suffix("foo.bar.test.com".len()));
         assert!(MatchHostScoreLPM::Wildcard == MatchHostScoreLPM::Wildcard);
     }
+
+    #[test]
+    fn test_drain_timeout_configuration() {
+        let config = HttpConnectionManager {
+            codec_type: CodecType::Auto,
+            route_specifier: RouteSpecifier::RouteConfig(RouteConfiguration {
+                name: "test_route".into(),
+                most_specific_header_mutations_wins: false,
+                response_header_modifier: Default::default(),
+                request_headers_to_add: vec![],
+                request_headers_to_remove: vec![],
+                virtual_hosts: vec![],
+            }),
+            http_filters: vec![],
+            enabled_upgrades: vec![],
+            access_log: vec![],
+            xff_settings: Default::default(),
+            generate_request_id: false,
+            preserve_external_request_id: false,
+            always_set_request_id_in_response: false,
+            tracing: None,
+            request_timeout: Some(Duration::from_secs(30)),
+            drain_timeout: Some(Duration::from_secs(10)),
+        };
+
+        assert_eq!(config.drain_timeout, Some(Duration::from_secs(10)));
+        assert_eq!(config.request_timeout, Some(Duration::from_secs(30)));
+    }
+
+    #[test]
+    fn test_drain_timeout_default() {
+        let config = HttpConnectionManager {
+            codec_type: CodecType::Http1,
+            route_specifier: RouteSpecifier::RouteConfig(RouteConfiguration {
+                name: "test_route_default".into(),
+                most_specific_header_mutations_wins: false,
+                response_header_modifier: Default::default(),
+                request_headers_to_add: vec![],
+                request_headers_to_remove: vec![],
+                virtual_hosts: vec![],
+            }),
+            http_filters: vec![],
+            enabled_upgrades: vec![],
+            access_log: vec![],
+            xff_settings: Default::default(),
+            generate_request_id: false,
+            preserve_external_request_id: false,
+            always_set_request_id_in_response: false,
+            tracing: None,
+            request_timeout: None,
+            drain_timeout: None,
+        };
+
+        assert_eq!(config.drain_timeout, None);
+    }
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -702,7 +760,7 @@ mod envoy_conversions {
                 stream_idle_timeout,
                 // request_timeout,
                 request_headers_timeout,
-                drain_timeout,
+                // drain_timeout,
                 delayed_close_timeout,
                 // access_log,
                 access_log_flush_interval,
@@ -753,6 +811,11 @@ mod envoy_conversions {
                 .transpose()
                 .map_err(|_| GenericError::from_msg("failed to convert into Duration"))
                 .with_node("request_timeout")?;
+            let drain_timeout = drain_timeout
+                .map(duration_from_envoy)
+                .transpose()
+                .map_err(|_| GenericError::from_msg("failed to convert into Duration"))
+                .with_node("drain_timeout")?;
             let enabled_upgrades = upgrade_configs
                 .iter()
                 .filter(|upgrade_config| upgrade_config.enabled.map(|enabled| enabled.value).unwrap_or(true))
@@ -819,6 +882,7 @@ mod envoy_conversions {
                 enabled_upgrades,
                 route_specifier,
                 request_timeout,
+                drain_timeout,
                 access_log,
                 xff_settings,
                 generate_request_id: generate_request_id.map(|v| v.value).unwrap_or(true),
