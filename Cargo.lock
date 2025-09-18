@@ -2286,6 +2286,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "smol_str",
+ "socket2 0.6.0",
  "thiserror 1.0.69",
  "thread-id",
  "thread_local",

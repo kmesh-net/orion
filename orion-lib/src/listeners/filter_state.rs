@@ -21,14 +21,13 @@
 use orion_configuration::config::common::TlvType;
 use std::{collections::HashMap, net::SocketAddr};
 
-
-
 #[derive(Debug, Clone)]
 pub enum DownstreamConnectionMetadata {
     FromSocket {
         peer_address: SocketAddr,
-        local_address: SocketAddr,        
-    },    
+        local_address: SocketAddr,
+        original_dst_address: Option<SocketAddr>,
+    },
     FromProxyProtocol {
         original_peer_address: SocketAddr,
         original_destination_address: SocketAddr,

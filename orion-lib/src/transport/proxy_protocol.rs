@@ -87,7 +87,11 @@ impl ProxyProtocolReader {
             },
             PolicyAction::TransparentPassthrough => {
                 return Ok((
-                    DownstreamConnectionMetadata::FromSocket { peer_address, local_address },
+                    DownstreamConnectionMetadata::FromSocket {
+                        peer_address,
+                        local_address,
+                        original_dst_address: None,
+                    },
                     Box::new(stream.into_rewound_stream()),
                 ));
             },
@@ -230,7 +234,11 @@ impl ProxyProtocolReader {
                         SocketAddr::new(IpAddr::V6(ip.destination_address), ip.destination_port),
                     ),
                     v1::Addresses::Unknown => {
-                        return Ok(DownstreamConnectionMetadata::FromSocket { peer_address, local_address });
+                        return Ok(DownstreamConnectionMetadata::FromSocket {
+                            peer_address,
+                            local_address,
+                            original_dst_address: None,
+                        });
                     },
                 };
                 Ok(DownstreamConnectionMetadata::FromProxyProtocol {
@@ -259,7 +267,11 @@ impl ProxyProtocolReader {
                         return Err(Error::new(format!("Unix socket addresses are not supported: {unix:?}")));
                     },
                     v2::Addresses::Unspecified => {
-                        return Ok(DownstreamConnectionMetadata::FromSocket { peer_address, local_address });
+                        return Ok(DownstreamConnectionMetadata::FromSocket {
+                            peer_address,
+                            local_address,
+                            original_dst_address: None,
+                        });
                     },
                 };
                 let mut tlv_data = HashMap::new();

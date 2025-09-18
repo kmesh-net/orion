@@ -23,7 +23,7 @@ use super::{
     listeners_manager::TlsContextChange,
 };
 use crate::{
-    listeners::filter_state::{DownstreamConnectionMetadata},
+    listeners::filter_state::DownstreamConnectionMetadata,
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::{bind_device::BindDevice, tls_inspector, AsyncStream, ProxyProtocolReader},
     ConversionContext, Error, Result, RouteConfigurationChange,
@@ -40,6 +40,7 @@ use orion_metrics::{
 };
 use rustls::ServerConfig;
 use scopeguard::defer;
+use std::os::fd::AsFd;
 use std::{
     collections::HashMap,
     fmt::Debug,
@@ -214,6 +215,35 @@ impl Listener {
                 maybe_stream = listener.accept() => {
                     match maybe_stream {
                         Ok((stream, peer_addr)) => {
+
+                            let original_dst_address:Option<SocketAddr> = {
+                                let raw_socket = stream.as_fd();
+                                if let Ok(s) = raw_socket.try_clone_to_owned(){
+                                    let socket = socket2::Socket::from(s);
+
+                                    let maybe_v4 = match (socket.original_dst_v4(), stream.local_addr()){
+                                        (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
+                                        _ => None
+
+                                    };
+
+                                    let maybe_v6 = match (socket.original_dst_v6(), stream.local_addr()){
+                                        (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
+                                        _ => None
+                                    };
+                                    match (maybe_v4, maybe_v6){
+                                        (None, None) => None,
+                                        (None, Some(dst)) | (Some(dst), None) => Some(dst),
+                                        (Some(dst1), Some(_)) => Some(dst1),
+                                    }
+                                }else{
+                                    warn!("Unable to obtained a cloned fd for socket... ");
+                                    None
+                                }
+                            };
+
+                            debug!("Original dst address {:?}", original_dst_address);
+
                             let start = std::time::Instant::now();
 
                             // This is a new downstream connection...
@@ -230,7 +260,7 @@ impl Listener {
                             //  we could optimize a little here by either splitting up the filter_chain selection and rbac into the parts that can run
                             // before we have the ClientHello and the ones after. since we might already have enough info to decide to drop the connection
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
-                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, Box::new(stream), start));
+                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, original_dst_address,  Box::new(stream), start));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -261,7 +291,7 @@ impl Listener {
         filter_chains: &'a HashMap<FilterChainMatch, T>,
         downstream_metadata: &DownstreamConnectionMetadata,
         server_name: Option<&str>,
-        detected_transport_protocol: DetectedTransportProtocol
+        detected_transport_protocol: DetectedTransportProtocol,
     ) -> Result<Option<&'a T>> {
         let source_addr = downstream_metadata.peer_address();
         let destination_addr = downstream_metadata.local_address();
@@ -290,7 +320,6 @@ impl Listener {
             }
         }
 
-        
         let mut possible_filters = vec![true; filter_chains.len()];
         let mut scratchpad = vec![MatchResult::NoRule; filter_chains.len()];
 
@@ -356,6 +385,8 @@ impl Listener {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_arguments)]
     async fn process_listener_update(
         listener_name: &'static str,
         filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
@@ -363,6 +394,7 @@ impl Listener {
         proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
         local_address: SocketAddr,
         peer_addr: SocketAddr,
+        original_dst_address: Option<SocketAddr>,
         mut stream: AsyncStream,
         start_instant: std::time::Instant,
     ) -> Result<()> {
@@ -387,7 +419,7 @@ impl Listener {
             stream = new_stream;
             metadata
         } else {
-            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address }
+            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address, original_dst_address }
         };
         let downstream_metadata = Arc::new(downstream_metadata);
 
@@ -444,11 +476,17 @@ impl Listener {
             None
         };
 
-        let selected_filterchain =
-            Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref(), detected_transport_protocol)?;
+        let selected_filterchain = Self::select_filterchain(
+            &filter_chains,
+            &downstream_metadata,
+            server_name.as_deref(),
+            detected_transport_protocol,
+        )?;
         if let Some(filterchain) = selected_filterchain {
             info!(
-                "{listener_name} : mapping connection from {peer_addr}->{} {:?} to filter chain {}",downstream_metadata.local_address(),server_name.as_deref(),
+                "{listener_name} : mapping connection from {peer_addr}->{} {:?} to filter chain {}",
+                downstream_metadata.local_address(),
+                server_name.as_deref(),
                 filterchain.filter_chain().name
             );
             if let Some(stream) = filterchain.apply_rbac(stream, &downstream_metadata, server_name.as_deref()) {
@@ -625,8 +663,8 @@ socket_options:
                     ],
                     source_prefix_ranges: Vec::new(),
                     source_ports: Vec::new(),
-                    transport_protocol:String::new(),
-                    application_protocols: vec![]
+                    transport_protocol: String::new(),
+                    application_protocols: vec![],
                 },
                 0,
             ),
@@ -636,8 +674,10 @@ socket_options:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
+            original_dst_address: None,
         };
-        let selected = Listener::select_filterchain(&hashmap, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap();
+        let selected =
+            Listener::select_filterchain(&hashmap, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap();
         assert_eq!(selected.copied(), Some(1));
     }
 
@@ -698,11 +738,21 @@ filter_chains:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
+            original_dst_address: None,
         };
         let good_host = Some("host.test");
-        assert!(matches!(Listener::select_filterchain(&m, &metadata, good_host, DetectedTransportProtocol::RawBuffer), Ok(Some(()))));
-        assert!(matches!(Listener::select_filterchain(&m, &metadata, Some("a.wildcard"),DetectedTransportProtocol::RawBuffer), Ok(Some(()))));
-        assert!(matches!(Listener::select_filterchain(&m, &metadata, None,DetectedTransportProtocol::RawBuffer), Ok(None)));
+        assert!(matches!(
+            Listener::select_filterchain(&m, &metadata, good_host, DetectedTransportProtocol::RawBuffer),
+            Ok(Some(()))
+        ));
+        assert!(matches!(
+            Listener::select_filterchain(&m, &metadata, Some("a.wildcard"), DetectedTransportProtocol::RawBuffer),
+            Ok(Some(()))
+        ));
+        assert!(matches!(
+            Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer),
+            Ok(None)
+        ));
     }
 
     #[traced_test]
@@ -732,13 +782,16 @@ filter_chains:
             })
             .collect::<std::result::Result<HashMap<_, _>, _>>()
             .unwrap();
-        
+
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
-        };        
-        assert!(matches!(Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer), Ok(Some(0))));
-        
+            original_dst_address: None,
+        };
+        assert!(matches!(
+            Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer),
+            Ok(Some(0))
+        ));
     }
 
     #[test]
@@ -774,24 +827,64 @@ filter_chains:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
+            original_dst_address: None,
         };
-        assert_eq!(Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap().copied(), Some(3));
         assert_eq!(
-            Listener::select_filterchain(&m, &metadata, Some("this.is.more.specific"),DetectedTransportProtocol::RawBuffer).unwrap().copied(),
+            Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap().copied(),
+            Some(3)
+        );
+        assert_eq!(
+            Listener::select_filterchain(
+                &m,
+                &metadata,
+                Some("this.is.more.specific"),
+                DetectedTransportProtocol::RawBuffer
+            )
+            .unwrap()
+            .copied(),
             Some(0)
         );
         assert_eq!(
-            Listener::select_filterchain(&m, &metadata, Some("not.this.is.more.specific"),DetectedTransportProtocol::RawBuffer).unwrap().copied(),
+            Listener::select_filterchain(
+                &m,
+                &metadata,
+                Some("not.this.is.more.specific"),
+                DetectedTransportProtocol::RawBuffer
+            )
+            .unwrap()
+            .copied(),
             Some(1)
         );
-        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("is.more.specific"),DetectedTransportProtocol::RawBuffer).unwrap().copied(), Some(1));
-
-        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("more.specific"),DetectedTransportProtocol::RawBuffer).unwrap().copied(), Some(2));
         assert_eq!(
-            Listener::select_filterchain(&m, &metadata, Some("this.is.less.specific"),DetectedTransportProtocol::RawBuffer).unwrap().copied(),
+            Listener::select_filterchain(&m, &metadata, Some("is.more.specific"), DetectedTransportProtocol::RawBuffer)
+                .unwrap()
+                .copied(),
+            Some(1)
+        );
+
+        assert_eq!(
+            Listener::select_filterchain(&m, &metadata, Some("more.specific"), DetectedTransportProtocol::RawBuffer)
+                .unwrap()
+                .copied(),
+            Some(2)
+        );
+        assert_eq!(
+            Listener::select_filterchain(
+                &m,
+                &metadata,
+                Some("this.is.less.specific"),
+                DetectedTransportProtocol::RawBuffer
+            )
+            .unwrap()
+            .copied(),
             Some(2)
         );
 
-        assert_eq!(Listener::select_filterchain(&m, &metadata, Some("hello.world"),DetectedTransportProtocol::RawBuffer).unwrap().copied(), Some(3));
+        assert_eq!(
+            Listener::select_filterchain(&m, &metadata, Some("hello.world"), DetectedTransportProtocol::RawBuffer)
+                .unwrap()
+                .copied(),
+            Some(3)
+        );
     }
 }

@@ -1,9 +1,9 @@
 [package]
-edition.workspace      = true
+edition.workspace = true
 license-file.workspace = true
-name                   = "orion-lib"
+name = "orion-lib"
 rust-version.workspace = true
-version.workspace      = true
+version.workspace = true
 
 [dependencies]
 abort-on-drop.workspace = true
@@ -52,6 +52,7 @@ rustls-pemfile = "2.1"
 rustls-platform-verifier = { version = "0.3" }
 rustls-webpki = "0.102"
 scopeguard = "1.2.0"
+socket2 = "0.6"
 serde.workspace = true
 smol_str = "0.3.2"
 thiserror.workspace = true
@@ -75,14 +76,14 @@ hyperlocal = "0.9.1"
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true
-serde_yaml.workspace           = true
-tracing-test.workspace         = true
+serde_yaml.workspace = true
+tracing-test.workspace = true
 
 [features]
 # making sure we are not using pure ring
 aws_lc_rs = ["rustls/aws_lc_rs"]
-default   = ["aws_lc_rs"]
-metrics   = ["orion-metrics/metrics"]
+default = ["aws_lc_rs"]
+metrics = ["orion-metrics/metrics"]
 
 [lints]
 workspace = true
