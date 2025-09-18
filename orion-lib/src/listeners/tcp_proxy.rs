@@ -20,12 +20,13 @@
 
 use crate::{
     access_log::{log_access, log_access_reserve_balanced, Target},
-    clusters::clusters_manager::{self, RoutingContext},
+    clusters::{balancers::hash_policy::HashState, clusters_manager::{self, RoutingContext}},
     listeners::{access_log::AccessLogContext, filter_state::DownstreamConnectionMetadata},
     transport::connector::TcpErrorContext,
     AsyncStream, Result,
 };
 use compact_str::ToCompactString;
+use http::uri::Authority;
 use orion_configuration::config::{
     cluster::ClusterSpecifier as ClusterSpecifierConfig,
     network_filters::{access_log::AccessLog, tcp_proxy::TcpProxy as TcpProxyConfig},
@@ -36,7 +37,7 @@ use orion_format::{
     LogFormatterLocal,
 };
 use std::{fmt, net::SocketAddr, sync::Arc, time::Instant};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Clone)]
 pub struct TcpProxy {
@@ -85,10 +86,19 @@ impl TcpProxy {
 
         access_loggers.with_context_fn(|| InitContext { start_time: std::time::SystemTime::now() });
 
+        
+
+
         let cluster_selector = &self.cluster;
+        info!("Handling request TCP for {} {:?} {:?}", self.listener_name,  cluster_selector, downstream_metadata);
         let cluster_id = clusters_manager::resolve_cluster(cluster_selector)
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
-        let maybe_connector = clusters_manager::get_tcp_connection(cluster_id, RoutingContext::None);
+                
+        
+        let routing_context = RoutingContext::Authority(Authority::try_from(downstream_metadata.local_address().to_string())?);
+
+        let maybe_connector = clusters_manager::get_tcp_connection(cluster_id, routing_context);
+        info!("Handling request TCP connector {maybe_connector:?}");
 
         let mut bytes_received = 0;
         let mut bytes_sent = 0;

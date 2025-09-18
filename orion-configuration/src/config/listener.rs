@@ -186,6 +186,24 @@ pub struct FilterChainMatch {
 
 }
 
+#[derive(Debug, Clone,PartialEq,Eq,Copy)]
+pub enum DetectedTransportProtocol{
+    RawBuffer, 
+    Ssl
+}
+
+impl TryFrom<&str> for DetectedTransportProtocol{
+    type Error = GenericError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value{
+            "raw_buffer" => Ok(Self::RawBuffer),
+            "ssl" => Ok(Self::Ssl),
+            _ => Err(GenericError::Message("Invalid value for DetectedTransportProtocol".into()))
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MatchResult {
     FailedMatch,
@@ -268,6 +286,20 @@ impl FilterChainMatch {
             })
             .max()
             .unwrap_or(MatchResult::NoRule)
+    }
+
+    pub fn matches_detected_transport_protocol(&self, detected_transport_protocol: DetectedTransportProtocol) -> MatchResult {
+        if self.transport_protocol.is_empty() {
+            MatchResult::NoRule
+        } else if let Ok(transport_protocol) = DetectedTransportProtocol::try_from(self.transport_protocol.as_str()) {    
+            if transport_protocol == detected_transport_protocol{
+                MatchResult::Matched(0)
+            }else{
+                MatchResult::FailedMatch    
+            }
+        } else {
+            MatchResult::FailedMatch
+        }
     }
 
     pub fn matches_source_port(&self, source_port: u16) -> MatchResult {

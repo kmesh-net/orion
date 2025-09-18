@@ -189,6 +189,7 @@ impl ClusterOps for OriginalDstCluster {
     }
 
     fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel> {
+        warn!("OriginalDstCluster get connection for {:?}", context);
         match context {
             RoutingContext::Authority(authority) => self.get_http_connection_by_authority(authority),
             RoutingContext::Header(header_value) => self.get_http_connection_by_header(header_value),
@@ -197,6 +198,7 @@ impl ClusterOps for OriginalDstCluster {
     }
 
     fn get_tcp_connection(&mut self, context: RoutingContext) -> Result<TcpChannelConnector> {
+        warn!("OriginalDstCluster get connection for {:?}", context);
         match context {
             RoutingContext::Authority(authority) => self.get_tcp_connection_by_authority(authority),
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority routing context", self.name).into()),
@@ -297,6 +299,8 @@ impl OriginalDstCluster {
 
             if self.endpoints.len() >= MAXIMUM_ENDPOINTS {
                 warn!(
+
+
                     "ORIGINAL_DST cluster {} is running over its connection (pool) limit with {} dynamic endpoints",
                     self.name,
                     self.endpoints.len()

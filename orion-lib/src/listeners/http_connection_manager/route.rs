@@ -49,7 +49,7 @@ use orion_tracing::attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME};
 use orion_tracing::http_tracer::{SpanKind, SpanName};
 use smol_str::ToSmolStr;
 use std::net::SocketAddr;
-use tracing::debug;
+use tracing::{debug, info};
 
 pub struct MatchedRequest<'a> {
     pub request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
@@ -73,11 +73,18 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             route_match,
             websocket_enabled_by_default,
         } = request;
+        let uri = downstream_request.uri().clone();
+
+        info!("Handling request for {} {:?}", uri, &self.cluster_specifier);
         let cluster_id = clusters_manager::resolve_cluster(&self.cluster_specifier)
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
         let hash_state = HashState::new(self.hash_policy.as_slice(), &downstream_request, remote_address);
         let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;
+        
+        
+        info!("Handling request for {} {} {} {:?}", uri, cluster_id, remote_address, routing_requirement);
+        
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
 
         match maybe_channel {

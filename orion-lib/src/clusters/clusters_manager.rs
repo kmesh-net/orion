@@ -54,11 +54,35 @@ pub enum RoutingRequirement {
     Hash,
 }
 
+
 pub enum RoutingContext<'a> {
     None,
     Header(&'a HeaderValue),
     Authority(Authority),
     Hash(HashState<'a>),
+}
+
+impl std::fmt::Debug for RoutingContext<'_>{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::Header(arg0) => f.debug_tuple("Header").field(arg0).finish(),
+            Self::Authority(arg0) => f.debug_tuple("Authority").field(arg0).finish(),
+            Self::Hash(_) => f.debug_tuple("Hash").finish(),
+        }
+    }
+}
+
+impl std::fmt::Display for RoutingContext<'_>{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => Ok(f.write_str("RoutingContext None")?),
+            Self::Header(arg0) => Ok(f.write_str(&format!("RoutingContext header: {arg0:?}"))?),
+            Self::Authority(arg0) => Ok(f.write_str(&format!("RoutingContext authority: {arg0:?}"))?),
+            Self::Hash(_) => Ok(f.write_str("RoutingContext Hash")?),
+        }
+        
+    }
 }
 
 impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>)>
@@ -78,16 +102,29 @@ impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTi
                     .ok_or_else(|| format!("Missing required header '{header_name}' for ORIGINAL_DST cluster"))?;
                 Ok(RoutingContext::Header(header_value))
             },
-            RoutingRequirement::Authority => {
-                let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
-                warn!(msg);
-                Err(msg)
+            RoutingRequirement::Authority => {                           
+                warn!("Routing by Authority {:?} {:?}",request.uri().authority(), request.headers().get(http::header::HOST));
+                if request.uri().authority().is_none(){
+                    if let Some(host) = request.headers().get(http::header::HOST){
+                        Ok(RoutingContext::Authority(Authority::try_from(host.as_bytes()).map_err(|_op| "Routing by Authority.. can't convert host to authority".to_owned())?))
+                    }else{
+                        Err("Routing by Authority.. No host header".to_owned())
+                    }
+                }else{
+                    Ok(RoutingContext::Authority(request.uri().authority().cloned().ok_or("Routing by Authority but not authority".to_owned())?))
+                }
+                
+                // let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
+                
+                
             },
             RoutingRequirement::Hash => Ok(RoutingContext::Hash(hash_state)),
             RoutingRequirement::None => Ok(RoutingContext::None),
         }
     }
 }
+
+
 
 static CLUSTERS_MAP: CachedWatch<ClustersMap> = CachedWatch::new(ClustersMap::new());
 
