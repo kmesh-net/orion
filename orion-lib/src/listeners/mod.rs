@@ -16,9 +16,11 @@
 //
 
 pub(crate) mod access_log;
+pub(crate) mod drain_signaling;
 pub(crate) mod filter_state;
 pub(crate) mod filterchain;
 pub(crate) mod http_connection_manager;
+pub(crate) mod lds_update;
 pub(crate) mod listener;
 pub(crate) mod listeners_manager;
 pub(crate) mod rate_limiter;
