@@ -198,7 +198,7 @@ impl EndpointAddress {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct InternalEndpointAddress {
     pub server_listener_name: CompactString,
     pub endpoint_id: Option<CompactString>,
