@@ -19,7 +19,6 @@
 //
 
 use super::{
-    bind_device::BindDevice,
     connector::LocalConnectorWithDNSResolver,
     policy::{RequestContext, RequestExt},
 };
@@ -50,7 +49,7 @@ use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
     core::envoy_conversions::Address,
-    network_filters::http_connection_manager::RetryPolicy,
+    network_filters::http_connection_manager::RetryPolicy, transport::BindDeviceOptions,
 };
 use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
 use orion_metrics::{metrics::clusters, with_metric};
@@ -126,7 +125,7 @@ pub struct HttpChannelBuilder {
     tls: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
     address: Option<Address>,
     authority: Option<Authority>,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     server_name: Option<ServerName<'static>>,
     http_protocol_options: HttpProtocolOptions,
     connection_timeout: Option<Duration>,
@@ -146,8 +145,8 @@ impl LocalBuilder<HttpsConnector<LocalConnectorWithDNSResolver>, Arc<HttpsClient
 }
 
 impl HttpChannelBuilder {
-    pub fn new(bind_device: Option<BindDevice>) -> Self {
-        Self { bind_device, ..Default::default() }
+    pub fn new(bind_device_options: BindDeviceOptions) -> Self {
+        Self { bind_device_options, ..Default::default() }
     }
 
     pub fn with_tls(self, tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>) -> Self {
@@ -179,12 +178,18 @@ impl HttpChannelBuilder {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub fn build(self) -> crate::Result<HttpChannel> {
+    pub fn build(self) -> crate::Result<HttpChannel> {        
         match self.address {
-            Some(Address::Socket(_, _)) => self.build_channel_from_address(),
+            Some(Address::Socket(_, _)) => self.build_channel_from_authority(),
             Some(Address::Pipe(_, _)) => self.build_channel_from_pipe(),
             None => Err(Error::from("Address is mandatory")),
         }
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub fn build_wit_no_address(self) -> crate::Result<HttpChannel> {        
+        self.build_channel_from_authority()
+        
     }
 
     fn configure_hyper_client(&self) -> Builder {
@@ -225,7 +230,7 @@ impl HttpChannelBuilder {
         }
     }
 
-    fn build_channel_from_address(self) -> crate::Result<HttpChannel> {
+    fn build_channel_from_authority(self) -> crate::Result<HttpChannel> {
         let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
         let client_builder = self.configure_hyper_client();
 
@@ -245,7 +250,7 @@ impl HttpChannelBuilder {
             let connector = LocalConnectorWithDNSResolver {
                 addr: authority.clone(),
                 cluster_name: self.cluster_name.unwrap_or_default(),
-                bind_device: self.bind_device,
+                bind_device_options: self.bind_device_options,
                 timeout: self.connection_timeout,
             };
 
@@ -267,7 +272,7 @@ impl HttpChannelBuilder {
             // Build plain client inline
             let connector = LocalConnectorWithDNSResolver {
                 addr: authority.clone(),
-                bind_device: self.bind_device,
+                bind_device_options: self.bind_device_options,
                 timeout: self.connection_timeout,
                 cluster_name: self.cluster_name.unwrap_or_default(),
             };

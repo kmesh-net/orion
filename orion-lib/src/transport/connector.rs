@@ -30,6 +30,7 @@ use std::{
 use http::uri::Authority;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
+use orion_configuration::config::transport::BindDeviceOptions;
 use orion_error::{Context, WithContext};
 use orion_format::types::ResponseFlags;
 use pingora_timeout::fast_timeout::fast_timeout;
@@ -39,7 +40,7 @@ use tracing::debug;
 
 use crate::clusters::retry_policy::{elapsed, EventError};
 
-use super::{bind_device::BindDevice, resolve};
+use super::{resolve};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -59,7 +60,7 @@ pub struct TcpErrorContext {
 pub struct LocalConnectorWithDNSResolver {
     pub addr: Authority,
     pub cluster_name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub timeout: Option<Duration>,
 }
 
@@ -68,7 +69,8 @@ impl LocalConnectorWithDNSResolver {
         &self,
     ) -> impl Future<Output = std::result::Result<(TcpStream, &'static str), WithContext<ConnectError>>> + 'static {
         let addr = self.addr.clone();
-        let device = self.bind_device.clone();
+        let device = self.bind_device_options.bind_device.clone();
+        let bind_address = self.bind_device_options.bind_address.clone();
         let cluster_name = self.cluster_name;
         let connection_timeout = self.timeout;
 
@@ -138,7 +140,34 @@ impl LocalConnectorWithDNSResolver {
                         .map_into()
                 })?;
             }
+            if let Some(bind_addr) = bind_address{
+                match bind_addr.address(){
+                    orion_configuration::config::core::envoy_conversions::Address::Socket(bind_address, _) => {
+                        let bind_address = bind_address.parse::<std::net::SocketAddr>().map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
+                        WithContext::new(e)
+                            .with_context_data(TcpErrorContext {
+                                upstream_addr: addr,
+                                response_flags: ResponseFlags::UPSTREAM_CONNECTION_FAILURE,
+                                cluster_name,
+                            })
+                            .map_into()
+                    })?;
 
+                        sock.bind(bind_address).map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
+                        WithContext::new(e)
+                            .with_context_data(TcpErrorContext {
+                                upstream_addr: addr,
+                                response_flags: ResponseFlags::UPSTREAM_CONNECTION_FAILURE,
+                                cluster_name,
+                            })
+                            .map_into()
+                    })?
+                        },
+                        
+                    orion_configuration::config::core::envoy_conversions::Address::Pipe(_, _) => (),
+                }                
+            }
+            
             let stream = if let Some(connection_timeout) = connection_timeout {
                 fast_timeout(connection_timeout, sock.connect(addr))
                     .await // Result<Result<TcpStream, io::Error>>, Elapsed>

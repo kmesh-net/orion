@@ -26,7 +26,7 @@ use orion_configuration::config::{
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
     core::envoy_conversions::Address,
-    transport::BindDevice,
+    transport::{BindDeviceOptions},
 };
 
 use crate::{
@@ -45,7 +45,7 @@ use super::{ClusterOps, ClusterType};
 #[derive(Debug, Clone)]
 pub struct DynamicClusterBuilder {
     pub name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     pub health_check: Option<HealthCheck>,
     pub load_balancing_policy: LbPolicy,
@@ -54,7 +54,7 @@ pub struct DynamicClusterBuilder {
 
 impl DynamicClusterBuilder {
     pub fn build(self) -> ClusterType {
-        let DynamicClusterBuilder { name, transport_socket, health_check, load_balancing_policy, bind_device, config } =
+        let DynamicClusterBuilder { name, transport_socket, health_check, load_balancing_policy, bind_device_options, config } =
             self;
         ClusterType::Dynamic(DynamicCluster {
             name,
@@ -62,7 +62,7 @@ impl DynamicClusterBuilder {
             transport_socket,
             health_check,
             load_balancing_policy,
-            bind_device,
+            bind_device_options,
             config,
         })
     }
@@ -71,7 +71,7 @@ impl DynamicClusterBuilder {
 #[derive(Debug, Clone)]
 pub struct DynamicCluster {
     pub name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub(super) load_assignment: Option<ClusterLoadAssignment>,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     pub health_check: Option<HealthCheck>,

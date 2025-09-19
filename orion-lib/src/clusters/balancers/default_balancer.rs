@@ -152,7 +152,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use orion_configuration::config::{cluster::HttpProtocolOptions, core::envoy_conversions::Address};
+    use orion_configuration::config::{cluster::HttpProtocolOptions, core::envoy_conversions::Address, transport::BindDeviceOptions};
     use std::sync::Arc;
 
     use super::DefaultBalancer;
@@ -181,7 +181,7 @@ mod test {
                     auth,
                     address,
                     "test_cluster",
-                    None,
+                    BindDeviceOptions::default(),
                     weight,
                     health_status,
                 )));

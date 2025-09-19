@@ -21,7 +21,7 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use super::{
-    bind_device::BindDevice, connector::LocalConnectorWithDNSResolver, AsyncStream, UpstreamTransportSocketConfigurator,
+    connector::LocalConnectorWithDNSResolver, AsyncStream, UpstreamTransportSocketConfigurator,
 };
 use crate::{
     listeners::filter_state::DownstreamConnectionMetadata,
@@ -29,6 +29,7 @@ use crate::{
 };
 use futures::future::BoxFuture;
 use http::uri::Authority;
+use orion_configuration::config::transport::BindDeviceOptions;
 use rustls::ClientConfig;
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
@@ -51,12 +52,12 @@ impl TcpChannelConnector {
     pub fn new(
         authority: &Authority,
         cluster_name: &'static str,
-        bind_device: Option<BindDevice>,
+        bind_device_options: BindDeviceOptions,
         timeout: Option<Duration>,
         transport_socket: UpstreamTransportSocketConfigurator,
     ) -> Self {
         Self {
-            connector: LocalConnectorWithDNSResolver { addr: authority.clone(), cluster_name, bind_device, timeout },
+            connector: LocalConnectorWithDNSResolver { addr: authority.clone(), cluster_name, bind_device_options, timeout },
             transport_socket,
         }
     }

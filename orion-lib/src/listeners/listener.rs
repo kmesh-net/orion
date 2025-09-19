@@ -216,7 +216,7 @@ impl Listener {
                     match maybe_stream {
                         Ok((stream, peer_addr)) => {
 
-                            let original_dst_address:Option<SocketAddr> = {
+                            let original_destination_address:Option<SocketAddr> = {
                                 let raw_socket = stream.as_fd();
                                 if let Ok(s) = raw_socket.try_clone_to_owned(){
                                     let socket = socket2::Socket::from(s);
@@ -241,9 +241,9 @@ impl Listener {
                                     None
                                 }
                             };
-
-                            debug!("Original dst address {:?}", original_dst_address);
-
+                            
+                            debug!("Original dst address {:?}", original_destination_address);
+                            
                             let start = std::time::Instant::now();
 
                             // This is a new downstream connection...
@@ -260,7 +260,7 @@ impl Listener {
                             //  we could optimize a little here by either splitting up the filter_chain selection and rbac into the parts that can run
                             // before we have the ClientHello and the ones after. since we might already have enough info to decide to drop the connection
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
-                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, original_dst_address,  Box::new(stream), start));
+                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, local_address, peer_addr, original_destination_address,  Box::new(stream), start));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -294,7 +294,8 @@ impl Listener {
         detected_transport_protocol: DetectedTransportProtocol,
     ) -> Result<Option<&'a T>> {
         let source_addr = downstream_metadata.peer_address();
-        let destination_addr = downstream_metadata.local_address();
+        let destination_addr = downstream_metadata.original_destination_address();
+
         fn match_subitem<'a, F: Fn(&FilterChainMatch, T) -> MatchResult, T: Copy>(
             function: F,
             comparand: T,
@@ -394,7 +395,7 @@ impl Listener {
         proxy_protocol_config: Option<Arc<DownstreamProxyProtocolConfig>>,
         local_address: SocketAddr,
         peer_addr: SocketAddr,
-        original_dst_address: Option<SocketAddr>,
+        original_destination_address: Option<SocketAddr>,
         mut stream: AsyncStream,
         start_instant: std::time::Instant,
     ) -> Result<()> {
@@ -419,7 +420,7 @@ impl Listener {
             stream = new_stream;
             metadata
         } else {
-            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address, original_dst_address }
+            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address, original_destination_address }
         };
         let downstream_metadata = Arc::new(downstream_metadata);
 
@@ -674,7 +675,7 @@ socket_options:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
-            original_dst_address: None,
+            original_destination_address: None,
         };
         let selected =
             Listener::select_filterchain(&hashmap, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap();
@@ -738,7 +739,7 @@ filter_chains:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
-            original_dst_address: None,
+            original_destination_address: None,
         };
         let good_host = Some("host.test");
         assert!(matches!(
@@ -786,7 +787,7 @@ filter_chains:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
-            original_dst_address: None,
+            original_destination_address: None,
         };
         assert!(matches!(
             Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer),
@@ -827,7 +828,7 @@ filter_chains:
         let metadata = DownstreamConnectionMetadata::FromSocket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
-            original_dst_address: None,
+            original_destination_address: None,
         };
         assert_eq!(
             Listener::select_filterchain(&m, &metadata, None, DetectedTransportProtocol::RawBuffer).unwrap().copied(),

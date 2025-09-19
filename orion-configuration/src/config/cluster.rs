@@ -26,12 +26,12 @@ pub mod cluster_specifier;
 pub use cluster_specifier::ClusterSpecifier;
 
 
-use crate::config::{core::Address, ConfigSource};
+use crate::config::{core::Address, transport::BindDeviceOptions, ConfigSource};
 
 use super::{
     common::{is_default, MetadataKey},
     secret::TlsCertificate,
-    transport::{BindDevice, CommonTlsValidationContext, TlsParameters, UpstreamTransportSocketConfig},
+    transport::{CommonTlsValidationContext, TlsParameters, UpstreamTransportSocketConfig},
 };
 
 use compact_str::CompactString;
@@ -45,8 +45,8 @@ pub struct Cluster {
     pub discovery_settings: ClusterDiscoveryType,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub transport_socket: Option<UpstreamTransportSocketConfig>,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub bind_device: Option<BindDevice>,
+    #[serde(default = "Default::default")]
+    pub bind_device_options: BindDeviceOptions,
     #[serde(skip_serializing_if = "is_default", default)]
     pub load_balancing_policy: LbPolicy,
     #[serde(skip_serializing_if = "is_default", default)]
@@ -266,7 +266,7 @@ mod envoy_conversions {
     };
     use crate::config::{
         cluster::EdsClusterConfig, common::*, core::Address, transport::{
-            BindDevice, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket, UpstreamTransportSocketConfig,
+            BindAddress, BindDeviceOptions, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket, UpstreamTransportSocketConfig
         }, util::duration_from_envoy, ConfigSource
     };
     use compact_str::CompactString;
@@ -501,12 +501,14 @@ mod envoy_conversions {
                 .with_node("cluster_discovery_type")?;
                 //fixme(hayley): the envoy protobuf documentation says:
                 // > If the address and port are empty, no bind will be performed.
-                // but its unclear what adress this is refering to. For now we will always bind.
-                let bind_device = upstream_bind_config
-                    .map(bind_device_from_bind_config)
-                    .transpose()
-                    .with_node("upstream_bind_config")?
-                    .flatten();
+                // but its unclear what adress this is refering to. For now we will always bind.            
+                let bind_device_options = if let Some(config) = upstream_bind_config{
+                    bind_device_from_bind_config(config)?
+                }else{
+                    BindDeviceOptions::default()
+                };
+                
+                    
                 let transport_socket = transport_socket
                     .map(UpstreamTransportSocketConfig::try_from)
                     .transpose()
@@ -590,7 +592,7 @@ mod envoy_conversions {
                 Ok(Self {
                     name,
                     discovery_settings,
-                    bind_device,
+                    bind_device_options,
                     transport_socket,
                     load_balancing_policy,
                     http_protocol_options,
@@ -783,9 +785,9 @@ mod envoy_conversions {
     }
 
     //todo(hayley): refactor this to a trait impl when splitting the envoy conversions out of this crate
-    fn bind_device_from_bind_config(value: EnvoyBindConfig) -> Result<Option<BindDevice>, GenericError> {
+    fn bind_device_from_bind_config(value: EnvoyBindConfig) -> Result<BindDeviceOptions, GenericError> {
         let EnvoyBindConfig {
-            source_address: _,
+            source_address,
             freebind,
             socket_options,
             extra_source_addresses,
@@ -801,10 +803,19 @@ mod envoy_conversions {
             local_address_selector
         )?;
         let bind_device = convert_vec!(socket_options)?;
+
+        let address = if let Some(address) = source_address{        
+            Some(TryFrom::try_from(address)?)
+        }else{
+            None
+        };
+        let bind_address = address.map(|a| BindAddress{address:a});
+
         if bind_device.len() > 1 {
             return Err(GenericError::from_msg("at most one bind device is supported")).with_node("socket_options");
         }
-        Ok(bind_device.into_iter().next())
+        let bind_device = bind_device.into_iter().next();        
+        Ok(BindDeviceOptions{bind_device,bind_address})
     }
 
     impl TryFrom<Any> for UpstreamTransportSocketConfig {

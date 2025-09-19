@@ -19,7 +19,7 @@
 //
 
 use super::secret::{TlsCertificate, ValidationContext};
-use crate::config::{cluster, common::*};
+use crate::config::{cluster, common::*, core::Address};
 use base64::Engine as _;
 use compact_str::CompactString;
 use serde::{
@@ -32,16 +32,33 @@ use std::{
     str::FromStr,
 };
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize,Default)]
+pub struct BindDeviceOptions{
+    pub bind_device: Option<BindDevice>,
+    pub bind_address: Option<BindAddress>
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BindDevice {
     /// A interface name as defined by linux `SO_BINDTODEVICE`
-    interface: CString,
+    interface: CString, 
 }
+
+#[derive(Clone, Debug, Eq, Serialize, Deserialize,PartialEq, Hash)]
+pub struct BindAddress {    
+    pub(crate) address: Address, 
+}
+impl BindAddress{
+    pub fn address(&self)->&Address{
+        &self.address
+    }
+}
+
 
 impl BindDevice {
     pub fn interface(&self) -> &CStr {
         &self.interface
-    }
+    }    
 }
 
 impl Serialize for BindDevice {
@@ -146,7 +163,7 @@ impl TryFrom<Vec<u8>> for BindDevice {
                 interface.to_string_lossy()
             )))
         } else {
-            Ok(Self { interface })
+            Ok(Self { interface})
         }
     }
 }

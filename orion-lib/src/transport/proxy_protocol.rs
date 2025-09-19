@@ -90,7 +90,7 @@ impl ProxyProtocolReader {
                     DownstreamConnectionMetadata::FromSocket {
                         peer_address,
                         local_address,
-                        original_dst_address: None,
+                        original_destination_address: None,
                     },
                     Box::new(stream.into_rewound_stream()),
                 ));
@@ -237,7 +237,7 @@ impl ProxyProtocolReader {
                         return Ok(DownstreamConnectionMetadata::FromSocket {
                             peer_address,
                             local_address,
-                            original_dst_address: None,
+                            original_destination_address: None,
                         });
                     },
                 };
@@ -270,7 +270,7 @@ impl ProxyProtocolReader {
                         return Ok(DownstreamConnectionMetadata::FromSocket {
                             peer_address,
                             local_address,
-                            original_dst_address: None,
+                            original_destination_address: None,
                         });
                     },
                 };

@@ -20,7 +20,7 @@
 
 use crate::{
     access_log::{log_access, log_access_reserve_balanced, Target},
-    clusters::{balancers::hash_policy::HashState, clusters_manager::{self, RoutingContext}},
+    clusters::{clusters_manager::{self, RoutingContext}},
     listeners::{access_log::AccessLogContext, filter_state::DownstreamConnectionMetadata},
     transport::connector::TcpErrorContext,
     AsyncStream, Result,

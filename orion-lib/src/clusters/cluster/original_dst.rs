@@ -23,8 +23,7 @@ use std::time::{Duration, Instant};
 use rustls::ClientConfig;
 
 use orion_configuration::config::{
-    cluster::{ClusterDiscoveryType, HealthCheck, OriginalDstRoutingMethod},
-    transport::BindDevice,
+    cluster::{ClusterDiscoveryType, HealthCheck, OriginalDstRoutingMethod}, transport::{BindDeviceOptions}
 };
 use tracing::{debug, warn};
 use webpki::types::ServerName;
@@ -58,7 +57,7 @@ const DEFAULT_CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 #[derive(Debug, Clone)]
 pub struct OriginalDstClusterBuilder {
     pub name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     pub connect_timeout: Option<Duration>,
     pub server_name: Option<ServerName<'static>>,
@@ -67,7 +66,7 @@ pub struct OriginalDstClusterBuilder {
 
 impl OriginalDstClusterBuilder {
     pub fn build(self) -> ClusterType {
-        let OriginalDstClusterBuilder { name, bind_device, transport_socket, connect_timeout, server_name, config } =
+        let OriginalDstClusterBuilder { name, bind_device_options, transport_socket, connect_timeout, server_name, config } =
             self;
         let (routing_requirements, upstream_port_override) =
             if let ClusterDiscoveryType::OriginalDst(ref original_dst_config) = config.discovery_settings {
@@ -98,7 +97,7 @@ impl OriginalDstClusterBuilder {
             name,
             http_config,
             transport_socket,
-            bind_device,
+            bind_device_options,
             cleanup_interval: config.cleanup_interval.unwrap_or(DEFAULT_CLEANUP_INTERVAL),
             endpoints: lrumap::LruMap::new(),
             routing_requirements,
@@ -122,7 +121,7 @@ pub struct OriginalDstCluster {
     pub name: &'static str,
     http_config: HttpChannelConfig,
     pub transport_socket: UpstreamTransportSocketConfigurator,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     cleanup_interval: Duration,
     endpoints: lrumap::LruMap<EndpointAddress, Endpoint>,
     routing_requirements: RoutingRequirement,
@@ -241,7 +240,7 @@ impl OriginalDstCluster {
         self.cleanup_if_needed();
 
         let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
+            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
         let grpc_service = endpoint.grpc_service()?;
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(grpc_service)
@@ -258,7 +257,7 @@ impl OriginalDstCluster {
         self.cleanup_if_needed();
 
         let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
+            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
         let tcp_connector = endpoint.tcp_channel.clone();
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(tcp_connector)
@@ -281,7 +280,7 @@ impl OriginalDstCluster {
         self.cleanup_if_needed();
 
         let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device.clone(), self.transport_socket.clone())?;
+            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
         let http_channel = endpoint.http_channel.clone();
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(http_channel)
@@ -347,13 +346,13 @@ struct Endpoint {
 }
 
 impl Endpoint {
-    fn try_new(
+    fn try_new(        
         authority: &Authority,
         http_config: &HttpChannelConfig,
-        bind_device: Option<BindDevice>,
+        bind_device_options: BindDeviceOptions,
         transport_socket: UpstreamTransportSocketConfigurator,
     ) -> Result<Self> {
-        let builder = HttpChannelBuilder::new(bind_device.clone())
+        let builder = HttpChannelBuilder::new(bind_device_options.clone())            
             .with_authority(authority.clone())
             .with_timeout(http_config.connect_timeout);
         let builder = if let Some(tls_conf) = &http_config.tls_configurator {
@@ -365,11 +364,11 @@ impl Endpoint {
         } else {
             builder
         };
-        let http_channel = builder.with_http_protocol_options(http_config.http_protocol_options.clone()).build()?;
+        let http_channel = builder.with_http_protocol_options(http_config.http_protocol_options.clone()).build_wit_no_address()?;
         let tcp_channel = TcpChannelConnector::new(
             authority,
             "original_dst_cluster",
-            bind_device,
+            bind_device_options,
             http_config.connect_timeout,
             transport_socket,
         );
@@ -700,7 +699,7 @@ mod tests {
             }),
             cleanup_interval,
             transport_socket: None,
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             load_balancing_policy: LbPolicy::ClusterProvided,
             http_protocol_options: HttpProtocolOptions::default(),
             health_check: None,

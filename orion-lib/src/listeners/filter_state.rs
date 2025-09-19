@@ -26,7 +26,7 @@ pub enum DownstreamConnectionMetadata {
     FromSocket {
         peer_address: SocketAddr,
         local_address: SocketAddr,
-        original_dst_address: Option<SocketAddr>,
+        original_destination_address: Option<SocketAddr>,
     },
     FromProxyProtocol {
         original_peer_address: SocketAddr,
@@ -51,4 +51,11 @@ impl DownstreamConnectionMetadata {
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
         }
     }
+    pub fn original_destination_address(&self) -> SocketAddr {
+        match self {
+            Self::FromSocket { original_destination_address: Some(dst_address), .. } => *dst_address,
+            Self::FromSocket { local_address, original_destination_address: None, .. } =>  *local_address,
+            Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
+        }
+    }    
 }

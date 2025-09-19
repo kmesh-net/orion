@@ -266,7 +266,7 @@ pub mod envoy_conversions {
         }
     }
 
-    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Clone)]
+    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Clone, Hash)]
     pub enum Address {
         Socket(String, u16),
         Pipe(String, u32),

@@ -34,7 +34,7 @@ use crate::{
 };
 use http::{uri::Authority, HeaderName, HeaderValue, Request};
 use hyper::body::Incoming;
-use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
+use orion_configuration::config::{cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig}, transport::BindDeviceOptions};
 use orion_interner::StringInterner;
 use rand::{prelude::SliceRandom, thread_rng};
 use std::{
@@ -155,7 +155,7 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                         .with_cla(cla.clone())
                         .with_transport_socket(dynamic_cluster.transport_socket.clone())
                         .with_cluster_name(dynamic_cluster.name)
-                        .with_bind_device(dynamic_cluster.bind_device.clone())
+                        .with_bind_device_options(dynamic_cluster.bind_device_options.clone())
                         .with_lb_policy(dynamic_cluster.load_balancing_policy)
                         .prepare();
                     cla.build().map(|cla| dynamic_cluster.change_load_assignment(Some(cla)))?;
@@ -168,7 +168,7 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                         .with_cla(cla.clone())
                         .with_transport_socket(static_cluster.transport_socket.clone())
                         .with_cluster_name(static_cluster.name)
-                        .with_bind_device(None)
+                        .with_bind_device_options(BindDeviceOptions::default())
                         .with_lb_policy(orion_configuration::config::cluster::LbPolicy::RoundRobin)
                         .prepare();
                     cla.build().map(|cla|static_cluster.change_load_assignment(cla))?;

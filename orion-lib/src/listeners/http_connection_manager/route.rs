@@ -83,7 +83,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
         let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;
         
         
-        info!("Handling request for {} {} {} {:?}", uri, cluster_id, remote_address, routing_requirement);
+        info!("Handling request for {} {} {} routing req = {:?}", uri, cluster_id, remote_address, routing_requirement);
         
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
 
