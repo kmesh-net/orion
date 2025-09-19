@@ -15,8 +15,7 @@
 //
 //
 
-use std::collections::HashMap;
-
+use multimap::MultiMap;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
@@ -58,7 +57,7 @@ impl ListenerInfo {
 pub struct ListenersManager {
     listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
-    listener_handles: HashMap<String, Vec<ListenerInfo>>,
+    listener_handles: MultiMap<String, ListenerInfo>,
     version_counter: u64,
 }
 
@@ -70,7 +69,7 @@ impl ListenersManager {
         ListenersManager {
             listener_configuration_channel,
             route_configuration_channel,
-            listener_handles: HashMap::new(),
+            listener_handles: MultiMap::new(),
             version_counter: 0,
         }
     }
@@ -103,9 +102,8 @@ impl ListenersManager {
                         },
                         ListenerConfigurationChange::GetConfiguration(config_dump_tx) => {
                             let listeners: Vec<ListenerConfig> = self.listener_handles
-                                .values()
-                                .flatten()
-                                .map(|info| info.listener_conf.clone())
+                                .iter()
+                                .map(|(_, info)| info.listener_conf.clone())
                                 .collect();
                             config_dump_tx.send(ConfigDump { listeners: Some(listeners), ..Default::default() }).await?;
                         },
@@ -134,30 +132,24 @@ impl ListenersManager {
         self.version_counter += 1;
         let version = self.version_counter;
 
-        info!("Starting new version {} of listener {}", version, listener_name);
-
-        let listener_name_clone = listener_name.clone();
+        let listener_name_for_async = listener_name.clone();
 
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
-            warn!("Listener {} version {} exited: {}", listener_name_clone, version, error);
+            info!("Listener {} version {} exited: {}", listener_name_for_async, version, error);
         });
 
         let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
+        self.listener_handles.insert(listener_name.clone(), listener_info);
 
-        self.listener_handles.entry(listener_name.clone()).or_insert_with(Vec::new).push(listener_info);
-
-        info!(
-            "Listener {} now has {} active version(s)",
-            listener_name,
-            self.listener_handles.get(&listener_name).unwrap().len()
-        );
+        let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
+        info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
         Ok(())
     }
 
     pub fn stop_listener(&mut self, listener_name: &str) -> Result<()> {
-        if let Some(listeners) = self.listener_handles.get_mut(listener_name) {
+        if let Some(listeners) = self.listener_handles.get_vec_mut(listener_name) {
             info!("Stopping all {} version(s) of listener {}", listeners.len(), listener_name);
             for listener_info in listeners.drain(..) {
                 info!("Stopping listener {} version {}", listener_name, listener_info.version);
@@ -222,7 +214,7 @@ mod tests {
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
-        assert_eq!(man.listener_handles.get(name).unwrap().len(), 2);
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 2);
         tokio::task::yield_now().await;
     }
 
@@ -333,11 +325,11 @@ mod tests {
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
-        assert_eq!(man.listener_handles.get(name).unwrap().len(), 3);
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 3);
 
         man.stop_listener(name).unwrap();
 
-        assert!(man.listener_handles.get(name).is_none());
+        assert!(man.listener_handles.get_vec(name).is_none());
 
         tokio::task::yield_now().await;
     }
