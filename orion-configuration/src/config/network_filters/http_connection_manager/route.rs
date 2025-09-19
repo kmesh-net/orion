@@ -138,18 +138,18 @@ impl AuthorityRewriteSpecifier {
         uri: &http::Uri,
         headers: &http::HeaderMap,
         upstream_authority: &Authority,
-    ) -> Result<Option<Authority>, InvalidUri> {
+    ) -> Option<Authority> {
         match self {
-            AuthorityRewriteSpecifier::Authority(authority) => Ok(Some(authority.clone())),
+            AuthorityRewriteSpecifier::Authority(authority) => Some(authority.clone()),
 
             AuthorityRewriteSpecifier::Header(header_name) => {
                 let Some(header_value) = headers.get(header_name.as_str()) else {
-                    return Ok(None);
+                    return None;
                 };
                 let Ok(header_str) = header_value.to_str() else {
-                    return Ok(None);
+                    return None;
                 };
-                Authority::from_str(header_str).map(Some).map_err(|e| e.into())
+                Authority::from_str(header_str).ok()
             },
 
             AuthorityRewriteSpecifier::Regex(regex) => {
@@ -161,13 +161,13 @@ impl AuthorityRewriteSpecifier {
 
                 let replacement = regex.pattern.replace_all(current_authority, regex.substitution.as_str());
                 if let std::borrow::Cow::Borrowed(_) = replacement {
-                    Ok(None)
+                    None
                 } else {
-                    Authority::from_str(&replacement).map(Some).map_err(|e| e.into())
+                    Authority::from_str(&replacement).ok()
                 }
             },
 
-            AuthorityRewriteSpecifier::AutoHostRewrite => Ok(Some(upstream_authority.clone())),
+            AuthorityRewriteSpecifier::AutoHostRewrite => Some(upstream_authority.clone()),
         }
     }
 }
@@ -698,7 +698,7 @@ mod tests {
         let mut headers = http::HeaderMap::new();
         headers.insert("host", "original.example.com".parse().unwrap());
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, Some(upstream_authority));
     }
 
@@ -711,7 +711,7 @@ mod tests {
         let mut headers = http::HeaderMap::new();
         headers.insert("host", "original.example.com".parse().unwrap());
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, Some(target_authority));
     }
 
@@ -724,7 +724,7 @@ mod tests {
         headers.insert("host", "original.example.com".parse().unwrap());
         headers.insert("x-target-host", "header.example.com:7070".parse().unwrap());
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, Some(Authority::from_str("header.example.com:7070").unwrap()));
     }
 
@@ -736,7 +736,7 @@ mod tests {
         let mut headers = http::HeaderMap::new();
         headers.insert("host", "original.example.com".parse().unwrap());
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, None);
     }
 
@@ -752,7 +752,7 @@ mod tests {
         let mut headers = http::HeaderMap::new();
         headers.insert("host", "api.original.com".parse().unwrap());
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, Some(Authority::from_str("api.rewritten.com").unwrap()));
     }
 
@@ -767,7 +767,7 @@ mod tests {
         let uri = "/path".parse::<http::Uri>().unwrap();
         let headers = http::HeaderMap::new();
 
-        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority).unwrap();
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
         assert_eq!(result, None);
     }
 }

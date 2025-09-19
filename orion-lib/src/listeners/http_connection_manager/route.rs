@@ -99,9 +99,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     };
 
                     let authority_replacement = if let Some(authority_rewrite) = &self.authority_rewrite {
-                        authority_rewrite
-                            .apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
-                            .with_context_msg("invalid authority after rewrite")?
+                        authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
                     } else {
                         None
                     };
