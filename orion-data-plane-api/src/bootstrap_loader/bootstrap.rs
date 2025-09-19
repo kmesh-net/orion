@@ -235,6 +235,7 @@ impl BootstrapResolver for BootstrapLoader {
             .ok_or(BootstrapResolveErr::InvalidListener)
     }
 
+    #[allow(clippy::unwrap_used)]
     fn get_static_route_configs(&self) -> Result<Vec<RouteConfiguration>, BootstrapResolveErr> {
         let mut res = Vec::new();
         for listener in self
