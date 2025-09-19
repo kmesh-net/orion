@@ -105,7 +105,9 @@ impl Clone for LogFormatter {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Deserialize)]
 pub struct LogFormatterLocal {
     local: Arc<LogFormatterConf>,
     format: Vec<StringType>,

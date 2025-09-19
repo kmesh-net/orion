@@ -72,6 +72,39 @@ impl PartialEq for EndpointAddressType {
 
 impl Eq for EndpointAddressType {}
 
+impl EndpointAddressType {
+    pub fn to_endpoint_address(&self) -> EndpointAddress {
+        match self {
+            EndpointAddressType::Socket(authority, _, _) => {
+                let addr_str = authority.as_str();
+                if let Ok(socket_addr) = addr_str.parse::<std::net::SocketAddr>() {
+                    EndpointAddress::Socket(socket_addr)
+                } else {
+                    panic!("Cannot convert authority back to socket address: {}", addr_str);
+                }
+            },
+            EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),
+        }
+    }
+}
+
+impl PartialOrd for EndpointAddressType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for EndpointAddressType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (Self::Socket(a, _, _), Self::Socket(b, _, _)) => a.as_str().cmp(b.as_str()),
+            (Self::Internal(a, _), Self::Internal(b, _)) => a.cmp(b),
+            (Self::Socket(_, _, _), Self::Internal(_, _)) => std::cmp::Ordering::Less,
+            (Self::Internal(_, _), Self::Socket(_, _, _)) => std::cmp::Ordering::Greater,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InternalConnection {
     pub server_listener_name: CompactString,
@@ -95,6 +128,13 @@ impl LbEndpoint {
                 tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
                 authority
             },
+        }
+    }
+
+    pub fn socket_authority(&self) -> Option<&Authority> {
+        match &self.address {
+            EndpointAddressType::Socket(authority, _, _) => Some(authority),
+            EndpointAddressType::Internal(_, _) => None,
         }
     }
 }
@@ -177,7 +217,7 @@ impl LbEndpoint {
 
 #[derive(Debug, Clone)]
 pub struct PartialLbEndpoint {
-    pub address: EndpointAddressType,
+    pub address: EndpointAddress,
     pub bind_device: Option<BindDevice>,
     pub weight: u32,
     pub health_status: HealthStatus,
@@ -186,7 +226,7 @@ pub struct PartialLbEndpoint {
 impl PartialLbEndpoint {
     fn new(value: &LbEndpoint) -> Self {
         PartialLbEndpoint {
-            address: value.address.clone(),
+            address: value.address.to_endpoint_address(),
             bind_device: value.bind_device.clone(),
             weight: value.weight,
             health_status: value.health_status,
@@ -227,7 +267,8 @@ impl LbEndpointBuilder {
         let PartialLbEndpoint { ref address, bind_device, weight, health_status } = self.endpoint;
 
         let address = match address {
-            EndpointAddressType::Socket(authority, _, _) => {
+            EndpointAddress::Socket(socket_addr) => {
+                let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
                 let mut builder = HttpChannelBuilder::new(bind_device.clone())
                     .with_timeout(self.connect_timeout)
                     .with_authority(authority.clone());
@@ -246,9 +287,9 @@ impl LbEndpointBuilder {
                     self.connect_timeout,
                     self.transport_socket.clone(),
                 );
-                EndpointAddressType::Socket(authority.clone(), http_channel, tcp_channel)
+                EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
-            EndpointAddressType::Internal(internal_addr, _) => EndpointAddressType::Internal(
+            EndpointAddress::Internal(internal_addr) => EndpointAddressType::Internal(
                 internal_addr.clone(),
                 InternalConnection {
                     server_listener_name: internal_addr.server_listener_name.clone(),
@@ -266,28 +307,7 @@ impl TryFrom<LbEndpointConfig> for PartialLbEndpoint {
 
     fn try_from(lb_endpoint: LbEndpointConfig) -> Result<Self> {
         let health_status = lb_endpoint.health_status;
-        let address = match lb_endpoint.address {
-            EndpointAddress::Socket(socket_addr) => {
-                let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
-                // Note: We'll create placeholder channels here; they'll be properly initialized in the builder
-                let http_channel = HttpChannelBuilder::new(None).with_authority(authority.clone()).build()?;
-                let tcp_channel = TcpChannelConnector::new(
-                    &authority,
-                    "placeholder",
-                    None,
-                    Some(Duration::from_secs(5)),
-                    UpstreamTransportSocketConfigurator::default(),
-                );
-                EndpointAddressType::Socket(authority, http_channel, tcp_channel)
-            },
-            EndpointAddress::Internal(internal_addr) => EndpointAddressType::Internal(
-                internal_addr.clone(),
-                InternalConnection {
-                    server_listener_name: internal_addr.server_listener_name.clone(),
-                    endpoint_id: internal_addr.endpoint_id.clone(),
-                },
-            ),
-        };
+        let address = lb_endpoint.address;
         let weight = lb_endpoint.load_balancing_weight.into();
         Ok(PartialLbEndpoint { address, bind_device: None, weight, health_status })
     }

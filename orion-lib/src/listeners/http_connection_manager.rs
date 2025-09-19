@@ -346,7 +346,7 @@ impl fmt::Display for HttpConnectionManager {
 impl HttpConnectionManager {
     #[inline]
     pub fn get_tracing_key(&self) -> TracingKey {
-        TracingKey(self.listener_name.to_string(), self.filter_chain_match_hash)
+        TracingKey(self.listener_name, self.filter_chain_match_hash)
     }
 
     #[inline]

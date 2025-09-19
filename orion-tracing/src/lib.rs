@@ -109,7 +109,7 @@ pub fn otel_remove_tracers_by_listeners(listeners: &[CompactString]) -> Result<(
         let map_arc = GLOBAL_TRACERS.tracers.load_full();
         let mut cur_map = (*map_arc).clone();
         info!("Removing tracer for listeners: {listeners:?}");
-        cur_map.retain(|TracingKey(name, _), _| !listeners.contains(&name.to_compact_string()));
+        cur_map.retain(|&TracingKey(name, _), _| !listeners.contains(&name.to_compact_string()));
         GLOBAL_TRACERS.tracers.store(Arc::new(cur_map));
         info!("OTEL Tracers: removal done.");
     }
@@ -124,7 +124,7 @@ pub fn otel_update_tracers(tracers: HashMap<TracingKey, TracingConfig>) -> Resul
     let mut cur_map = (*map_arc).clone();
 
     let listeners = tracers.keys().cloned().map(|TracingKey(name, _)| name).collect::<Vec<_>>();
-    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(name));
+    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(&name));
 
     // insert new tracers...
     for (key, ref config) in tracers {

@@ -27,6 +27,7 @@ use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
 use compact_str::CompactString;
 use ipnet::IpNet;
+use orion_interner::StringInterner;
 use serde::{Deserialize, Serialize, Serializer};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{
@@ -80,7 +81,7 @@ impl Listener {
                 match &filter_chain.terminal_filter {
                     MainFilter::Http(http_connection_manager) => {
                         http_connection_manager.tracing.as_ref().map(|tracing| {
-                            (TracingKey(self.name.to_string(), filter_chain_match_hash.finish()), tracing.clone())
+                            (TracingKey(self.name.to_static_str(), filter_chain_match_hash.finish()), tracing.clone())
                         })
                     },
                     MainFilter::Tcp(_) => None,

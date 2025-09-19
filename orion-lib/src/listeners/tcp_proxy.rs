@@ -40,14 +40,14 @@ use tracing::{debug, error};
 
 #[derive(Debug, Clone)]
 pub struct TcpProxy {
-    pub listener_name: String,
+    pub listener_name: &'static str,
     cluster: ClusterSpecifierConfig,
     pub access_log: Vec<AccessLog>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TcpProxyBuilder {
-    listener_name: Option<String>,
+    listener_name: Option<&'static str>,
     tcp_proxy_config: TcpProxyConfig,
 }
 
@@ -58,8 +58,8 @@ impl From<TcpProxyConfig> for TcpProxyBuilder {
 }
 
 impl TcpProxyBuilder {
-    pub fn with_listener_name(self, name: &str) -> Self {
-        TcpProxyBuilder { listener_name: Some(name.to_string()), ..self }
+    pub fn with_listener_name(self, name: &'static str) -> Self {
+        TcpProxyBuilder { listener_name: Some(name), ..self }
     }
     pub fn build(self) -> Result<TcpProxy> {
         let listener_name = self.listener_name.ok_or("listener name is not set")?;

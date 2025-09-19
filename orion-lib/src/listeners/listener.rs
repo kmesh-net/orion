@@ -227,8 +227,8 @@ impl Listener {
             with_tls_inspector,
             proxy_protocol_config,
             with_tlv_listener_filter,
-            mut route_updates_receiver,
-            mut secret_updates_receiver,
+            route_updates_receiver,
+            secret_updates_receiver,
         } = self;
         match address {
             ListenerAddress::Socket(local_address) => {
@@ -335,7 +335,7 @@ impl Listener {
         _internal_config: InternalListenerConfig,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         _with_tls_inspector: bool,
-        with_tlv_listener_filter: bool,
+        _with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {

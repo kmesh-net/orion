@@ -20,7 +20,7 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 use orion_configuration::config::{
-    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::listener::{Listener, ListenerFactory};
@@ -126,8 +126,11 @@ impl ListenersManager {
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
         let listener_name = listener.get_name().to_string();
-        let (addr, dev) = listener.get_socket();
-        info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+        if let Some((addr, dev)) = listener.get_socket() {
+            info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+        } else {
+            info!("Internal listener {}", listener_name);
+        }
 
         self.version_counter += 1;
         let version = self.version_counter;
@@ -281,7 +284,7 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234)),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -298,7 +301,7 @@ mod tests {
         let l2 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l2_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235), // Different port
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235)), // Different port
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -315,7 +318,7 @@ mod tests {
         let l3 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l3_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1236), // Different port
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1236)), // Different port
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,

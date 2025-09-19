@@ -60,10 +60,10 @@ pub struct TracingConfig {
     pub provider: Option<SupportedTracingProvider>,
 }
 
-type ListenerName = String;
+type ListenerName = &'static str;
 type FilterChainMatchHash = u64;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TracingKey(pub ListenerName, pub FilterChainMatchHash);
 
 #[cfg(feature = "envoy-conversions")]
