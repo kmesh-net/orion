@@ -27,6 +27,7 @@ hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
 ipnet = "2.9"
 lru_time_cache = "0.11.11"
+multimap = "0.10.0"
 once_cell = { version = "1.19" }
 opentelemetry = "0.29.0"
 hyper-util.workspace = true
