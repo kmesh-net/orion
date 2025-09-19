@@ -38,7 +38,6 @@ use std::{
     str::FromStr,
     time::Duration,
 };
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
@@ -129,6 +128,47 @@ impl PathRewriteSpecifier {
             }
         }
         Some(PathAndQuery::from_str(&new_path)).transpose()
+    }
+}
+
+impl AuthorityRewriteSpecifier {
+    /// Applies authority rewrite based on the specifier type
+    pub fn apply(
+        &self,
+        uri: &http::Uri,
+        headers: &http::HeaderMap,
+        upstream_authority: &Authority,
+    ) -> Option<Authority> {
+        match self {
+            AuthorityRewriteSpecifier::Authority(authority) => Some(authority.clone()),
+
+            AuthorityRewriteSpecifier::Header(header_name) => {
+                let Some(header_value) = headers.get(header_name.as_str()) else {
+                    return None;
+                };
+                let Ok(header_str) = header_value.to_str() else {
+                    return None;
+                };
+                Authority::from_str(header_str).ok()
+            },
+
+            AuthorityRewriteSpecifier::Regex(regex) => {
+                let current_authority = uri
+                    .authority()
+                    .map(Authority::as_str)
+                    .or_else(|| headers.get(http::header::HOST).and_then(|h| h.to_str().ok()))
+                    .unwrap_or_default();
+
+                let replacement = regex.pattern.replace_all(current_authority, regex.substitution.as_str());
+                if let std::borrow::Cow::Borrowed(_) = replacement {
+                    None
+                } else {
+                    Authority::from_str(&replacement).ok()
+                }
+            },
+
+            AuthorityRewriteSpecifier::AutoHostRewrite => Some(upstream_authority.clone()),
+        }
     }
 }
 
@@ -648,6 +688,87 @@ mod tests {
         let req = Request::builder().uri("/test?x=true").body(()).unwrap();
         let result = route_match.match_request(&req);
         assert!(!result.matched());
+    }
+
+    #[test]
+    fn test_authority_rewrite_auto_host_rewrite() {
+        let authority_rewrite = AuthorityRewriteSpecifier::AutoHostRewrite;
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(upstream_authority));
+    }
+
+    #[test]
+    fn test_authority_rewrite_specific_authority() {
+        let target_authority = Authority::from_str("target.example.com:9090").unwrap();
+        let authority_rewrite = AuthorityRewriteSpecifier::Authority(target_authority.clone());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(target_authority));
+    }
+
+    #[test]
+    fn test_authority_rewrite_header() {
+        let authority_rewrite = AuthorityRewriteSpecifier::Header("x-target-host".into());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+        headers.insert("x-target-host", "header.example.com:7070".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(Authority::from_str("header.example.com:7070").unwrap()));
+    }
+
+    #[test]
+    fn test_authority_rewrite_header_missing() {
+        let authority_rewrite = AuthorityRewriteSpecifier::Header("x-missing-header".into());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_authority_rewrite_regex() {
+        let regex = RegexMatchAndSubstitute {
+            pattern: Regex::new(r"^([^.]+)\.original\.com$").unwrap(),
+            substitution: "${1}.rewritten.com".into(),
+        };
+        let authority_rewrite = AuthorityRewriteSpecifier::Regex(regex);
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://api.original.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "api.original.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(Authority::from_str("api.rewritten.com").unwrap()));
+    }
+
+    #[test]
+    fn test_authority_rewrite_regex_no_host_header() {
+        let regex = RegexMatchAndSubstitute {
+            pattern: Regex::new(r"^([^.]+)\.original\.com$").unwrap(),
+            substitution: "${1}.rewritten.com".into(),
+        };
+        let authority_rewrite = AuthorityRewriteSpecifier::Regex(regex);
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "/path".parse::<http::Uri>().unwrap();
+        let headers = http::HeaderMap::new();
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, None);
     }
 }
 
