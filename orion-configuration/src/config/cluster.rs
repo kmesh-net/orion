@@ -815,7 +815,7 @@ mod envoy_conversions {
             return Err(GenericError::from_msg("at most one bind device is supported")).with_node("socket_options");
         }
         let bind_device = bind_device.into_iter().next();        
-        Ok(BindDeviceOptions{bind_device,bind_address})
+        Ok(BindDeviceOptions{bind_device,bind_address,..Default::default()})
     }
 
     impl TryFrom<Any> for UpstreamTransportSocketConfig {

@@ -23,11 +23,11 @@ use super::{
         access_log::{AccessLog, AccessLogConf},
         HttpConnectionManager, NetworkRbac, TcpProxy,
     },
-    transport::{BindDevice, CommonTlsContext},
+    transport::CommonTlsContext,
     GenericError,
 };
-use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
+use crate::config::{listener, transport::BindDeviceOptions};
 use compact_str::CompactString;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize, Serializer};
@@ -46,8 +46,8 @@ pub struct Listener {
     pub address: SocketAddr,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub bind_device: Option<BindDevice>,
+    #[serde(default = "Default::default")]
+    pub bind_device_options: BindDeviceOptions,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub with_tls_inspector: bool,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -180,26 +180,25 @@ pub struct FilterChainMatch {
     pub source_prefix_ranges: Vec<IpNet>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub source_ports: Vec<u16>,
-    
+
     pub transport_protocol: String,
     pub application_protocols: Vec<String>,
-
 }
 
-#[derive(Debug, Clone,PartialEq,Eq,Copy)]
-pub enum DetectedTransportProtocol{
-    RawBuffer, 
-    Ssl
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum DetectedTransportProtocol {
+    RawBuffer,
+    Ssl,
 }
 
-impl TryFrom<&str> for DetectedTransportProtocol{
+impl TryFrom<&str> for DetectedTransportProtocol {
     type Error = GenericError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value{
+        match value {
             "raw_buffer" => Ok(Self::RawBuffer),
             "ssl" => Ok(Self::Ssl),
-            _ => Err(GenericError::Message("Invalid value for DetectedTransportProtocol".into()))
+            _ => Err(GenericError::Message("Invalid value for DetectedTransportProtocol".into())),
         }
     }
 }
@@ -288,14 +287,17 @@ impl FilterChainMatch {
             .unwrap_or(MatchResult::NoRule)
     }
 
-    pub fn matches_detected_transport_protocol(&self, detected_transport_protocol: DetectedTransportProtocol) -> MatchResult {
+    pub fn matches_detected_transport_protocol(
+        &self,
+        detected_transport_protocol: DetectedTransportProtocol,
+    ) -> MatchResult {
         if self.transport_protocol.is_empty() {
             MatchResult::NoRule
-        } else if let Ok(transport_protocol) = DetectedTransportProtocol::try_from(self.transport_protocol.as_str()) {    
-            if transport_protocol == detected_transport_protocol{
+        } else if let Ok(transport_protocol) = DetectedTransportProtocol::try_from(self.transport_protocol.as_str()) {
+            if transport_protocol == detected_transport_protocol {
                 MatchResult::Matched(0)
-            }else{
-                MatchResult::FailedMatch    
+            } else {
+                MatchResult::FailedMatch
             }
         } else {
             MatchResult::FailedMatch
@@ -356,6 +358,7 @@ mod envoy_conversions {
     use std::str::FromStr;
 
     use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
+    use crate::config::transport::BindDeviceOptions;
     use crate::config::{
         common::*,
         core::{Address, CidrRange},
@@ -418,7 +421,7 @@ mod envoy_conversions {
                 access_log: _,
                 tcp_backlog_size,
                 max_connections_to_accept_per_socket_event: _,
-                bind_to_port: _,
+                bind_to_port,
                 enable_mptcp,
                 ignore_global_conn_limit: _,
                 listener_specifier,
@@ -454,7 +457,6 @@ mod envoy_conversions {
                 //access_log,
                 tcp_backlog_size,
                 //max_connections_to_accept_per_socket_event,
-                //bind_to_port,
                 enable_mptcp,
                 //                ignore_global_conn_limit,
                 listener_specifier,
@@ -505,7 +507,19 @@ mod envoy_conversions {
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
-                Ok(Self { name, address, filter_chains, bind_device, with_tls_inspector, proxy_protocol_config })
+
+                Ok(Self {
+                    name,
+                    address,
+                    filter_chains,
+                    bind_device_options: BindDeviceOptions {
+                        bind_device,
+                        bind_to_port: bind_to_port.map(|v| v.value),
+                        ..Default::default()
+                    },
+                    with_tls_inspector,
+                    proxy_protocol_config,
+                })
             }())
             .with_name(name)
         }
@@ -675,7 +689,15 @@ mod envoy_conversions {
                 .map(|envoy| CidrRange::try_from(envoy).map(CidrRange::into_ipnet))
                 .collect::<Result<_, _>>()
                 .with_node("source_prefix_ranges")?;
-            Ok(Self { server_names, destination_port, source_ports, destination_prefix_ranges, source_prefix_ranges, transport_protocol, application_protocols })
+            Ok(Self {
+                server_names,
+                destination_port,
+                source_ports,
+                destination_prefix_ranges,
+                source_prefix_ranges,
+                transport_protocol,
+                application_protocols,
+            })
         }
     }
 

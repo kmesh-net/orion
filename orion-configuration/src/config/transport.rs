@@ -32,33 +32,33 @@ use std::{
     str::FromStr,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize,Default)]
-pub struct BindDeviceOptions{
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub struct BindDeviceOptions {
     pub bind_device: Option<BindDevice>,
-    pub bind_address: Option<BindAddress>
+    pub bind_address: Option<BindAddress>,
+    pub bind_to_port: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BindDevice {
     /// A interface name as defined by linux `SO_BINDTODEVICE`
-    interface: CString, 
+    interface: CString,
 }
 
-#[derive(Clone, Debug, Eq, Serialize, Deserialize,PartialEq, Hash)]
-pub struct BindAddress {    
-    pub(crate) address: Address, 
+#[derive(Clone, Debug, Eq, Serialize, Deserialize, PartialEq, Hash)]
+pub struct BindAddress {
+    pub(crate) address: Address,
 }
-impl BindAddress{
-    pub fn address(&self)->&Address{
+impl BindAddress {
+    pub fn address(&self) -> &Address {
         &self.address
     }
 }
 
-
 impl BindDevice {
     pub fn interface(&self) -> &CStr {
         &self.interface
-    }    
+    }
 }
 
 impl Serialize for BindDevice {
@@ -163,7 +163,7 @@ impl TryFrom<Vec<u8>> for BindDevice {
                 interface.to_string_lossy()
             )))
         } else {
-            Ok(Self { interface})
+            Ok(Self { interface })
         }
     }
 }
@@ -496,13 +496,15 @@ mod envoy_conversions {
                     SdsConfig::try_from(x).map(|sds| Self::SdsConfig(sds.name))
                 },
                 EnvoyValidationContextType::CombinedValidationContext(combined_context) => {
-                    if let Some(context) = combined_context.default_validation_context{
+                    if let Some(context) = combined_context.default_validation_context {
                         context.try_into().map(Self::ValidationContext)
-                    }else if let Some(context) = combined_context.validation_context_sds_secret_config{
+                    } else if let Some(context) = combined_context.validation_context_sds_secret_config {
                         SdsConfig::try_from(context).map(|sds| Self::SdsConfig(sds.name))
-                    }else{
-                        Err(GenericError::Message("CombinedValidationContext at least one validation method needs to be set".into()))    
-                    }     
+                    } else {
+                        Err(GenericError::Message(
+                            "CombinedValidationContext at least one validation method needs to be set".into(),
+                        ))
+                    }
                 },
                 EnvoyValidationContextType::ValidationContextCertificateProvider(_) => {
                     Err(GenericError::unsupported_variant("ValidationContextCertificateProvider"))

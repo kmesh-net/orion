@@ -109,7 +109,11 @@ mod config_dump_tests {
     use axum_test::TestServer;
     use compact_str::CompactString;
     use orion_configuration::config::{
-        core::DataSource, network_filters::http_connection_manager::header_modifer::HeaderModifier, secret::{Secret, TlsCertificate, Type, ValidationContext}, transport::BindDeviceOptions, Bootstrap, Listener
+        core::DataSource,
+        network_filters::http_connection_manager::header_modifer::HeaderModifier,
+        secret::{Secret, TlsCertificate, Type, ValidationContext},
+        transport::BindDeviceOptions,
+        Bootstrap, Listener,
     };
     use orion_lib::{ConfigDump, ListenerConfigurationChange};
     use parking_lot::RwLock;
@@ -306,7 +310,7 @@ mod config_dump_tests {
                 );
                 map
             },
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             proxy_protocol_config: None,
             with_tls_inspector: false,
         };

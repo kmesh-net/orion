@@ -32,6 +32,7 @@ use opentelemetry::KeyValue;
 use orion_configuration::config::{
     listener::{DetectedTransportProtocol, FilterChainMatch, Listener as ListenerConfig, MatchResult},
     listener_filters::DownstreamProxyProtocolConfig,
+    transport::BindDeviceOptions,
 };
 use orion_interner::StringInterner;
 use orion_metrics::{
@@ -60,7 +61,7 @@ use tracing::{debug, info, warn};
 struct PartialListener {
     name: &'static str,
     socket_address: std::net::SocketAddr,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     filter_chains: HashMap<FilterChainMatch, FilterchainBuilder>,
     with_tls_inspector: bool,
     proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
@@ -85,7 +86,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
             .into_iter()
             .map(|f| FilterchainBuilder::try_from(ConversionContext::new((f.1, secret_manager))).map(|x| (f.0, x)))
             .collect::<Result<_>>()?;
-        let bind_device = listener.bind_device;
+        let bind_device_options = listener.bind_device_options;
 
         if !with_tls_inspector {
             let has_server_names = filter_chains.keys().any(|m| !m.server_names.is_empty());
@@ -99,7 +100,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
         Ok(PartialListener {
             name,
             socket_address: addr,
-            bind_device,
+            bind_device_options,
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
@@ -116,7 +117,7 @@ impl ListenerFactory {
         let PartialListener {
             name,
             socket_address,
-            bind_device,
+            bind_device_options,
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
@@ -130,7 +131,7 @@ impl ListenerFactory {
         Ok(Listener {
             name,
             socket_address,
-            bind_device,
+            bind_device_options,
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
@@ -152,7 +153,7 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for ListenerFactory {
 pub struct Listener {
     name: &'static str,
     socket_address: std::net::SocketAddr,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     pub filter_chains: HashMap<FilterChainMatch, FilterchainType>,
     with_tls_inspector: bool,
     proxy_protocol_config: Option<DownstreamProxyProtocolConfig>,
@@ -171,7 +172,7 @@ impl Listener {
         Listener {
             name,
             socket_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             filter_chains: HashMap::new(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
@@ -184,21 +185,21 @@ impl Listener {
         self.name
     }
     pub fn get_socket(&self) -> (&std::net::SocketAddr, Option<&BindDevice>) {
-        (&self.socket_address, self.bind_device.as_ref())
+        (&self.socket_address, self.bind_device_options.bind_device.as_ref())
     }
 
     pub async fn start(self) -> Error {
         let Self {
             name,
             socket_address: local_address,
-            bind_device,
+            bind_device_options,
             filter_chains,
             with_tls_inspector,
             proxy_protocol_config,
             mut route_updates_receiver,
             mut secret_updates_receiver,
         } = self;
-        let listener = match configure_and_start_tcp_listener(local_address, bind_device.as_ref()) {
+        let listener = match configure_and_start_tcp_listener(local_address, bind_device_options) {
             Ok(x) => x,
             Err(e) => return e,
         };
@@ -241,9 +242,9 @@ impl Listener {
                                     None
                                 }
                             };
-                            
+
                             debug!("Original dst address {:?}", original_destination_address);
-                            
+
                             let start = std::time::Instant::now();
 
                             // This is a new downstream connection...
@@ -420,7 +421,11 @@ impl Listener {
             stream = new_stream;
             metadata
         } else {
-            DownstreamConnectionMetadata::FromSocket { peer_address: peer_addr, local_address, original_destination_address }
+            DownstreamConnectionMetadata::FromSocket {
+                peer_address: peer_addr,
+                local_address,
+                original_destination_address,
+            }
         };
         let downstream_metadata = Arc::new(downstream_metadata);
 
@@ -578,18 +583,21 @@ impl Listener {
     }
 }
 
-fn configure_and_start_tcp_listener(addr: SocketAddr, device: Option<&BindDevice>) -> Result<TcpListener> {
+fn configure_and_start_tcp_listener(addr: SocketAddr, bind_device_options: BindDeviceOptions) -> Result<TcpListener> {
     let socket = if addr.is_ipv4() { TcpSocket::new_v4()? } else { TcpSocket::new_v6()? };
     socket.set_reuseaddr(true)?;
     socket.set_keepalive(true)?;
 
-    if let Some(device) = device {
-        crate::transport::bind_device::bind_device(&socket, device)?;
+    if let Some(device) = bind_device_options.bind_device {
+        crate::transport::bind_device::bind_device(&socket, &device)?;
     }
 
     #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
     socket.set_reuseport(true)?;
-    socket.bind(addr)?;
+    if let Some(false) = bind_device_options.bind_to_port {
+    } else {
+        socket.bind(addr)?;
+    }
 
     Ok(socket.listen(128)?)
 }
@@ -648,7 +656,7 @@ socket_options:
         let l = PartialListener::try_from(ctx).unwrap();
         let expected_bind_device = Some(BindDevice::from_str("virt1").unwrap());
 
-        assert_eq!(&l.bind_device, &expected_bind_device);
+        assert_eq!(&l.bind_device_options.bind_device, &expected_bind_device);
     }
 
     #[test]

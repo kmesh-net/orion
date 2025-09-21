@@ -161,7 +161,7 @@ mod tests {
     };
 
     use super::*;
-    use orion_configuration::config::Listener as ListenerConfig;
+    use orion_configuration::config::{transport::BindDeviceOptions, Listener as ListenerConfig};
     use tracing_test::traced_test;
 
     #[traced_test]
@@ -181,7 +181,7 @@ mod tests {
             name: name.into(),
             address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
         };
@@ -220,7 +220,7 @@ mod tests {
             name: name.into(),
             address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
         };
