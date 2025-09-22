@@ -39,7 +39,7 @@ use orion_interner::StringInterner;
 use rand::{prelude::SliceRandom, thread_rng};
 use std::{
     cell::RefCell,
-    collections::{btree_map::Entry as BTreeEntry, BTreeMap},
+    collections::{btree_map::Entry as BTreeEntry, BTreeMap}, net::SocketAddr,
 };
 use tracing::{info, warn};
 
@@ -58,7 +58,7 @@ pub enum RoutingRequirement {
 pub enum RoutingContext<'a> {
     None,
     Header(&'a HeaderValue),
-    Authority(Authority),
+    Authority(Authority, SocketAddr),
     Hash(HashState<'a>),
 }
 
@@ -67,7 +67,7 @@ impl std::fmt::Debug for RoutingContext<'_>{
         match self {
             Self::None => write!(f, "None"),
             Self::Header(arg0) => f.debug_tuple("Header").field(arg0).finish(),
-            Self::Authority(arg0) => f.debug_tuple("Authority").field(arg0).finish(),
+            Self::Authority(arg0,_) => f.debug_tuple("Authority").field(arg0).finish(),
             Self::Hash(_) => f.debug_tuple("Hash").finish(),
         }
     }
@@ -78,22 +78,22 @@ impl std::fmt::Display for RoutingContext<'_>{
         match self {
             Self::None => Ok(f.write_str("RoutingContext None")?),
             Self::Header(arg0) => Ok(f.write_str(&format!("RoutingContext header: {arg0:?}"))?),
-            Self::Authority(arg0) => Ok(f.write_str(&format!("RoutingContext authority: {arg0:?}"))?),
+            Self::Authority(arg0, _) => Ok(f.write_str(&format!("RoutingContext authority: {arg0:?}"))?),
             Self::Hash(_) => Ok(f.write_str("RoutingContext Hash")?),
         }
         
     }
 }
 
-impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>)>
+impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>, SocketAddr)>
     for RoutingContext<'a>
 {
     type Error = String;
 
     fn try_from(
-        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>),
+        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>, SocketAddr),
     ) -> std::result::Result<Self, Self::Error> {
-        let (routing_requirement, request, hash_state) = value;
+        let (routing_requirement, request, hash_state, original_destination_address) = value;
         match routing_requirement {
             RoutingRequirement::Header(header_name) => {
                 let header_value = request
@@ -106,17 +106,13 @@ impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTi
                 warn!("Routing by Authority {:?} {:?}",request.uri().authority(), request.headers().get(http::header::HOST));
                 if request.uri().authority().is_none(){
                     if let Some(host) = request.headers().get(http::header::HOST){
-                        Ok(RoutingContext::Authority(Authority::try_from(host.as_bytes()).map_err(|_op| "Routing by Authority.. can't convert host to authority".to_owned())?))
+                        Ok(RoutingContext::Authority(Authority::try_from(host.as_bytes()).map_err(|_op| "Routing by Authority.. can't convert host to authority".to_owned())?, original_destination_address))
                     }else{
                         Err("Routing by Authority.. No host header".to_owned())
                     }
                 }else{
-                    Ok(RoutingContext::Authority(request.uri().authority().cloned().ok_or("Routing by Authority but not authority".to_owned())?))
-                }
-                
-                // let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
-                
-                
+                    Ok(RoutingContext::Authority(request.uri().authority().cloned().ok_or("Routing by Authority but not authority".to_owned())?,original_destination_address))
+                }                                                                
             },
             RoutingRequirement::Hash => Ok(RoutingContext::Hash(hash_state)),
             RoutingRequirement::None => Ok(RoutingContext::None),

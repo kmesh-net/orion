@@ -36,7 +36,7 @@ use orion_format::types::ResponseFlags;
 use pingora_timeout::fast_timeout::fast_timeout;
 use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::clusters::retry_policy::{elapsed, EventError};
 
@@ -140,29 +140,33 @@ impl LocalConnectorWithDNSResolver {
                         .map_into()
                 })?;
             }
+            
             if let Some(bind_addr) = bind_address{
                 match bind_addr.address(){
                     orion_configuration::config::core::envoy_conversions::Address::Socket(bind_address, _) => {
-                        let bind_address = bind_address.parse::<std::net::SocketAddr>().map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
+                        let maybe_socket_addr = format!("{bind_address}:0").parse::<std::net::SocketAddr>();                        
+                        let bind_address = maybe_socket_addr.map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {
                                 upstream_addr: addr,
-                                response_flags: ResponseFlags::UPSTREAM_CONNECTION_FAILURE,
+                                response_flags: ResponseFlags::LOCAL_RESET,
                                 cluster_name,
                             })
                             .map_into()
-                    })?;
-
-                        sock.bind(bind_address).map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
+                        })?;
+                        
+                        let maybe_error = sock.bind(bind_address);
+                        debug!("LocalConnectorWithDNSResolver socket bound to {bind_address} {maybe_error:?}");
+                        maybe_error.map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {
                                 upstream_addr: addr,
-                                response_flags: ResponseFlags::UPSTREAM_CONNECTION_FAILURE,
+                                response_flags: ResponseFlags::LOCAL_RESET,
                                 cluster_name,
                             })
                             .map_into()
-                    })?
-                        },
+                        })?
+                    },
                         
                     orion_configuration::config::core::envoy_conversions::Address::Pipe(_, _) => (),
                 }                

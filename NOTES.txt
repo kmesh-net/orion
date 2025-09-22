@@ -42,6 +42,8 @@ Change UnixClient::unix(), it selects Http1 by default
         Client::builder(TokioExecutor::new()).build(UnixConnector)
     }
 
+    
+
 
 
 /usr/local/bin/pilot-agent proxy sidecar --domain default.svc.cluster.local --proxyLogLevel=warning --proxyComponentLogLevel=misc:error --log_output_level=default:info
@@ -133,3 +135,40 @@ k cp -c istio-proxy details-v1-766844796b-zj22b:/var/run/secrets/istio/root-cert
 
 /usr/local/bin/pilot-discovery discovery --monitoringAddr=:15014 --log_output_level=default:info --domain cluster.local --keepaliveMaxServerConnectionAge 30m
 ./out/linux_amd64/pilot-discovery discovery --monitoringAddr=:15014 --log_output_level=all:debug --domain cluster.local --keepaliveMaxServerConnectionAge 30m
+
+
+
+Istio IPTables and Kind
+
+docker exec into kind cluster
+find pod 
+root@envoy-gateway-control-plane:/# ps auxf // search for pid of orion
+sudo nsenter -t ${PROXY_PID} -n iptables-save
+
+*nat
+:PREROUTING ACCEPT [810:48600]
+:INPUT ACCEPT [817:49020]
+:OUTPUT ACCEPT [322:21250]
+:POSTROUTING ACCEPT [0:0]
+:ISTIO_INBOUND - [0:0]
+:ISTIO_IN_REDIRECT - [0:0]
+:ISTIO_OUTPUT - [0:0]
+:ISTIO_REDIRECT - [0:0]
+-A PREROUTING -p tcp -j ISTIO_INBOUND
+-A OUTPUT -j ISTIO_OUTPUT
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15008 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15090 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15021 -j RETURN
+-A ISTIO_INBOUND -p tcp -m tcp --dport 15020 -j RETURN
+-A ISTIO_INBOUND -p tcp -j ISTIO_IN_REDIRECT
+-A ISTIO_IN_REDIRECT -p tcp -j REDIRECT --to-ports 15006
+-A ISTIO_OUTPUT -s 127.0.0.6/32 -o lo -j RETURN
+-A ISTIO_OUTPUT ! -d 127.0.0.1/32 -o lo -p tcp -m tcp ! --dport 15008 -m owner --uid-owner 1337 -j ISTIO_IN_REDIRECT
+-A ISTIO_OUTPUT -o lo -m owner ! --uid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -m owner --uid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT ! -d 127.0.0.1/32 -o lo -p tcp -m tcp ! --dport 15008 -m owner --gid-owner 1337 -j ISTIO_IN_REDIRECT
+-A ISTIO_OUTPUT -o lo -m owner ! --gid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -m owner --gid-owner 1337 -j RETURN
+-A ISTIO_OUTPUT -d 127.0.0.1/32 -j RETURN
+-A ISTIO_OUTPUT -j ISTIO_REDIRECT
+-A ISTIO_REDIRECT -p tcp -j REDIRECT --to-ports 15001

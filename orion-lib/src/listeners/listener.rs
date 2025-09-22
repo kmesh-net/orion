@@ -595,11 +595,13 @@ fn configure_and_start_tcp_listener(addr: SocketAddr, bind_device_options: BindD
     #[cfg(all(unix, not(target_os = "solaris"), not(target_os = "illumos")))]
     socket.set_reuseport(true)?;
     if let Some(false) = bind_device_options.bind_to_port {
+        Ok(socket.listen(128)?)
     } else {
         socket.bind(addr)?;
+        Ok(socket.listen(128)?)
     }
 
-    Ok(socket.listen(128)?)
+    
 }
 
 #[cfg(test)]

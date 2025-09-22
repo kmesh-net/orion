@@ -759,6 +759,7 @@ impl
                                     retry_policy: chosen_route.vh.retry_policy.as_ref(),
                                     route_match: chosen_route.route_match,
                                     remote_address: downstream_metadata.peer_address(),
+                                    original_destination_address: downstream_metadata.original_destination_address(),
                                     websocket_enabled_by_default,
                                 },
                                 &connection_manager,

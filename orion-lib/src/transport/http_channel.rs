@@ -187,7 +187,7 @@ impl HttpChannelBuilder {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub fn build_wit_no_address(self) -> crate::Result<HttpChannel> {        
+    pub fn build_with_no_address(self) -> crate::Result<HttpChannel> {        
         self.build_channel_from_authority()
         
     }

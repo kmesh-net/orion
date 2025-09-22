@@ -95,7 +95,7 @@ impl TcpProxy {
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
                 
         
-        let routing_context = RoutingContext::Authority(Authority::try_from(downstream_metadata.local_address().to_string())?);
+        let routing_context = RoutingContext::Authority(Authority::try_from(downstream_metadata.local_address().to_string())?, downstream_metadata.original_destination_address());
 
         let maybe_connector = clusters_manager::get_tcp_connection(cluster_id, routing_context);
         info!("Handling request TCP connector {maybe_connector:?}");
