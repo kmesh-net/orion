@@ -18,13 +18,19 @@
 //
 //
 
-use std::{collections::BTreeSet, net::{IpAddr, SocketAddr}, str::FromStr, time::{Duration, Instant}};
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
-use rustls::ClientConfig;
 use if_addrs;
 use orion_configuration::config::{
-    cluster::{ClusterDiscoveryType, HealthCheck, OriginalDstRoutingMethod}, transport::{BindDeviceOptions}
+    cluster::{ClusterDiscoveryType, HealthCheck, OriginalDstRoutingMethod},
+    transport::BindDeviceOptions,
 };
+use rustls::ClientConfig;
 use tracing::{debug, warn};
 use webpki::types::ServerName;
 
@@ -66,8 +72,14 @@ pub struct OriginalDstClusterBuilder {
 
 impl OriginalDstClusterBuilder {
     pub fn build(self) -> ClusterType {
-        let OriginalDstClusterBuilder { name, bind_device_options, transport_socket, connect_timeout, server_name, config } =
-            self;
+        let OriginalDstClusterBuilder {
+            name,
+            bind_device_options,
+            transport_socket,
+            connect_timeout,
+            server_name,
+            config,
+        } = self;
         let (routing_requirements, upstream_port_override) =
             if let ClusterDiscoveryType::OriginalDst(ref original_dst_config) = config.discovery_settings {
                 let routing_req = match &original_dst_config.routing_method {
@@ -130,8 +142,6 @@ pub struct OriginalDstCluster {
     pub config: orion_configuration::config::cluster::Cluster,
 }
 
-
-
 impl ClusterOps for OriginalDstCluster {
     fn get_name(&self) -> &'static str {
         self.name
@@ -190,7 +200,9 @@ impl ClusterOps for OriginalDstCluster {
     fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel> {
         warn!("OriginalDstCluster get HTTP connection for {:?}", context);
         match context {
-            RoutingContext::Authority(authority, original_dst_address) => self.get_http_connection_by_authority(authority,Some(original_dst_address)),
+            RoutingContext::Authority(authority, original_dst_address) => {
+                self.get_http_connection_by_authority(authority, Some(original_dst_address))
+            },
             RoutingContext::Header(header_value) => self.get_http_connection_by_header(header_value),
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority or header routing context", self.name).into()),
         }
@@ -199,14 +211,18 @@ impl ClusterOps for OriginalDstCluster {
     fn get_tcp_connection(&mut self, context: RoutingContext) -> Result<TcpChannelConnector> {
         warn!("OriginalDstCluster get TCP connection for {:?}", context);
         match context {
-            RoutingContext::Authority(authority, original_dst_address) => self.get_tcp_connection_by_authority(authority),
+            RoutingContext::Authority(authority, original_dst_address) => {
+                self.get_tcp_connection_by_authority(authority, Some(original_dst_address))
+            },
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority routing context", self.name).into()),
         }
     }
 
     fn get_grpc_connection(&mut self, context: RoutingContext) -> Result<GrpcService> {
         match context {
-            RoutingContext::Authority(authority, original_dst_address) => self.get_grpc_connection_by_authority(authority),
+            RoutingContext::Authority(authority, original_dst_address) => {
+                self.get_grpc_connection_by_authority(authority)
+            },
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority routing context", self.name).into()),
         }
     }
@@ -239,15 +255,31 @@ impl OriginalDstCluster {
 
         self.cleanup_if_needed();
 
-        let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
+        let endpoint = Endpoint::try_new(
+            &authority,
+            &self.http_config,
+            self.bind_device_options.clone(),
+            self.transport_socket.clone(),
+        )?;
         let grpc_service = endpoint.grpc_service()?;
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(grpc_service)
     }
 
-    pub fn get_tcp_connection_by_authority(&mut self, authority: Authority) -> Result<TcpChannelConnector> {
-        let authority = self.apply_port_override(authority)?;
+    pub fn get_tcp_connection_by_authority(
+        &mut self,
+        authority: Authority,
+        original_dst_address: Option<SocketAddr>,
+    ) -> Result<TcpChannelConnector> {
+        debug!(
+            "Original Dst Cluster TCP original authority {authority} original dst address {original_dst_address:?} "
+        );
+
+        let authority = if let Some(dst_address) = original_dst_address {
+            Authority::from_str(&dst_address.to_string())?
+        } else {
+            authority
+        };
 
         let endpoint_addr = EndpointAddress(authority.clone());
         if let Some(endpoint) = self.endpoints.touch(&endpoint_addr) {
@@ -256,8 +288,15 @@ impl OriginalDstCluster {
 
         self.cleanup_if_needed();
 
-        let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
+        warn!("Original Dst Cluster using authority {authority}");
+
+        let endpoint = Endpoint::try_new(
+            &authority,
+            &self.http_config,
+            self.bind_device_options.clone(),
+            self.transport_socket.clone(),
+        )?;
+
         let tcp_connector = endpoint.tcp_channel.clone();
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(tcp_connector)
@@ -269,15 +308,21 @@ impl OriginalDstCluster {
         self.get_http_connection_by_authority(authority, None)
     }
 
-    pub fn get_http_connection_by_authority(&mut self, authority: Authority, original_dst_address: Option<SocketAddr>) -> Result<HttpChannel> {
-        debug!("Original Dst Cluster original authority {authority} original dst address {original_dst_address:?} ");
-        
-        let authority = if let Some(dst_address) = original_dst_address{
-            Authority::from_str(&dst_address.to_string())?                
-        }else{
+    pub fn get_http_connection_by_authority(
+        &mut self,
+        authority: Authority,
+        original_dst_address: Option<SocketAddr>,
+    ) -> Result<HttpChannel> {
+        debug!(
+            "Original Dst Cluster HTTP original authority {authority} original dst address {original_dst_address:?} "
+        );
+
+        let authority = if let Some(dst_address) = original_dst_address {
+            Authority::from_str(&dst_address.to_string())?
+        } else {
             authority
         };
-        
+
         let authority = self.apply_port_override(authority)?;
 
         let endpoint_addr = EndpointAddress(authority.clone());
@@ -288,8 +333,12 @@ impl OriginalDstCluster {
         self.cleanup_if_needed();
 
         warn!("Original Dst Cluster using authority {authority}");
-        let endpoint =
-            Endpoint::try_new(&authority, &self.http_config, self.bind_device_options.clone(), self.transport_socket.clone())?;
+        let endpoint = Endpoint::try_new(
+            &authority,
+            &self.http_config,
+            self.bind_device_options.clone(),
+            self.transport_socket.clone(),
+        )?;
         let http_channel = endpoint.http_channel.clone();
         self.endpoints.insert(&endpoint_addr, endpoint);
         Ok(http_channel)
@@ -307,8 +356,6 @@ impl OriginalDstCluster {
 
             if self.endpoints.len() >= MAXIMUM_ENDPOINTS {
                 warn!(
-
-
                     "ORIGINAL_DST cluster {} is running over its connection (pool) limit with {} dynamic endpoints",
                     self.name,
                     self.endpoints.len()
@@ -355,13 +402,13 @@ struct Endpoint {
 }
 
 impl Endpoint {
-    fn try_new(        
+    fn try_new(
         authority: &Authority,
         http_config: &HttpChannelConfig,
         bind_device_options: BindDeviceOptions,
         transport_socket: UpstreamTransportSocketConfigurator,
     ) -> Result<Self> {
-        let builder = HttpChannelBuilder::new(bind_device_options.clone())            
+        let builder = HttpChannelBuilder::new(bind_device_options.clone())
             .with_authority(authority.clone())
             .with_timeout(http_config.connect_timeout);
         let builder = if let Some(tls_conf) = &http_config.tls_configurator {
@@ -373,7 +420,8 @@ impl Endpoint {
         } else {
             builder
         };
-        let http_channel = builder.with_http_protocol_options(http_config.http_protocol_options.clone()).build_with_no_address()?;
+        let http_channel =
+            builder.with_http_protocol_options(http_config.http_protocol_options.clone()).build_with_no_address()?;
         let tcp_channel = TcpChannelConnector::new(
             authority,
             "original_dst_cluster",
@@ -731,8 +779,18 @@ mod tests {
         let mut cluster = build_original_dst_cluster(config);
 
         let authority = Authority::from_str("localhost:52000").unwrap();
-        let channel1 = cluster.get_http_connection(RoutingContext::Authority(authority.clone(), "127.0.0.1:9000".parse().expect("Do expect this to work"))).unwrap();
-        let channel2 = cluster.get_http_connection(RoutingContext::Authority(authority, "127.0.0.1:9000".parse().expect("Do expect this to work"))).unwrap();
+        let channel1 = cluster
+            .get_http_connection(RoutingContext::Authority(
+                authority.clone(),
+                "127.0.0.1:9000".parse().expect("Do expect this to work"),
+            ))
+            .unwrap();
+        let channel2 = cluster
+            .get_http_connection(RoutingContext::Authority(
+                authority,
+                "127.0.0.1:9000".parse().expect("Do expect this to work"),
+            ))
+            .unwrap();
         assert_eq!(channel1.upstream_authority, channel2.upstream_authority);
         assert_eq!(cluster.endpoints.len(), 1);
 
@@ -762,7 +820,12 @@ mod tests {
         let mut cluster = build_original_dst_cluster(config);
 
         let authority = Authority::from_str("localhost:52000").unwrap();
-        let _tcp_future = cluster.get_tcp_connection(RoutingContext::Authority(authority, "127.0.0.1:9000".parse().expect("Do expect this to work"))).unwrap();
+        let _tcp_future = cluster
+            .get_tcp_connection(RoutingContext::Authority(
+                authority,
+                "127.0.0.1:9000".parse().expect("Do expect this to work"),
+            ))
+            .unwrap();
 
         let endpoints = cluster.all_tcp_channels();
         assert_eq!(endpoints.len(), 1);
