@@ -16,7 +16,7 @@
 //
 
 use crate::{Error, Result};
-use orion_configuration::config::listener::DrainType as ConfigDrainType;
+use orion_configuration::config::listener::{DrainType as ConfigDrainType, FilterChain, MainFilter};
 use pingora_timeout::fast_timeout::fast_timeout;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,6 +24,13 @@ use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
+
+#[derive(Debug, Clone)]
+pub enum ListenerProtocolConfig {
+    Http { drain_timeout: Option<Duration> },
+    Tcp,
+    Mixed { http_drain_timeout: Option<Duration>, has_tcp: bool, has_http: bool },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrainScenario {
@@ -46,8 +53,8 @@ impl DrainScenario {
 pub enum DrainStrategy {
     Tcp { global_timeout: Duration },
     Http { global_timeout: Duration, drain_timeout: Duration },
+    Mixed { global_timeout: Duration, http_drain_timeout: Duration, tcp_connections: bool, http_connections: bool },
     Immediate,
-    Gradual,
 }
 
 #[derive(Debug, Clone)]
@@ -102,9 +109,10 @@ impl ListenerDrainContext {
 
     pub fn is_timeout_exceeded(&self) -> bool {
         let global_timeout = match &self.strategy {
-            DrainStrategy::Tcp { global_timeout } | DrainStrategy::Http { global_timeout, .. } => *global_timeout,
+            DrainStrategy::Tcp { global_timeout }
+            | DrainStrategy::Http { global_timeout, .. }
+            | DrainStrategy::Mixed { global_timeout, .. } => *global_timeout,
             DrainStrategy::Immediate => Duration::from_secs(0),
-            DrainStrategy::Gradual => Duration::from_secs(600),
         };
 
         self.drain_start.elapsed() >= global_timeout
@@ -113,6 +121,7 @@ impl ListenerDrainContext {
     pub fn get_http_drain_timeout(&self) -> Option<Duration> {
         match &self.strategy {
             DrainStrategy::Http { drain_timeout, .. } => Some(*drain_timeout),
+            DrainStrategy::Mixed { http_drain_timeout, .. } => Some(*http_drain_timeout),
             _ => None,
         }
     }
@@ -126,12 +135,30 @@ pub struct DrainSignalingManager {
     listener_drain_state: Arc<RwLock<Option<ListenerDrainState>>>,
 }
 
+impl ListenerProtocolConfig {
+    pub fn from_listener_analysis(
+        has_http_connection_manager: bool,
+        has_tcp_proxy: bool,
+        http_drain_timeout: Option<Duration>,
+    ) -> Self {
+        match (has_http_connection_manager, has_tcp_proxy) {
+            (true, true) => Self::Mixed { http_drain_timeout, has_tcp: true, has_http: true },
+            (true, false) => Self::Http { drain_timeout: http_drain_timeout },
+            (false, true) => Self::Tcp,
+            (false, false) => {
+                warn!("No HTTP connection manager or TCP proxy found in listener, defaulting to TCP draining");
+                Self::Tcp
+            },
+        }
+    }
+}
+
 impl DrainSignalingManager {
     pub fn new() -> Self {
         Self {
             drain_contexts: Arc::new(RwLock::new(HashMap::new())),
             global_drain_timeout: Duration::from_secs(600),
-            default_http_drain_timeout: Duration::from_millis(5000),
+            default_http_drain_timeout: Duration::from_secs(5),
             listener_drain_state: Arc::new(RwLock::new(None)),
         }
     }
@@ -207,17 +234,21 @@ impl DrainSignalingManager {
     pub async fn initiate_listener_drain(
         &self,
         listener_id: String,
-        is_http: bool,
-        http_drain_timeout: Option<Duration>,
+        protocol_config: ListenerProtocolConfig,
         active_connections: usize,
     ) -> Result<Arc<ListenerDrainContext>> {
-        let strategy = if is_http {
-            DrainStrategy::Http {
+        let strategy = match protocol_config {
+            ListenerProtocolConfig::Http { drain_timeout } => DrainStrategy::Http {
                 global_timeout: self.global_drain_timeout,
-                drain_timeout: http_drain_timeout.unwrap_or(self.default_http_drain_timeout),
-            }
-        } else {
-            DrainStrategy::Tcp { global_timeout: self.global_drain_timeout }
+                drain_timeout: drain_timeout.unwrap_or(self.default_http_drain_timeout),
+            },
+            ListenerProtocolConfig::Tcp => DrainStrategy::Tcp { global_timeout: self.global_drain_timeout },
+            ListenerProtocolConfig::Mixed { http_drain_timeout, has_tcp, has_http } => DrainStrategy::Mixed {
+                global_timeout: self.global_drain_timeout,
+                http_drain_timeout: http_drain_timeout.unwrap_or(self.default_http_drain_timeout),
+                tcp_connections: has_tcp,
+                http_connections: has_http,
+            },
         };
 
         let context = Arc::new(ListenerDrainContext::new(listener_id.clone(), strategy.clone(), active_connections));
@@ -326,6 +357,33 @@ impl DrainSignalingManager {
             Err(Error::new("Timeout waiting for listener drain completion"))
         }
     }
+
+    pub async fn initiate_listener_drain_from_filter_analysis(
+        &self,
+        listener_id: String,
+        filter_chains: &[FilterChain],
+        active_connections: usize,
+    ) -> Result<Arc<ListenerDrainContext>> {
+        let mut has_http = false;
+        let mut has_tcp = false;
+        let mut http_drain_timeout: Option<Duration> = None;
+
+        for filter_chain in filter_chains {
+            match &filter_chain.terminal_filter {
+                MainFilter::Http(http_config) => {
+                    has_http = true;
+                    http_drain_timeout = http_config.drain_timeout;
+                },
+                MainFilter::Tcp(_) => {
+                    has_tcp = true;
+                },
+            }
+        }
+
+        let protocol_config = ListenerProtocolConfig::from_listener_analysis(has_http, has_tcp, http_drain_timeout);
+
+        self.initiate_listener_drain(listener_id, protocol_config, active_connections).await
+    }
 }
 
 impl Clone for DrainSignalingManager {
@@ -403,7 +461,8 @@ mod tests {
         let manager = DrainSignalingManager::new();
         assert!(!manager.has_draining_listeners().await);
 
-        let context = manager.initiate_listener_drain("test".to_string(), false, None, 1).await.unwrap();
+        let context =
+            manager.initiate_listener_drain("test".to_string(), ListenerProtocolConfig::Tcp, 1).await.unwrap();
 
         assert!(manager.has_draining_listeners().await);
         assert_eq!(manager.get_draining_listeners().await, vec!["test"]);
@@ -417,7 +476,14 @@ mod tests {
     async fn test_timeout_behavior() {
         let manager = DrainSignalingManager::with_timeouts(Duration::from_millis(50), Duration::from_millis(25));
 
-        let context = manager.initiate_listener_drain("timeout-test".to_string(), true, None, 5).await.unwrap();
+        let context = manager
+            .initiate_listener_drain(
+                "timeout-test".to_string(),
+                ListenerProtocolConfig::Http { drain_timeout: None },
+                5,
+            )
+            .await
+            .unwrap();
 
         sleep(Duration::from_millis(10)).await;
         sleep(Duration::from_millis(60)).await;
@@ -434,5 +500,48 @@ mod tests {
             !manager.has_draining_listeners().await,
             "Expected manager to no longer track the listener after timeout"
         );
+    }
+
+    #[tokio::test]
+    async fn test_mixed_protocol_drain_context() {
+        let strategy = DrainStrategy::Mixed {
+            global_timeout: Duration::from_secs(600),
+            http_drain_timeout: Duration::from_secs(5),
+            tcp_connections: true,
+            http_connections: true,
+        };
+        let context = ListenerDrainContext::new("test-mixed".to_string(), strategy, 10);
+
+        assert_eq!(context.get_active_connections().await, 10);
+        assert!(!context.is_completed().await);
+        assert_eq!(context.get_http_drain_timeout(), Some(Duration::from_secs(5)));
+        assert!(!context.is_timeout_exceeded());
+    }
+
+    #[tokio::test]
+    async fn test_listener_protocol_config_analysis() {
+        let http_config = ListenerProtocolConfig::from_listener_analysis(true, false, Some(Duration::from_secs(10)));
+        match http_config {
+            ListenerProtocolConfig::Http { drain_timeout } => {
+                assert_eq!(drain_timeout, Some(Duration::from_secs(10)));
+            },
+            _ => panic!("Expected HTTP config"),
+        }
+
+        let tcp_config = ListenerProtocolConfig::from_listener_analysis(false, true, None);
+        match tcp_config {
+            ListenerProtocolConfig::Tcp => {},
+            _ => panic!("Expected TCP config"),
+        }
+
+        let mixed_config = ListenerProtocolConfig::from_listener_analysis(true, true, Some(Duration::from_secs(3)));
+        match mixed_config {
+            ListenerProtocolConfig::Mixed { http_drain_timeout, has_tcp, has_http } => {
+                assert_eq!(http_drain_timeout, Some(Duration::from_secs(3)));
+                assert!(has_tcp);
+                assert!(has_http);
+            },
+            _ => panic!("Expected Mixed config"),
+        }
     }
 }

@@ -127,22 +127,11 @@ impl LdsManager {
 
             let mut listeners_guard = listeners.write().await;
             if let Some(versions) = listeners_guard.get_vec_mut(&name) {
-                let mut to_remove = Vec::new();
-                for (i, listener_info) in versions.iter().enumerate() {
-                    if listener_info.is_draining() {
-                        to_remove.push(i);
-                    }
-                }
-
-                for &index in to_remove.iter().rev() {
-                    if let Some(listener_info) = versions.get_mut(index) {
-                        listener_info.handle.abort();
-                        info!("LDS: Draining version of listener '{}' forcibly closed after timeout", name);
-                    }
-                }
-                for &index in to_remove.iter().rev() {
-                    versions.remove(index);
-                }
+                versions.iter_mut().filter(|listener_info| listener_info.is_draining()).for_each(|listener_info| {
+                    listener_info.handle.abort();
+                    info!("LDS: Draining version of listener '{}' forcibly closed after timeout", name);
+                });
+                versions.retain(|listener_info| !listener_info.is_draining());
                 if versions.is_empty() {
                     listeners_guard.remove(&name);
                 }

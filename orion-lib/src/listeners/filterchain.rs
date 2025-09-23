@@ -235,8 +235,10 @@ impl FilterchainType {
                     .serve_connection_with_upgrades(
                         stream,
                         hyper::service::service_fn(|req: Request<hyper::body::Incoming>| {
-                            let handler_req =
-                                ExtendedRequest { request: req, downstream_metadata: downstream_metadata.clone() };
+                            let handler_req = ExtendedRequest {
+                                request: req,
+                                downstream_metadata: Arc::new(downstream_metadata.connection.clone()),
+                            };
                             req_handler.call(handler_req).map_err(orion_error::Error::into_inner)
                         }),
                     )

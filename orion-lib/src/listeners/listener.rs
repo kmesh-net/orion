@@ -44,7 +44,7 @@ use std::{
     fmt::Debug,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -53,7 +53,8 @@ use tokio::{
     sync::broadcast::{self},
 };
 use tracing::{debug, info, warn};
-use uuid;
+
+static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 struct PartialListener {
@@ -375,7 +376,8 @@ impl Listener {
         drain_handler: Option<Arc<DefaultConnectionHandler>>,
     ) -> Result<()> {
         let shard_id = std::thread::current().id();
-        let connection_id = format!("{}:{}:{}", local_address, peer_addr, uuid::Uuid::new_v4());
+        let connection_id =
+            format!("{}:{}:{}", local_address, peer_addr, CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed));
 
         debug!("New connection {} established on listener {}", connection_id, listener_name);
 
