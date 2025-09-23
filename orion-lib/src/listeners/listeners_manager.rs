@@ -801,11 +801,13 @@ impl ListenersManager {
 
                         if initial_connections > current_connections {
                             let drained_count = initial_connections - current_connections;
-                            let drain_rate = drained_count as f64 / elapsed.as_secs_f64();
-
-                            if drain_rate > 0.0 {
-                                let estimated_remaining_time = current_connections as f64 / drain_rate;
-                                return Some(Instant::now() + Duration::from_secs_f64(estimated_remaining_time));
+                            let elapsed_secs = elapsed.as_secs_f64();
+                            if elapsed_secs > 0.0 {
+                                let drain_rate = drained_count as f64 / elapsed_secs;
+                                if drain_rate > 0.0 {
+                                    let estimated_remaining_time = current_connections as f64 / drain_rate;
+                                    return Some(Instant::now() + Duration::from_secs_f64(estimated_remaining_time));
+                                }
                             }
                         }
 
@@ -1872,8 +1874,6 @@ mod tests {
         println!("After third listener, versions: {:?}", versions.iter().map(|v| v.version).collect::<Vec<_>>());
         assert_eq!(versions.len(), 3);
         let third_version = versions[2].version;
-        assert!(third_version > 0);
-        assert!(third_version > 0);
         assert!(third_version > 0);
 
         drop(routeb_tx1);

@@ -71,10 +71,15 @@ use parking_lot::Mutex;
 use route::MatchedRequest;
 use scopeguard::defer;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::thread::ThreadId;
 use std::time::Instant;
-use std::{fmt, future::Future, result::Result as StdResult, sync::Arc};
+use std::{
+    fmt,
+    future::Future,
+    result::Result as StdResult,
+    sync::{Arc, LazyLock},
+};
 use tokio::sync::mpsc::Permit;
 use tokio::sync::watch;
 use upgrades as upgrade_utils;
@@ -91,8 +96,11 @@ use crate::{
 use crate::{
     body::body_with_timeout::BodyWithTimeout,
     listeners::{
-        access_log::AccessLogContext, drain_signaling::DrainSignalingManager,
-        filter_state::DownstreamConnectionMetadata, listeners_manager::ConnectionManager, rate_limiter::LocalRateLimit,
+        access_log::AccessLogContext,
+        drain_signaling::DrainSignalingManager,
+        filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
+        listeners_manager::ConnectionManager,
+        rate_limiter::LocalRateLimit,
         synthetic_http_response::SyntheticHttpResponse,
     },
     utils::http::{request_head_size, response_head_size},
@@ -101,6 +109,9 @@ use crate::{
 use orion_tracing::http_tracer::{HttpTracer, SpanKind, SpanName};
 use orion_tracing::request_id::{RequestId, RequestIdManager};
 use orion_tracing::trace_context::TraceContext;
+
+static EMPTY_HASHMAP: LazyLock<Arc<HashMap<RouteMatch, Vec<Arc<HttpFilter>>>>> =
+    LazyLock::new(|| Arc::new(HashMap::new()));
 
 #[derive(Debug, Clone)]
 pub struct HttpConnectionManagerBuilder {
@@ -405,7 +416,7 @@ impl HttpConnectionManager {
     }
 
     pub fn remove_route(&self) {
-        self.http_filters_per_route.swap(Arc::new(HashMap::new()));
+        self.http_filters_per_route.swap(EMPTY_HASHMAP.clone());
         let _ = self.router_sender.send_replace(None);
     }
 
@@ -418,10 +429,10 @@ impl HttpConnectionManager {
     }
 
     pub async fn start_draining(&self, drain_state: crate::listeners::drain_signaling::ListenerDrainState) {
-        if let Some(drain_timeout) = self.drain_timeout {
-            let listener_id = format!("{}-{}", self.listener_name, self.filter_chain_match_hash);
-            let _ = self.drain_signaling.initiate_listener_drain(listener_id, true, Some(drain_timeout), 0).await;
-        }
+        let listener_id = format!("{}-{}", self.listener_name, self.filter_chain_match_hash);
+        let protocol_config =
+            crate::listeners::drain_signaling::ListenerProtocolConfig::Http { drain_timeout: self.drain_timeout };
+        let _ = self.drain_signaling.initiate_listener_drain(listener_id, protocol_config, 0).await;
 
         self.drain_signaling.start_listener_draining(drain_state).await;
     }
@@ -628,7 +639,7 @@ pub(crate) struct HttpRequestHandler {
 
 pub struct ExtendedRequest<B> {
     pub request: Request<B>,
-    pub downstream_metadata: Arc<DownstreamMetadata>,
+    pub downstream_metadata: Arc<DownstreamConnectionMetadata>,
 }
 
 #[derive(Debug)]
@@ -1176,7 +1187,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
 
             //
             // 1. evaluate InitHttpContext, if logging is enabled
-            eval_http_init_context(&request, &trans_handler, downstream_metadata.server_name.as_deref());
+            eval_http_init_context(&request, &trans_handler, None);
 
             //
             // 2. create the MetricsBody, which will track the size of the request body
@@ -1334,9 +1345,12 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                 return Ok(response);
             };
 
+            let downstream_metadata_with_server_name =
+                Arc::new(DownstreamMetadata::new(downstream_metadata.as_ref().clone(), None::<String>));
+
             let response = trans_handler
                 .clone()
-                .handle_transaction(route_conf, manager, permit, request, downstream_metadata)
+                .handle_transaction(route_conf, manager, permit, request, downstream_metadata_with_server_name)
                 .await;
 
             trans_handler.trace_status_code(response, listener_name_for_trace)
