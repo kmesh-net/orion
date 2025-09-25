@@ -112,7 +112,10 @@ impl NetworkRbac {
             Action::Deny => enforced_policy.is_none(),
         };
 
-        debug!("NetworkRbac: rule is enforced by {enforced_policy:?} with action: {:?} -> permitted {permitted}", self.action);
+        debug!(
+            "NetworkRbac: rule is enforced by {enforced_policy:?} with action: {:?} -> permitted {permitted}",
+            self.action
+        );
         (permitted, enforced_policy)
     }
 }
@@ -141,8 +144,10 @@ mod tests {
         let permission = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
-        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        let rbac_rule =
+            NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) =
+            rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
         assert!(permitted);
         assert_eq!(rule, Some("my-id".into()));
     }
@@ -151,8 +156,10 @@ mod tests {
         let permission = Permission::DestinationIp("127.0.0.0/24".parse().unwrap());
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
-        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        let rbac_rule =
+            NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) =
+            rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
         assert!(permitted);
         assert_eq!(rule, Some("my-id".into()));
     }
@@ -163,8 +170,10 @@ mod tests {
         let permission1 = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission1, permission2], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
-        let (permitted, rule) =  rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        let rbac_rule =
+            NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) =
+            rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
         assert!(permitted);
         assert_eq!(rule, Some("my-id".into()));
     }
@@ -175,8 +184,10 @@ mod tests {
         let permission1 = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission1, permission2], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
-        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        let rbac_rule =
+            NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) =
+            rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
         assert!(permitted);
         assert_eq!(rule, Some("my-id".into()));
     }
@@ -186,8 +197,10 @@ mod tests {
         let permission = Permission::DestinationIp("127.0.0.0/24".parse().unwrap());
         let principal = Principal::DownstreamRemoteIp("127.0.0.0/24".parse().unwrap());
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
-        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        let rbac_rule =
+            NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) =
+            rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
         assert!(permitted);
         assert_eq!(rule, Some("my-id".into()));
     }
