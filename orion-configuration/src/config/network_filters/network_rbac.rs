@@ -16,18 +16,16 @@
 //
 
 use crate::config::core::StringMatcher;
+use compact_str::CompactString;
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::{collections::BTreeMap, net::SocketAddr};
 use tracing::debug;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct NetworkRbac {
     pub action: Action,
-    //fixme(hayley): replace vec with std::collections::BTreeMap
-    // and include the policy name as Envoy says to apply them
-    // in lexical order
-    pub policies: Vec<Policy>,
+    pub policies: BTreeMap<CompactString, Policy>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -74,7 +72,7 @@ impl<'a> NetworkContext<'a> {
 }
 
 impl Permission {
-    fn is_applicable(&self, ctx: NetworkContext) -> bool {
+    fn is_applicable(&self, ctx: &NetworkContext) -> bool {
         match self {
             Self::Any => true,
             Self::DestinationIp(ip) => ip.contains(&ctx.destination.ip()),
@@ -89,7 +87,7 @@ impl Permission {
 }
 
 impl Principal {
-    fn has_principal(&self, ctx: NetworkContext) -> bool {
+    fn has_principal(&self, ctx: &NetworkContext) -> bool {
         match self {
             Principal::Any => true,
             Principal::DownstreamRemoteIp(ip) => ip.contains(&ctx.downstream.ip()),
@@ -98,7 +96,7 @@ impl Principal {
 }
 
 impl Policy {
-    fn enforce(&self, ctx: NetworkContext) -> bool {
+    fn enforce(&self, ctx: &NetworkContext) -> bool {
         let has_permission = self.permissions.iter().any(|p| p.is_applicable(ctx));
         let has_principal = self.principals.iter().any(|p| p.has_principal(ctx));
         debug!("Enforcing policy permissions {has_permission} principals {has_principal}");
@@ -107,13 +105,15 @@ impl Policy {
 }
 
 impl NetworkRbac {
-    pub fn is_permitted(&self, ctx: NetworkContext) -> bool {
-        let is_enforced = self.policies.iter().any(|p| p.enforce(ctx));
-        debug!("Rule is enforced {is_enforced}");
-        match self.action {
-            Action::Allow => is_enforced,
-            Action::Deny => !is_enforced,
-        }
+    pub fn is_permitted(&self, ctx: &NetworkContext) -> (bool, Option<CompactString>) {
+        let enforced_policy = self.policies.iter().find(|(_, p)| p.enforce(ctx)).map(|(id, _)| id.clone());
+        let permitted = match self.action {
+            Action::Allow => enforced_policy.is_some(),
+            Action::Deny => enforced_policy.is_none(),
+        };
+
+        debug!("NetworkRbac: rule is enforced by {enforced_policy:?} with action: {:?} -> permitted {permitted}", self.action);
+        (permitted, enforced_policy)
     }
 }
 
@@ -141,16 +141,20 @@ mod tests {
         let permission = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None)));
+        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
     #[test]
     fn rule_test_allow_dest_ip_permission_any_principal() {
         let permission = Permission::DestinationIp("127.0.0.0/24".parse().unwrap());
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None)));
+        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -159,8 +163,10 @@ mod tests {
         let permission1 = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission1, permission2], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None)));
+        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
+        let (permitted, rule) =  rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -169,8 +175,10 @@ mod tests {
         let permission1 = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission1, permission2], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None)));
+        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -178,8 +186,10 @@ mod tests {
         let permission = Permission::DestinationIp("127.0.0.0/24".parse().unwrap());
         let principal = Principal::DownstreamRemoteIp("127.0.0.0/24".parse().unwrap());
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None)));
+        let rbac_rule = NetworkRbac { action: Action::Allow, policies: vec![("my-id".into(),policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_network_context("127.0.0.1", 8000, "127.0.0.1", 9000, None));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 }
 
@@ -205,7 +215,10 @@ mod envoy_conversions {
             let EnvoyRbac { action, policies, audit_logging_options } = envoy;
             unsupported_field!(audit_logging_options)?;
             let action = Action::try_from(action).with_node("action")?;
-            let policies = required!(policies)?.into_values().map(Policy::try_from).collect::<Result<_, _>>()?;
+            let policies = required!(policies)?
+                .into_iter()
+                .map(|(id, pol)| Policy::try_from(pol).map(|value| (id.into(), value)))
+                .collect::<Result<_, _>>()?;
             Ok(NetworkRbac { action, policies })
         }
     }

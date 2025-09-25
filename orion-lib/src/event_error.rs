@@ -17,7 +17,9 @@
 
 use http::Response;
 use orion_format::types::ResponseFlags as FmtResponseFlags;
+use orion_interner::StringInterner;
 use std::error::Error as ErrorTrait;
+use compact_str::CompactString;
 use std::io;
 use tokio::time::error::Elapsed;
 
@@ -54,14 +56,14 @@ pub enum EventKind {
     NoHealthyUpstream,
     RouteNotFound,
     UpgradeFailed,
-    RbacAccessDenied,
+    RbacAccessDenied(CompactString),
     RateLimited,
     ViaUpstream,
 }
 
 impl EventKind {
     pub fn code_details(&self) -> Option<ResponseCodeDetails> {
-        match self {
+         match self {
             EventKind::Error(err) => match err {
                 EventError::IoError(err) => Some(ResponseCodeDetails::from(err)),
                 EventError::ConnectTimeout(_) => Some(ResponseCodeDetails("connect_timeout")),
@@ -79,7 +81,7 @@ impl EventKind {
             EventKind::NoHealthyUpstream => Some(ResponseCodeDetails("no_healthy_upstream")),
             EventKind::RouteNotFound => Some(ResponseCodeDetails("route_not_found")),
             EventKind::UpgradeFailed => Some(ResponseCodeDetails("upgrade_failed")),
-            EventKind::RbacAccessDenied => Some(ResponseCodeDetails("rbac_access_denied")),
+            EventKind::RbacAccessDenied(id) => Some(ResponseCodeDetails(format!("rbac_access_denied[{id}]").to_static_str())),
             EventKind::RateLimited => Some(ResponseCodeDetails("rate_limited")),
             EventKind::ViaUpstream => Some(ResponseCodeDetails("via_upstream")),
         }
@@ -93,7 +95,7 @@ impl EventKind {
                 EventError::RouteTimeout => Some(ConnectionTerminationDetails("route timeout was reached")),
                 _ => None,
             },
-            EventKind::RbacAccessDenied => Some(ConnectionTerminationDetails("rbac_access_denied_matched_policy")),
+            EventKind::RbacAccessDenied(id) => Some(ConnectionTerminationDetails(format!("rbac_access_denied_matched_policy[{id}]").to_static_str())),
             _ => None,
         }
     }

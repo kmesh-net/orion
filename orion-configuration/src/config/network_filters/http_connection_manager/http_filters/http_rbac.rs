@@ -15,7 +15,10 @@
 //
 //
 
+use std::collections::BTreeMap;
+
 use crate::config::network_filters::{http_connection_manager::header_matcher::HeaderMatcher, network_rbac::Action};
+use compact_str::CompactString;
 use http::Request;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -23,10 +26,7 @@ use tracing::debug;
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct HttpRbac {
     pub action: Action,
-    //todo(hayley): replace vec with std::collections::BTreeMap
-    // and include the policy name as Envoy says to apply them
-    // in lexical order
-    pub policies: Vec<Policy>,
+    pub policies: BTreeMap<CompactString, Policy>,
 }
 
 //since we support different permission and principals for http vs network rbac, this struct is different from the network rbac
@@ -78,13 +78,16 @@ impl Policy {
 }
 
 impl HttpRbac {
-    pub fn is_permitted<B>(&self, req: &Request<B>) -> bool {
-        let is_enforced = self.policies.iter().any(|p| p.enforce(req));
-        debug!("Rule is enforced {is_enforced}");
-        match self.action {
-            Action::Allow => is_enforced,
-            Action::Deny => !is_enforced,
-        }
+    pub fn is_permitted<B>(&self, req: &Request<B>) -> (bool, Option<CompactString>) {
+        // policies are applied in the lexicographical order of their keys
+        let enforced_policy = self.policies.iter().find(|(_, p)| p.enforce(req)).map(|(name, _)| name.clone());
+        let permitted = match self.action {
+            Action::Allow => enforced_policy.is_some(),
+            Action::Deny => enforced_policy.is_none(),
+        };
+
+        debug!("HttpRbac: rule is enforced by {enforced_policy:?} with action: {:?} -> permitted {permitted}", self.action);
+        (permitted, enforced_policy)
     }
 }
 
@@ -115,8 +118,10 @@ mod rbac_tests {
         let permission = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(&create_host_request("blah.com")));
+        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request("blah.com"));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
     #[test]
     fn rule_test_allow_host_permission_any_principal() {
@@ -124,8 +129,10 @@ mod rbac_tests {
         let permission = Permission::Header(create_host_matcher(host));
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(&create_host_request(host)));
+        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -135,8 +142,10 @@ mod rbac_tests {
         let permission2 = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission1, permission2], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(&create_host_request(host)));
+        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -145,26 +154,34 @@ mod rbac_tests {
         let permission = Permission::Header(create_host_matcher(host));
         let principal = Principal::Header(create_host_matcher(host));
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![policy] };
-        assert!(rbac_rule.is_permitted(&create_host_request(host)));
+        let rbac_rule = HttpRbac { action: Action::Allow, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
     fn rule_test_deny_any() {
+        let host = "blah.com";
         let permission = Permission::Any;
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![policy] };
-        assert!(!rbac_rule.is_permitted(&create_host_request("blah.com")));
+        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(!permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
+
     #[test]
     fn rule_test_deny_host_permission_any_principal() {
         let host = "blah.com";
         let permission = Permission::Header(create_host_matcher(host));
         let principal = Principal::Any;
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![policy] };
-        assert!(!rbac_rule.is_permitted(&create_host_request(host)));
+        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(!permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 
     #[test]
@@ -173,8 +190,10 @@ mod rbac_tests {
         let permission = Permission::Header(create_host_matcher(host));
         let principal = Principal::Header(create_host_matcher(host));
         let policy = Policy { permissions: vec![permission], principals: vec![principal] };
-        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![policy] };
-        assert!(!rbac_rule.is_permitted(&create_host_request(host)));
+        let rbac_rule = HttpRbac { action: Action::Deny, policies: vec![("my-id".into(), policy)].into_iter().collect() };
+        let (permitted, rule) = rbac_rule.is_permitted(&create_host_request(host));
+        assert!(!permitted);
+        assert_eq!(rule, Some("my-id".into()));
     }
 }
 
@@ -223,7 +242,10 @@ mod envoy_conversions {
             let EnvoyHttpRbac { action, policies, audit_logging_options } = envoy;
             unsupported_field!(audit_logging_options)?;
             let action = Action::try_from(action).with_node("action")?;
-            let policies = required!(policies)?.into_values().map(Policy::try_from).collect::<Result<_, _>>()?;
+            let policies = required!(policies)?
+                .into_iter()
+                .map(|(id, pol)| Policy::try_from(pol).map(|value| (id.into(), value)))
+                .collect::<Result<_, _>>()?;
             Ok(HttpRbac { action, policies })
         }
     }

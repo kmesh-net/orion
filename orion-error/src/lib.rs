@@ -227,7 +227,7 @@ impl Context for Error {
     }
 }
 
-impl AsRef<(dyn ErrorTrait + Send + Sync + 'static)> for Error {
+impl AsRef<dyn ErrorTrait + Send + Sync + 'static> for Error {
     fn as_ref(&self) -> &(dyn ErrorTrait + Send + Sync + 'static) {
         &self.0
     }
