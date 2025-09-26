@@ -20,8 +20,11 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 use orion_configuration::config::{
-    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
+
+#[cfg(test)]
+use orion_configuration::config::listener::ListenerAddress;
 
 use super::listener::{Listener, ListenerFactory};
 use crate::{secrets::TransportSecret, ConfigDump, Result};

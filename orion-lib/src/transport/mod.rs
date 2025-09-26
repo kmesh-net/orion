@@ -21,6 +21,8 @@ pub mod bind_device;
 pub mod connector;
 mod grpc_channel;
 mod http_channel;
+pub mod internal_cluster_connector;
+pub mod internal_connection;
 mod resolver;
 pub mod tcp_channel;
 pub use resolver::resolve;
@@ -33,6 +35,11 @@ pub mod transport_socket;
 pub use self::{
     grpc_channel::{GrpcService, SimpleRoundRobinGrpcServiceLB},
     http_channel::{HttpChannel, HttpChannelBuilder},
+    internal_cluster_connector::InternalChannelConnector,
+    internal_connection::{
+        global_internal_connection_factory, InternalConnectionFactory, InternalConnectionPair, InternalConnectionStats,
+        InternalListenerHandle,
+    },
     proxy_protocol::ProxyProtocolReader,
     tcp_channel::TcpChannelConnector,
     tlv_listener_filter::TlvListenerFilter,

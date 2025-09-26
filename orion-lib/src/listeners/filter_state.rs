@@ -39,6 +39,10 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
+    FromInternal {
+        listener_name: String,
+        endpoint_id: Option<String>,
+    },
 }
 
 impl DownstreamConnectionMetadata {
@@ -47,6 +51,7 @@ impl DownstreamConnectionMetadata {
             Self::FromSocket { peer_address, .. } => *peer_address,
             Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
             Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
+            Self::FromInternal { .. } => SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0),
         }
     }
     pub fn local_address(&self) -> SocketAddr {
@@ -54,6 +59,7 @@ impl DownstreamConnectionMetadata {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
             Self::FromTlv { original_destination_address, .. } => *original_destination_address,
+            Self::FromInternal { .. } => SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0),
         }
     }
 }

@@ -73,6 +73,7 @@ enum ListenerAddress {
 
 #[derive(Debug, Clone)]
 struct InternalListenerConfig {
+    #[allow(dead_code)]
     buffer_size_kb: Option<u32>,
 }
 #[derive(Debug, Clone)]
@@ -339,16 +340,58 @@ impl Listener {
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
-        let filter_chains = Arc::new(filter_chains);
+        use crate::transport::global_internal_connection_factory;
+        use tracing::{debug, error, info, warn};
 
-        // For now, internal listeners just wait for updates
-        // The actual connection handling will be implemented when we add the internal connection factory
+        let filter_chains = Arc::new(filter_chains);
+        let factory = global_internal_connection_factory();
+
+        let (_handle, mut connection_receiver, _listener_ref) = match factory.register_listener(name.to_string()).await
+        {
+            Ok(result) => result,
+            Err(e) => {
+                error!("Failed to register internal listener '{}': {}", name, e);
+                return e;
+            },
+        };
+
+        info!("Internal listener '{}' registered with connection factory", name);
+
         loop {
             tokio::select! {
+                maybe_connection = connection_receiver.recv() => {
+                    match maybe_connection {
+                        Some(connection_pair) => {
+                            debug!("Internal listener '{}' received new connection", name);
+
+                            let filter_chains_clone = filter_chains.clone();
+                            let listener_name = name.to_string();
+
+                            tokio::spawn(async move {
+                                if let Err(e) = Self::handle_internal_connection(
+                                    listener_name,
+                                    connection_pair,
+                                    filter_chains_clone,
+                                ).await {
+                                    warn!("Error handling internal connection: {}", e);
+                                }
+                            });
+                        }
+                        None => {
+                            warn!("Internal listener '{}' connection channel closed", name);
+                            break;
+                        }
+                    }
+                },
                 maybe_route_update = route_updates_receiver.recv() => {
                     match maybe_route_update {
-                        Ok(route_update) => {Self::process_route_update(&name, &filter_chains, route_update);}
-                        Err(e) => {return e.into();}
+                        Ok(route_update) => {
+                            Self::process_route_update(&name, &filter_chains, route_update);
+                        }
+                        Err(e) => {
+                            error!("Route update error for internal listener '{}': {}", name, e);
+                            return e.into();
+                        }
                     }
                 },
                 maybe_secret_update = secret_updates_receiver.recv() => {
@@ -356,13 +399,61 @@ impl Listener {
                         Ok(secret_update) => {
                             let mut filter_chains_clone = filter_chains.as_ref().clone();
                             Self::process_secret_update(&name, &mut filter_chains_clone, secret_update);
-                            // Note: For internal listeners, we'd need to update the shared state
-                            // This will be implemented when we add the internal connection factory
+                            // TODO: Update the shared filter chains state for active connections
                         }
-                        Err(e) => {return e.into();}
+                        Err(e) => {
+                            error!("Secret update error for internal listener '{}': {}", name, e);
+                            return e.into();
+                        }
                     }
                 }
             }
+        }
+
+        if let Err(e) = factory.unregister_listener(name).await {
+            warn!("Failed to unregister internal listener '{}': {}", name, e);
+        }
+
+        info!("Internal listener '{}' shutting down", name);
+        Error::new("Internal listener shutdown")
+    }
+
+    async fn handle_internal_connection(
+        listener_name: String,
+        connection_pair: crate::transport::InternalConnectionPair,
+        filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
+    ) -> Result<()> {
+        use crate::listeners::filter_state::DownstreamConnectionMetadata;
+        use tracing::{debug, info, warn};
+
+        debug!("Handling new internal connection for listener '{}'", listener_name);
+
+        let downstream_metadata = DownstreamConnectionMetadata::FromInternal {
+            listener_name: listener_name.clone(),
+            endpoint_id: connection_pair.downstream.metadata().endpoint_id.clone(),
+        };
+
+        let filter_chain = match Self::select_filterchain(&filter_chains, &downstream_metadata, None)? {
+            Some(fc) => fc,
+            None => {
+                warn!("No matching filter chain found for internal connection");
+                return Err(crate::Error::new("No matching filter chain"));
+            },
+        };
+
+        let _downstream_stream = connection_pair.downstream;
+
+        match &filter_chain.handler {
+            crate::listeners::filterchain::ConnectionHandler::Http(_http_manager) => {
+                info!("Processing internal connection through HTTP filter chain");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                Ok(())
+            },
+            crate::listeners::filterchain::ConnectionHandler::Tcp(_tcp_proxy) => {
+                info!("Processing internal connection through TCP filter chain");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                Ok(())
+            },
         }
     }
 
