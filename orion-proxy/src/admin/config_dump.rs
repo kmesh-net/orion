@@ -233,7 +233,7 @@ mod config_dump_tests {
     async fn config_dump_listeners_and_routes() {
         use compact_str::CompactString;
         use orion_configuration::config::{
-            listener::{FilterChain, FilterChainMatch, Listener, MainFilter},
+            listener::{FilterChain, FilterChainMatch, Listener, ListenerAddress, MainFilter},
             network_filters::http_connection_manager::{
                 route::{Action, RouteMatch},
                 CodecType, HttpConnectionManager, Route, RouteConfiguration, RouteSpecifier, VirtualHost, XffSettings,
@@ -246,7 +246,7 @@ mod config_dump_tests {
         };
         let listener = Listener {
             name: CompactString::from("listener1"),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080)),
             filter_chains: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -328,15 +328,16 @@ mod config_dump_tests {
     #[tokio::test]
     async fn config_dump_clusters() {
         use compact_str::CompactString;
-        use orion_configuration::config::{
-            cluster::{
-                Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
-                LbPolicy, LocalityLbEndpoints,
-            },
-            core::envoy_conversions::Address,
+        use orion_configuration::config::cluster::{
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
+            LbEndpoint, LbPolicy, LocalityLbEndpoints,
         };
-        use std::{num::NonZeroU32, time::Duration};
-        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
+        use std::{
+            net::{IpAddr, Ipv4Addr, SocketAddr},
+            num::NonZeroU32,
+            time::Duration,
+        };
+        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
@@ -356,6 +357,7 @@ mod config_dump_tests {
             health_check: None,
             connect_timeout: Some(Duration::from_secs(5)),
             cleanup_interval: None,
+            internal_transport_socket: None,
         };
         let secret_manager = orion_lib::SecretManager::default();
         let partial_cluster =
@@ -381,15 +383,16 @@ mod config_dump_tests {
     #[tokio::test]
     async fn config_dump_endpoints() {
         use compact_str::CompactString;
-        use orion_configuration::config::{
-            cluster::{
-                Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
-                LbPolicy, LocalityLbEndpoints,
-            },
-            core::envoy_conversions::Address,
+        use orion_configuration::config::cluster::{
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
+            LbEndpoint, LbPolicy, LocalityLbEndpoints,
         };
-        use std::{num::NonZeroU32, time::Duration};
-        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
+        use std::{
+            net::{IpAddr, Ipv4Addr, SocketAddr},
+            num::NonZeroU32,
+            time::Duration,
+        };
+        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
@@ -409,6 +412,7 @@ mod config_dump_tests {
             health_check: None,
             connect_timeout: Some(Duration::from_secs(5)),
             cleanup_interval: None,
+            internal_transport_socket: None,
         };
         let secret_manager = orion_lib::SecretManager::default();
         let partial_cluster =

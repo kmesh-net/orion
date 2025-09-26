@@ -27,6 +27,7 @@ use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
 use compact_str::CompactString;
 use ipnet::IpNet;
+use orion_interner::StringInterner;
 use serde::{Deserialize, Serialize, Serializer};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{
@@ -35,12 +36,12 @@ use std::{
     str::FromStr,
 };
 
-use orion_interner::StringInterner;
+// Removed unused import
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Listener {
     pub name: CompactString,
-    pub address: SocketAddr,
+    pub address: ListenerAddress,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -88,6 +89,18 @@ impl Listener {
             })
             .collect::<HashMap<_, _>>()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ListenerAddress {
+    Socket(SocketAddr),
+    Internal(InternalListener),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternalListener {
+    pub buffer_size_kb: Option<u32>,
 }
 
 mod serde_filterchains {
@@ -428,7 +441,18 @@ mod envoy_conversions {
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
-                let address = Address::into_addr(convert_opt!(address)?)?;
+                let address_result = convert_opt!(address)?;
+                let address = match address_result {
+                    Address::Socket(socket_addr) => crate::config::listener::ListenerAddress::Socket(socket_addr),
+                    Address::Internal(_internal_addr) => {
+                        crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
+                            buffer_size_kb: None, // Default buffer size, can be configured via bootstrap extension
+                        })
+                    },
+                    Address::Pipe(_, _) => {
+                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
+                    },
+                };
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();

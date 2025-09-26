@@ -332,7 +332,7 @@ impl Grammar for EnvoyGrammar {
                     // ensure the placeholder is properly closed with a '%'
                     //
 
-                    let operator = match remainder.find(&[' ', '%', '(']) {
+                    let operator = match remainder.find([' ', '%', '(']) {
                         Some(index) => &remainder[..index], // ...return a slice from the beginning to that index.
                         None => remainder,                  // In that case, return the whole string slice.
                     };

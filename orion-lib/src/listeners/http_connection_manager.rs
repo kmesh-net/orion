@@ -917,11 +917,13 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
             trans_handler.thread_id(),
             &[KeyValue::new("listener", listener_name)]
         );
+        let listener_name_for_defer = listener_name;
         defer! {
-            with_metric!(http::DOWNSTREAM_RQ_ACTIVE, sub, 1, trans_handler.thread_id(), &[KeyValue::new("listener", listener_name)]);
+            with_metric!(http::DOWNSTREAM_RQ_ACTIVE, sub, 1, trans_handler.thread_id(), &[KeyValue::new("listener", listener_name_for_defer)]);
         }
 
         let trans_handler = trans_handler.clone();
+        let listener_name_for_trace = listener_name;
         Box::pin(async move {
             let ExtendedRequest { request, downstream_metadata } = req;
             let (parts, body) = request.into_parts();
@@ -949,6 +951,9 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
             let initial_event = request.extensions().get::<Option<EventKind>>().cloned().unwrap_or_default();
 
             let req_head_size = request_head_size(&request);
+            let listener_name_for_body = listener_name;
+            let listener_name_for_route = listener_name;
+            let listener_name_for_response = listener_name;
             let request = request.map(|body| {
                 let trans_handler = Arc::clone(&trans_handler);
                 BodyWithMetrics::new(BodyKind::Request, body, move |nbytes, body_error, body_flags| {
@@ -957,7 +962,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                         add,
                         nbytes + req_head_size as u64,
                         trans_handler.thread_id(),
-                        &[KeyValue::new("listener", listener_name)]
+                        &[KeyValue::new("listener", listener_name_for_body)]
                     );
 
                     // emit the access log, if the transaction is completed..
@@ -1019,7 +1024,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                     add,
                     1,
                     trans_handler.thread_id(),
-                    &[KeyValue::new("listener", listener_name)]
+                    &[KeyValue::new("listener", listener_name_for_route.to_string())]
                 );
 
                 if let Some(state) = trans_handler.span_state.as_ref() {
@@ -1044,7 +1049,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                             add,
                             nbytes + resp_head_size as u64,
                             trans_handler.thread_id(),
-                            &[KeyValue::new("listener", listener_name)]
+                            &[KeyValue::new("listener", listener_name_for_response.to_string())]
                         );
 
                         let is_transaction_complete = if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
@@ -1098,7 +1103,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                 .handle_transaction(route_conf, manager, permit, request, downstream_metadata)
                 .await;
 
-            trans_handler.trace_status_code(response, listener_name)
+            trans_handler.trace_status_code(response, listener_name_for_trace)
         })
     }
 }

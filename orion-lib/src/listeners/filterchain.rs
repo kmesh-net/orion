@@ -97,7 +97,6 @@ pub struct FilterchainBuilder {
     rbac_filters: Vec<NetworkRbac>,
     tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
-
 impl FilterchainBuilder {
     pub fn with_listener_name(self, name: &'static str) -> Self {
         FilterchainBuilder { listener_name: Some(name), ..self }
@@ -256,7 +255,6 @@ impl FilterchainType {
                 }
 
                 let tcp_proxy = tcp_proxy.clone();
-                let listener_name = tcp_proxy.listener_name;
                 let server_config = config
                     .tls_configurator
                     .clone()

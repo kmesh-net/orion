@@ -124,7 +124,7 @@ pub fn otel_update_tracers(tracers: HashMap<TracingKey, TracingConfig>) -> Resul
     let mut cur_map = (*map_arc).clone();
 
     let listeners = tracers.keys().cloned().map(|TracingKey(name, _)| name).collect::<Vec<_>>();
-    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(name));
+    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(&name));
 
     // insert new tracers...
     for (key, ref config) in tracers {

@@ -239,8 +239,12 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
             warn!("outbound discovery request stream has ended!");
         };
 
-        let mut response_stream =
-            self.client_binding.delta_request(outbound_requests).await.map_err(XdsError::GrpcStatus)?.into_inner();
+        let mut response_stream = self
+            .client_binding
+            .delta_request(outbound_requests)
+            .await
+            .map_err(|e| XdsError::GrpcStatus(Box::new(e)))?
+            .into_inner();
         info!("xDS stream established");
 
         loop {
@@ -339,7 +343,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                     pending_update_versions.insert(resource_id.clone(), resource_version);
                     debug!("decoded config update for resource {resource_id}");
                 }
-                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id.clone(), value))
+                decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id.clone(), Box::new(value)))
             })
             .chain(for_removal.into_iter().map(|resource_id| XdsResourceUpdate::Remove(resource_id, type_url)))
             .collect();
