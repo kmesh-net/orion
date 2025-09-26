@@ -161,7 +161,8 @@ impl FilterchainType {
         let network_context =
             NetworkContext::new(downstream_metadata.local_address(), downstream_metadata.peer_address(), server_name);
         for rbac in rbac_filters {
-            if !rbac.is_permitted(network_context) {
+            let (permitted, _) = rbac.is_permitted(&network_context);
+            if !permitted {
                 return None;
             }
         }
