@@ -51,7 +51,7 @@ http-body           = "1.0"
 http-body-util      = "0.1.0"
 num_cpus            = "1"
 ppp                 = "2.3"
-prost               = "0.13"
+prost               = "0.14"
 prost-build         = "^0.13"
 prost-reflect       = { version = "0.14", features = ["derive", "serde"] }
 regex               = "1.10.2"
