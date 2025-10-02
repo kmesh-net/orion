@@ -1,4 +1,3 @@
-use axum;
 use bytes::Bytes;
 use orion_error::Error;
 use orion_lib::PolyBody;
@@ -74,6 +73,7 @@ pub async fn to_bytes(body: PolyBody, limit: usize) -> Result<Bytes, Error> {
         PolyBody::Incoming(incoming) => axum::body::Body::from_stream(incoming.into_data_stream()),
         PolyBody::Timeout(_) => return Err("Can't convert timeout".into()),
         PolyBody::Grpc(_) => return Err("Can't convert grpc".into()),
+        PolyBody::Stream(_) => return Err("Can't convert stream".into()),
     };
     axum::body::to_bytes(body, limit).await.map_err(|e| Error::new(e.to_string()))
 }

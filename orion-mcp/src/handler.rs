@@ -43,7 +43,7 @@ impl Relay {
         backend: McpBackendGroup,
         //policies: McpAuthorizationSet,
         //client: PolicyClient,
-    ) -> anyhow::Result<Self> {
+    ) -> orion_lib::Result<Self> {
         let default_target_name =
             if backend.targets.len() != 1 { None } else { Some(backend.targets[0].name.to_string()) };
         Ok(Self { upstreams: Arc::new(UpstreamGroup::new(pi, client, backend)?), default_target_name })

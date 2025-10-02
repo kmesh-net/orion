@@ -5,18 +5,25 @@ use http::Method;
 use http::StatusCode;
 use itertools::Itertools;
 
+use orion_error::Error;
+use orion_lib::PolyBody;
+use orion_lib::Result;
 use rmcp::transport::StreamableHttpServerConfig;
 use tracing::warn;
 
 use crate::MCPInfo;
 use crate::handler::Relay;
+use crate::json;
+use crate::json::from_body;
 // use crate::http::jwt::Claims;
 // use crate::http::*;
 // use crate::json::from_body;
 // use crate::proxy::httpproxy::PolicyClient;
+use crate::Request;
 use crate::session::SessionManager;
 use crate::sse::LegacySSEService;
 //use crate::store::{BackendPolicies, Stores};
+use crate::Response;
 use crate::streamablehttp::StreamableHttpService;
 
 // use crate::transport::stream::{TCPConnectionInfo, TLSConnectionInfo};
@@ -70,7 +77,6 @@ impl App {
         name: BackendName,
         backend: McpBackend,
         mut req: Request,
-        log: AsyncLog<MCPInfo>,
     ) -> Response {
         let (backends, authorization_policies, authn) = {
             let binds = self.state.read_binds();
@@ -88,10 +94,6 @@ impl App {
         let metrics = self.metrics.clone();
         let sm = self.session.clone();
         let client = PolicyClient { inputs: pi.clone() };
-
-        // Store an empty value, we will populate each field async
-        log.store(Some(MCPInfo::default()));
-        req.extensions_mut().insert(log);
 
         // TODO: today we duplicate everything which is error prone. It would be ideal to re-use the parent one
         // The problem is that we decide whether to include various attributes before we pick the backend,
@@ -119,59 +121,48 @@ impl App {
             && req.extensions().get::<Claims>().is_none()
             && !Self::is_well_known_endpoint(req.uri().path())
         {
-            return Self::create_auth_required_response(&req).into_response();
+            return Self::create_auth_required_response(&req);
         }
 
         match (req.uri().path(), req.method(), authn) {
             ("/sse", _, _) => {
                 // Assume this is streamable HTTP otherwise
                 let sse = LegacySSEService::new(
-                    move || {
-                        Relay::new(
-                            pi.clone(),
-                            backends.clone(),
-                            metrics.clone(),
-                            authorization_policies.clone(),
-                            client.clone(),
-                        )
-                        .map_err(|e| Error::new(e.to_string()))
-                    },
+                    move || Relay::new(pi.clone(), backends.clone()).map_err(|e| Error::new(e.to_string())),
                     sm,
                 );
                 sse.handle(req).await
             },
-            (path, _, Some(auth)) if path.ends_with("client-registration") => self
-                .client_registration(req, auth, client.clone())
-                .await
-                .map_err(|e| {
-                    warn!("client_registration error: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })
-                .into_response(),
-            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-protected-resource") => {
-                self.protected_resource_metadata(req, auth).await.into_response()
+            (path, _, Some(auth)) if path.ends_with("client-registration") => {
+                if let Ok(resp) = self.client_registration(req, auth, client.clone()).await {
+                    resp
+                } else {
+                    warn!("client_registration error");
+                    http::Response::builder()
+                        .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(PolyBody::empty())
+                        .unwrap()
+                }
             },
-            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-authorization-server") => self
-                .authorization_server_metadata(req, auth, client.clone())
-                .await
-                .map_err(|e| {
-                    warn!("authorization_server_metadata error: {}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })
-                .into_response(),
+
+            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-protected-resource") => {
+                self.protected_resource_metadata(req, auth).await
+            },
+            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-authorization-server") => {
+                if let Ok(resp) = self.authorization_server_metadata(req, auth, client.clone()).await {
+                    resp
+                } else {
+                    warn!("authorization_server_metadata error");
+                    http::Response::builder()
+                        .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(PolyBody::empty())
+                        .unwrap()
+                }
+            },
             _ => {
                 // Assume this is streamable HTTP otherwise
                 let streamable = StreamableHttpService::new(
-                    move || {
-                        Relay::new(
-                            pi.clone(),
-                            backends.clone(),
-                            metrics.clone(),
-                            authorization_policies.clone(),
-                            client.clone(),
-                        )
-                        .map_err(|e| Error::new(e.to_string()))
-                    },
+                    move || Relay::new(pi.clone(), backends.clone()),
                     sm,
                     StreamableHttpServerConfig { stateful_mode: backend.stateful, ..Default::default() },
                 );
@@ -209,14 +200,9 @@ impl App {
             .status(StatusCode::UNAUTHORIZED)
             .header("www-authenticate", www_authenticate_value)
             .header("content-type", "application/json")
-            .body(axum::body::Body::from(Bytes::from(
-                r#"{"error":"unauthorized","error_description":"JWT token required"}"#,
-            )))
+            .body(PolyBody::from(Bytes::from(r#"{"error":"unauthorized","error_description":"JWT token required"}"#)))
             .unwrap_or_else(|_| {
-                ::http::Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(axum::body::Body::empty())
-                    .unwrap()
+                ::http::Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(PolyBody::empty()).unwrap()
             })
     }
 
@@ -235,18 +221,15 @@ impl App {
 
         let json_body = auth.resource_metadata.to_rfc_json(new_uri, issuer);
 
-        ::http::Response::builder()
+        http::Response::builder()
             .status(StatusCode::OK)
             .header("content-type", "application/json")
             .header("access-control-allow-origin", "*")
             .header("access-control-allow-methods", "GET, OPTIONS")
             .header("access-control-allow-headers", "content-type")
-            .body(axum::body::Body::from(Bytes::from(serde_json::to_string(&json_body).unwrap_or_default())))
+            .body(PolyBody::from(Bytes::from(serde_json::to_string(&json_body).unwrap_or_default())))
             .unwrap_or_else(|_| {
-                ::http::Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(axum::body::Body::empty())
-                    .unwrap()
+                http::Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR).body(PolyBody::default()).unwrap()
             })
     }
 
@@ -278,10 +261,10 @@ impl App {
         req: Request,
         auth: McpAuthentication,
         client: PolicyClient,
-    ) -> anyhow::Result<Response> {
+    ) -> Result<Response> {
         let ureq = ::http::Request::builder()
             .uri(format!("{}/.well-known/oauth-authorization-server", auth.issuer))
-            .body(Body::empty())?;
+            .body(PolyBody::empty())?;
         let upstream = client.simple_call(ureq).await?;
         let mut resp: serde_json::Value = from_body(upstream.into_body()).await?;
         match &auth.provider {
@@ -289,7 +272,7 @@ impl App {
                 // Auth0 does not support RFC 8707. We can workaround this by prepending an audience
                 let Some(serde_json::Value::String(ae)) = json::traverse_mut(&mut resp, &["authorization_endpoint"])
                 else {
-                    anyhow::bail!("authorization_endpoint missing");
+                    return Err(orion_error::Error::new("authorization_endpoint missing"));
                 };
                 ae.push_str(&format!("?audience={}", auth.audience));
             },
@@ -310,7 +293,7 @@ impl App {
                     .unwrap_or_else(|| req.uri().clone());
                 let Some(serde_json::Value::String(re)) = json::traverse_mut(&mut resp, &["registration_endpoint"])
                 else {
-                    anyhow::bail!("registration_endpoint missing");
+                    return Err(orion_error::Error::new("registration_endpoint missing"));
                 };
                 *re = format!("{current_uri}/client-registration");
             },
@@ -323,8 +306,8 @@ impl App {
             .header("access-control-allow-origin", "*")
             .header("access-control-allow-methods", "GET, OPTIONS")
             .header("access-control-allow-headers", "content-type")
-            .body(axum::body::Body::from(Bytes::from(serde_json::to_string(&resp)?)))
-            .map_err(|e| anyhow::anyhow!("Failed to build response: {}", e))?;
+            .body(PolyBody::from(Bytes::from(serde_json::to_string(&resp)?)))
+            .map_err(|e| orion_error::Error::new(format!("Failed to build response: {}", e)))?;
 
         Ok(response)
     }
@@ -334,7 +317,7 @@ impl App {
         req: Request,
         auth: McpAuthentication,
         client: PolicyClient,
-    ) -> anyhow::Result<Response> {
+    ) -> Result<Response> {
         let ureq = ::http::Request::builder()
             .uri(format!("{}/clients-registrations/openid-connect", auth.issuer))
             .method(Method::POST)

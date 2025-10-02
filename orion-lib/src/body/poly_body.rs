@@ -34,6 +34,13 @@ pub enum PolyBody {
     Stream(#[pin] StreamBody),
 }
 
+impl PolyBody {
+    #[inline]
+    pub fn empty() -> PolyBody {
+        PolyBody::Empty(Empty::<Bytes>::default())
+    }
+}
+
 impl Default for PolyBody {
     #[inline]
     fn default() -> Self {
@@ -122,6 +129,13 @@ impl From<String> for PolyBody {
     #[inline]
     fn from(body: String) -> Self {
         PolyBody::Full(Full::new(Bytes::from_owner(body)))
+    }
+}
+
+impl From<Bytes> for PolyBody {
+    #[inline]
+    fn from(body: Bytes) -> Self {
+        PolyBody::Full(Full::new(body))
     }
 }
 

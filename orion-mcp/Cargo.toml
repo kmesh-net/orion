@@ -20,6 +20,8 @@ serde.workspace   = true
 tokio.workspace   = true
 tower.workspace   = true
 tracing.workspace = true
+
+hyper          = { version = "1" }
 itertools = "0.14.0"
 futures-core  = "0.3"
 

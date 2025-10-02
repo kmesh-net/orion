@@ -13,12 +13,12 @@ use {handler::Relay, session::SessionManager};
 pub struct StreamableHttpService {
     config: StreamableHttpServerConfig,
     session_manager: Arc<SessionManager>,
-    service_factory: Arc<dyn Fn() -> Result<Relay, http::Error> + Send + Sync>,
+    service_factory: Arc<dyn Fn() -> Result<Relay, orion_error::Error> + Send + Sync>,
 }
 
 impl StreamableHttpService {
     pub fn new(
-        service_factory: impl Fn() -> Result<Relay, http::Error> + Send + Sync + 'static,
+        service_factory: impl Fn() -> Result<Relay, orion_error::Error> + Send + Sync + 'static,
         session_manager: Arc<SessionManager>,
         config: StreamableHttpServerConfig,
     ) -> Self {
