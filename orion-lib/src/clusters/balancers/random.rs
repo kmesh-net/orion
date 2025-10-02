@@ -18,12 +18,12 @@
 use std::{fmt::Debug, sync::Arc};
 
 use rand::{
+    SeedableRng,
     distributions::{Distribution, WeightedIndex},
     rngs::SmallRng,
-    SeedableRng,
 };
 
-use super::{default_balancer::LbItem, Balancer, WeightedEndpoint};
+use super::{Balancer, WeightedEndpoint, default_balancer::LbItem};
 
 #[derive(Debug, Clone)]
 pub struct RandomBalancer<E> {
@@ -85,11 +85,11 @@ impl<E: WeightedEndpoint> FromIterator<Arc<E>> for RandomBalancer<E> {
 mod test {
     use std::sync::Arc;
 
-    use rand::{rngs::SmallRng, SeedableRng};
+    use rand::{SeedableRng, rngs::SmallRng};
 
     use crate::clusters::balancers::{
-        random::{LbItem, RandomBalancer},
         Balancer,
+        random::{LbItem, RandomBalancer},
     };
 
     #[test]
@@ -112,8 +112,8 @@ mod test {
 
         let items = [LbItem::new(1, ab1), LbItem::new(1, ab2), LbItem::new(1, ab3)];
 
-        let gen = SmallRng::seed_from_u64(1);
-        let mut random_lb = RandomBalancer::new_with_rng(items, gen);
+        let generator = SmallRng::seed_from_u64(1);
+        let mut random_lb = RandomBalancer::new_with_rng(items, generator);
         let mut selected_items = vec![];
         for _n in 0..10 {
             selected_items.push(random_lb.next_item(None));
@@ -143,8 +143,8 @@ mod test {
         let items = [LbItem::new(1, Arc::new(0)), LbItem::new(1, Arc::new(1)), LbItem::new(2, Arc::new(2))];
         let mut counts = vec![0_u32; items.len()];
 
-        let gen = SmallRng::seed_from_u64(1);
-        let mut random_lb = RandomBalancer::new_with_rng(items, gen);
+        let generator = SmallRng::seed_from_u64(1);
+        let mut random_lb = RandomBalancer::new_with_rng(items, generator);
 
         for _n in 0..20 {
             counts[random_lb.next_item(None).map(|item| *item).unwrap()] += 1;
@@ -158,8 +158,8 @@ mod test {
         let items = [LbItem::new(1, Arc::new(0)), LbItem::new(2, Arc::new(1)), LbItem::new(4, Arc::new(2))];
         let mut counts = vec![0_u32; items.len()];
 
-        let gen = SmallRng::seed_from_u64(1);
-        let mut random_lb = RandomBalancer::new_with_rng(items, gen);
+        let generator = SmallRng::seed_from_u64(1);
+        let mut random_lb = RandomBalancer::new_with_rng(items, generator);
         let mut selected_items = vec![];
         for _n in 0..20 {
             selected_items.push(random_lb.next_item(None));
@@ -181,8 +181,8 @@ mod test {
             LbItem::new(1, Arc::new(2)),
         ];
         let mut counts = vec![0_u32; items.len()];
-        let gen = SmallRng::seed_from_u64(1);
-        let mut random_lb = RandomBalancer::new_with_rng(items, gen);
+        let generator = SmallRng::seed_from_u64(1);
+        let mut random_lb = RandomBalancer::new_with_rng(items, generator);
         for _ in 0..20 {
             counts[*random_lb.next_item(None).unwrap()] += 1;
         }

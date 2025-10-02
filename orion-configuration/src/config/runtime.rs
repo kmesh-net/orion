@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_runtime_env_override() {
-        std::env::set_var("ORION_GATEWAY_CORES", "4");
+        unsafe { std::env::set_var("ORION_GATEWAY_CORES", "4") };
 
         let runtime = Runtime::default();
         let options = crate::options::Options {
@@ -344,7 +344,7 @@ mod tests {
         let updated_runtime = runtime.update_from_env_and_options(&options);
 
         assert_eq!(updated_runtime.num_cpus(), 4);
-        std::env::remove_var("ORION_GATEWAY_CORES");
+        unsafe { std::env::remove_var("ORION_GATEWAY_CORES") };
     }
 
     #[test]

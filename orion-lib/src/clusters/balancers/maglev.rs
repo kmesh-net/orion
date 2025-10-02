@@ -21,9 +21,9 @@ use http::uri::Authority;
 use rand::Rng;
 
 use super::{
+    Balancer, WeightedEndpoint,
     default_balancer::{EndpointWithAuthority, LbItem},
     hash_policy::DeterministicBuildHasher,
-    Balancer, WeightedEndpoint,
 };
 
 /// A consistent balancer based on the this paper:
@@ -237,7 +237,7 @@ impl<T> Balancer<T> for MaglevBalancer<T> {
         }
 
         // If no hash is provided, a random one is generated
-        let hash = hash.unwrap_or(rand::thread_rng().gen());
+        let hash = hash.unwrap_or(rand::thread_rng().r#gen());
 
         let table_index = usize::try_from(hash).unwrap_or(usize::MAX) % self.table.len();
 
@@ -299,7 +299,7 @@ mod test {
     use std::sync::Arc;
 
     use http::uri::Authority;
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use crate::clusters::balancers::{Balancer, EndpointWithAuthority};
 
@@ -453,7 +453,7 @@ mod test {
             // Test 100 requests with a random hash each one
             let mut rng = SmallRng::seed_from_u64(1);
             for _ in 0..100 {
-                let hash = rng.gen();
+                let hash = rng.r#gen();
 
                 // Check that load balancing is consistent for this request
                 (0..10).map(|_| balancer.next_item(Some(hash)).unwrap().value).reduce(|initial, current| {

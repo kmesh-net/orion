@@ -228,7 +228,7 @@ pub trait TryInferFrom<F>: Sized {
 impl<'a, B> TryInferFrom<&'a Result<Response<B>, BoxError>> for RetryCondition<'a, B> {
     fn try_infer_from(source: &'a Result<Response<B>, BoxError>) -> Option<Self> {
         match source {
-            Ok(ref resp) => {
+            Ok(resp) => {
                 // NOTE: exclude a priory the evaluation of the retry policy for 1xx, and 2xx.
                 if resp.status().is_informational() || resp.status().is_success() {
                     return None;

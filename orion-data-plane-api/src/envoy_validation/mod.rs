@@ -49,11 +49,16 @@ impl FilterChainValidation for FilterChain {
             .as_ref()
             .and_then(|s| s.config_type.as_ref())
             .map(|cfg| {
-                let transport_socket::ConfigType::TypedConfig(ref any) = cfg;
-                any
+                let transport_socket::ConfigType::TypedConfig(envoy_data_plane_api::google::protobuf::Any {
+                    type_url: _,
+                    value: _,
+                }) = cfg;
+                todo!()
             })
-            .filter(|any| any.type_url == T_EXT_TLS_DOWNSTREAM_CONTEXT)
-            .map(|any| decode_any_type(any, T_EXT_TLS_DOWNSTREAM_CONTEXT))
+            .filter(|envoy_data_plane_api::google::protobuf::Any { type_url, value: _ }| {
+                *type_url == T_EXT_TLS_DOWNSTREAM_CONTEXT
+            })
+            .map(|any| decode_any_type(&any, T_EXT_TLS_DOWNSTREAM_CONTEXT))
             .transpose()
     }
 }
@@ -73,11 +78,15 @@ impl FilterValidation for Filter {
         self.config_type
             .as_ref()
             .and_then(|cfg| match cfg {
-                ConfigType::TypedConfig(ref any) => Some(any),
+                ConfigType::TypedConfig(envoy_data_plane_api::google::protobuf::Any { type_url: _, value: _ }) => {
+                    Some(todo!())
+                },
                 ConfigType::ConfigDiscovery(_) => None,
             })
-            .filter(|any| any.type_url == T_EXT_HTTP_CONN_MANAGER)
-            .map(|any| decode_any_type(any, T_EXT_HTTP_CONN_MANAGER))
+            .filter(|envoy_data_plane_api::google::protobuf::Any { type_url, value: _ }| {
+                *type_url == T_EXT_HTTP_CONN_MANAGER
+            })
+            .map(|any| decode_any_type(&any, T_EXT_HTTP_CONN_MANAGER))
             .transpose()
     }
 }

@@ -12,6 +12,7 @@ members = [
   "orion-proxy",
   "orion-tracing",
   "orion-xds",
+  "orion-mcp"
 ]
 
 resolver = "2"
@@ -19,9 +20,9 @@ resolver = "2"
 
 [workspace.package]
 description  = "Orion Proxy is a cloud native proxy. Orion Proxy is configurable via Envoy xDS protocol"
-edition      = "2021"
+edition      = "2024"
 license-file = "./LICENSE"
-rust-version = "1.86"
+rust-version = "1.90"
 version      = "0.1.0"
 
 [patch.crates-io]
@@ -37,6 +38,7 @@ orion-http-header    = { path = "orion-http-header" }
 orion-interner       = { path = "orion-interner" }
 orion-lib            = { path = "orion-lib" }
 orion-metrics        = { path = "orion-metrics" }
+orion-mcp            = { path = "orion-mcp" }
 orion-tracing        = { path = "orion-tracing" }
 orion-xds            = { path = "orion-xds" }
 

@@ -1,0 +1,59 @@
+[package]
+edition.workspace      = true
+license-file.workspace = true
+name                   = "orion-mcp"
+rust-version.workspace = true
+version.workspace      = true
+
+[dependencies]
+bytes.workspace               = true
+futures.workspace             = true
+orion-configuration.workspace = true
+
+orion-data-plane-api.workspace = true
+orion-error.workspace          = true
+orion-lib.workspace            = true
+
+
+http.workspace    = true
+serde.workspace   = true
+tokio.workspace   = true
+tower.workspace   = true
+tracing.workspace = true
+itertools = "0.14.0"
+futures-core  = "0.3"
+
+rmcp = { version = "0.7", features = [
+    "client",
+    "transport-sse-server",
+    "transport-sse-client",
+    "transport-child-process",
+    "transport-streamable-http-server",
+    "transport-streamable-http-client",
+    "reqwest",
+    "auth",
+] }
+async-stream = "0.3"
+atomic-take  = "1.1.0"
+anyhow = "1"
+futures-util = { version = "0.3", default-features = false }
+serde_json.workspace = true
+sse-stream = "0.2.1"
+pin-project-lite = "0.2"
+arc-swap = "1.7.1"
+indexmap = "2.11"
+axum = "0.8.4"
+http-body-util.workspace = true
+
+thiserror              = "2.0.11"
+tokio-stream.workspace = true
+uuid                   = { version = "1.7.0", features = ["v4"] }
+
+[dev-dependencies]
+orion-data-plane-api.workspace = true
+serde_yaml.workspace = true
+tokio.workspace      = true
+tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

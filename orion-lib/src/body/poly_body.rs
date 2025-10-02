@@ -22,6 +22,8 @@ use hyper::body::{Body, Incoming};
 use orion_xds::grpc_deps::{GrpcBody, Status as GrpcError};
 use pin_project::pin_project;
 
+pub type StreamBody = http_body_util::combinators::UnsyncBoxBody<bytes::Bytes, PolyBodyError>;
+
 #[pin_project(project = PolyBodyProj)]
 pub enum PolyBody {
     Empty(#[pin] Empty<Bytes>),
@@ -29,6 +31,7 @@ pub enum PolyBody {
     Incoming(#[pin] Incoming),
     Timeout(#[pin] BodyWithTimeout<Incoming>),
     Grpc(#[pin] GrpcBody),
+    Stream(#[pin] StreamBody),
 }
 
 impl Default for PolyBody {
@@ -46,6 +49,7 @@ impl std::fmt::Debug for PolyBody {
             PolyBody::Incoming(_) => f.write_str("PolyBody::Incoming"),
             PolyBody::Timeout(body) => f.write_str(&format!("PolyBody::Timeout: {body:?}")),
             PolyBody::Grpc(_) => f.write_str("PolyBody::Grpc"),
+            PolyBody::Stream(_) => f.write_str("PolyBody::StreamBody"),
         }
     }
 }
@@ -88,6 +92,7 @@ impl Body for PolyBody {
             PolyBodyProj::Incoming(i) => i.poll_frame(cx).map_err(Into::into),
             PolyBodyProj::Timeout(t) => t.poll_frame(cx).map_err(Into::into),
             PolyBodyProj::Grpc(g) => g.poll_frame(cx).map_err(Into::into),
+            PolyBodyProj::Stream(g) => g.poll_frame(cx).map_err(Into::into),
         }
     }
 }
@@ -103,6 +108,20 @@ impl From<Full<Bytes>> for PolyBody {
     #[inline]
     fn from(body: Full<Bytes>) -> Self {
         PolyBody::Full(body)
+    }
+}
+
+impl From<&'static str> for PolyBody {
+    #[inline]
+    fn from(body: &'static str) -> Self {
+        PolyBody::Full(Full::new(Bytes::from_static(body.as_bytes())))
+    }
+}
+
+impl From<String> for PolyBody {
+    #[inline]
+    fn from(body: String) -> Self {
+        PolyBody::Full(Full::new(Bytes::from_owner(body)))
     }
 }
 
