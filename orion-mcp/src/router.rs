@@ -5,7 +5,6 @@ use http::Method;
 use http::StatusCode;
 use itertools::Itertools;
 
-use orion_error::Error;
 use orion_lib::PolyBody;
 use orion_lib::Result;
 use rmcp::transport::StreamableHttpServerConfig;
@@ -33,7 +32,6 @@ use crate::streamablehttp::StreamableHttpService;
 #[derive(Debug, Clone)]
 pub struct App {
     state: Stores,
-    metrics: Arc<mcp::metrics::Metrics>,
     // _drain: DrainWatcher,
     session: Arc<SessionManager>,
 }
@@ -41,10 +39,8 @@ pub struct App {
 impl App {
     pub fn new(state: Stores, registry: &mut Registry) -> Self {
         let session: Arc<SessionManager> = Arc::new(Default::default());
-        let metrics = Arc::new(crate::mcp::metrics::Metrics::new(
-            registry, None, // TODO custom tags
-        ));
-        Self { state, metrics, session }
+
+        Self { state, session }
     }
 
     pub fn should_passthrough(
@@ -91,7 +87,7 @@ impl App {
                 .collect_vec();
             (McpBackendGroup { targets: nt }, authorization_policies, authn)
         };
-        let metrics = self.metrics.clone();
+
         let sm = self.session.clone();
         let client = PolicyClient { inputs: pi.clone() };
 
@@ -127,10 +123,7 @@ impl App {
         match (req.uri().path(), req.method(), authn) {
             ("/sse", _, _) => {
                 // Assume this is streamable HTTP otherwise
-                let sse = LegacySSEService::new(
-                    move || Relay::new(pi.clone(), backends.clone()).map_err(|e| Error::new(e.to_string())),
-                    sm,
-                );
+                let sse = LegacySSEService::new(move || Relay::new(pi.clone(), backends.clone()), sm);
                 sse.handle(req).await
             },
             (path, _, Some(auth)) if path.ends_with("client-registration") => {

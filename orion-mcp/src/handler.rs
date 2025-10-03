@@ -67,7 +67,6 @@ impl Relay {
     }
 
     pub fn merge_tools(&self) -> Box<MergeFn> {
-        let policies = self.policies.clone();
         let default_target_name = self.default_target_name.clone();
         Box::new(move |streams| {
             let tools = streams
@@ -114,7 +113,6 @@ impl Relay {
     }
 
     pub fn merge_prompts(&self) -> Box<MergeFn> {
-        let policies = self.policies.clone();
         let default_target_name = self.default_target_name.clone();
         Box::new(move |streams| {
             let prompts = streams
@@ -146,7 +144,6 @@ impl Relay {
         })
     }
     pub fn merge_resources(&self) -> Box<MergeFn> {
-        let policies = self.policies.clone();
         Box::new(move |streams| {
             let resources = streams
                 .into_iter()
@@ -175,7 +172,6 @@ impl Relay {
         })
     }
     pub fn merge_resource_templates(&self) -> Box<MergeFn> {
-        let policies = self.policies.clone();
         Box::new(move |streams| {
             let resource_templates = streams
                 .into_iter()
@@ -337,8 +333,5 @@ fn messages_to_response(
 }
 
 fn accepted_response() -> Response {
-    ::http::Response::builder()
-        .status(StatusCode::ACCEPTED)
-        .body(orion_lib::PolyBody::EmptyBody)
-        .expect("valid response")
+    ::http::Response::builder().status(StatusCode::ACCEPTED).body(orion_lib::PolyBody::empty()).expect("valid response")
 }

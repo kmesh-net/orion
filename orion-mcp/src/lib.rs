@@ -33,7 +33,7 @@ pub enum ClientError {
 
 impl ClientError {
     pub fn new(error: impl Into<BoxError>) -> Self {
-        Self::General(Arc::new(orion_lib::Error::new(error.into())))
+        Self::General(Arc::new(orion_lib::Error::from(error.into())))
     }
 }
 

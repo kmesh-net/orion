@@ -125,6 +125,20 @@ impl From<&'static str> for PolyBody {
     }
 }
 
+impl From<&'static [u8]> for PolyBody {
+    #[inline]
+    fn from(body: &'static [u8]) -> Self {
+        PolyBody::Full(Full::new(Bytes::from(body)))
+    }
+}
+
+impl From<Vec<u8>> for PolyBody {
+    #[inline]
+    fn from(body: Vec<u8>) -> Self {
+        PolyBody::from(Bytes::from(body))
+    }
+}
+
 impl From<String> for PolyBody {
     #[inline]
     fn from(body: String) -> Self {

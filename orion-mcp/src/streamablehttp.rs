@@ -190,5 +190,5 @@ fn internal_error_response(context: &str) -> Response {
 }
 
 fn accepted_response() -> Response {
-    ::http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::Empty).expect("valid response")
+    ::http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
 }

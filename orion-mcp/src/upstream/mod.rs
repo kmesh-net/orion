@@ -6,6 +6,7 @@ mod streamablehttp;
 use std::io;
 
 use indexmap::IndexMap;
+use orion_error::Context;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::{TokioChildProcess, streamable_http_client::StreamableHttpPostResponse};
 use thiserror::Error;
@@ -35,7 +36,7 @@ impl IncomingRequestContext {
         let claims = parts.extensions.get::<Claims>().cloned();
         Self { headers: parts.headers, claims }
     }
-    pub fn apply(&self, req: &mut http::Request) {
+    pub fn apply(&self, req: &mut Request) {
         for (k, v) in &self.headers {
             // Remove headers we do not want to propagate to the backend
             if k == http::header::CONTENT_ENCODING || k == http::header::CONTENT_LENGTH {
@@ -64,7 +65,7 @@ pub enum UpstreamError {
     #[error("stdio upstream error: {0}")]
     ServiceError(#[from] rmcp::ServiceError),
     #[error("http upstream error: {0}")]
-    Http(#[from] mcp::ClientError),
+    Http(#[from] ClientError),
     #[error("openapi upstream error: {0}")]
     OpenAPIError(#[from] anyhow::Error),
     #[error("stdio upstream error: {0}")]
@@ -96,9 +97,6 @@ impl Upstream {
             Upstream::McpSSE(c) => {
                 c.stop().await?;
             },
-            Upstream::OpenAPI(_) => {
-                // No need to do anything here
-            },
         }
         Ok(())
     }
@@ -110,7 +108,6 @@ impl Upstream {
             Upstream::McpStdio(c) => Ok(c.get_event_stream().await),
             Upstream::McpSSE(c) => c.connect_to_event_stream(ctx).await,
             Upstream::McpStreamable(c) => c.get_event_stream(ctx).await?.try_into().map_err(Into::into),
-            Upstream::OpenAPI(_m) => Ok(Messages::pending()),
         }
     }
     pub(crate) async fn generic_stream(
@@ -136,7 +133,6 @@ impl Upstream {
                 }
                 res.try_into().map_err(Into::into)
             },
-            Upstream::OpenAPI(c) => Ok(c.send_message(request, ctx).await?),
         }
     }
 
@@ -155,7 +151,6 @@ impl Upstream {
             Upstream::McpStreamable(c) => {
                 c.send_notification(request, ctx).await?;
             },
-            Upstream::OpenAPI(_) => {},
         }
         Ok(())
     }
@@ -194,7 +189,7 @@ impl UpstreamGroup {
             .ok_or_else(|| anyhow::anyhow!("requested target {name} is not initialized",))
     }
 
-    fn setup_upstream(&self, target: &McpTarget) -> Result<upstream::Upstream, anyhow::Error> {
+    fn setup_upstream(&self, target: &McpTarget) -> Result<upstream::Upstream, orion_error::Error> {
         trace!("connecting to target: {}", target.name);
         let target = match &target.spec {
             McpTargetSpec::Sse(sse) => {
@@ -236,7 +231,8 @@ impl UpstreamGroup {
                 for (k, v) in env {
                     c.env(k, v);
                 }
-                let proc = TokioChildProcess::new(c).context(format!("failed to run command '{:?}'", &cmd))?;
+                let proc =
+                    TokioChildProcess::new(c).with_context_msg(format!("failed to run command '{:?}'", &cmd).into())?;
                 upstream::Upstream::McpStdio(upstream::stdio::Process::new(proc))
             },
             // McpTargetSpec::OpenAPI(open) => {

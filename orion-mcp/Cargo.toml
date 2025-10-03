@@ -46,6 +46,7 @@ arc-swap = "1.7.1"
 indexmap = "2.11"
 axum = "0.8.4"
 http-body-util.workspace = true
+url = "2.5"
 
 thiserror              = "2.0.11"
 tokio-stream.workspace = true

@@ -39,19 +39,19 @@ use tokio::sync::mpsc;
 pub use crate::configuration::get_listeners_and_clusters;
 
 pub use clusters::{
+    ClusterLoadAssignmentBuilder,
     cluster::PartialClusterType,
     health::{EndpointHealthUpdate, HealthCheckManager},
     load_assignment::PartialClusterLoadAssignment,
-    ClusterLoadAssignmentBuilder,
 };
 pub use listeners::listener::ListenerFactory;
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};
 pub use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
 use orion_configuration::config::{
-    cluster::LocalityLbEndpoints as LocalityLbEndpointsConfig,
-    network_filters::http_connection_manager::{http_filters::HttpFilter, RouteSpecifier},
-    secret::Secret,
     Bootstrap, Cluster, Listener as ListenerConfig,
+    cluster::LocalityLbEndpoints as LocalityLbEndpointsConfig,
+    network_filters::http_connection_manager::{RouteSpecifier, http_filters::HttpFilter},
+    secret::Secret,
 };
 pub use secrets::SecretManager;
 pub(crate) use transport::AsyncStream;
@@ -59,7 +59,7 @@ pub(crate) use transport::AsyncStream;
 pub type Error = orion_error::Error;
 pub type Result<T> = ::core::result::Result<T, Error>;
 
-pub use crate::body::poly_body::PolyBody;
+pub use crate::body::poly_body::{PolyBody, PolyBodyError};
 
 pub static RUNTIME_CONFIG: OnceLock<Runtime> = OnceLock::new();
 

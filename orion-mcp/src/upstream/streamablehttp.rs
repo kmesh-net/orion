@@ -6,6 +6,7 @@ use anyhow::anyhow;
 
 use futures::StreamExt;
 use http::header::ACCEPT;
+use orion_lib::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
@@ -15,8 +16,7 @@ use crate::proxy::httpproxy::PolicyClient;
 use crate::store::BackendPolicies;
 use crate::types::agent::SimpleBackend;
 use crate::upstream::IncomingRequestContext;
-use crate::{AtomicOption, ClientError};
-use http::Request;
+use crate::{AtomicOption, ClientError, Request, json};
 
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -80,7 +80,7 @@ impl Client {
             .method(http::Method::POST)
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "))
-            .body(body.into())
+            .body(PolyBody::from(body.as_slice()))
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
@@ -122,7 +122,7 @@ impl Client {
         let mut req = ::http::Request::builder()
             .uri(&self.uri)
             .method(http::Method::DELETE)
-            .body(crate::http::Body::empty())
+            .body(PolyBody::empty())
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
@@ -149,7 +149,7 @@ impl Client {
             .uri(&self.uri)
             .method(http::Method::GET)
             .header(ACCEPT, EVENT_STREAM_MIME_TYPE)
-            .body(crate::http::Body::empty())
+            .body(PolyBody::empty())
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;

@@ -9,7 +9,7 @@ use ::http::request::Parts;
 use anyhow::anyhow;
 use futures_util::StreamExt;
 use http_body_util::BodyExt;
-use orion_lib::PolyBody;
+use orion_lib::{PolyBody, PolyBodyError};
 use rmcp::ErrorData;
 use rmcp::model::{
     ClientInfo, ClientJsonRpcMessage, ClientRequest, ErrorCode, Implementation, JsonRpcError, ProtocolVersion,
@@ -372,11 +372,17 @@ pub(crate) fn sse_stream_response(
         sse.id = message.event_id;
         Result::<Sse, Infallible>::Ok(sse)
     }));
+
     let stream = match keep_alive {
-        Some(duration) => {
-            PolyBody::Stream(stream.with_keep_alive::<TokioSseTimer>(KeepAlive::new().interval(duration)))
-        },
-        None => PolyBody::Stream(stream),
+        Some(duration) => PolyBody::Stream({
+            let s = stream.with_keep_alive::<TokioSseTimer>(KeepAlive::new().interval(duration)).boxed_unsync();
+            let s = s.map_err(|e| PolyBodyError::from(e));
+            s.boxed_unsync()
+        }),
+        None => PolyBody::Stream({
+            let s = stream.map_err(|e| PolyBodyError::from(e));
+            s.boxed_unsync()
+        }),
     };
     ::http::Response::builder()
         .status(StatusCode::OK)
@@ -421,8 +427,8 @@ fn get_client_info() -> ClientInfo {
             elicitation: None,
         },
         client_info: Implementation {
-            name: "agentgateway".to_string(),
-            version: BuildInfo::new().version.to_string(),
+            name: "orion-proxy".to_string(),
+            version: "0.1.0-hack".to_owned(),
             ..Default::default()
         },
     }

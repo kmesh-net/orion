@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use futures_core::stream::BoxStream;
 use futures_util::{StreamExt, TryFutureExt};
 use http::header::ACCEPT;
+use orion_lib::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::EVENT_STREAM_MIME_TYPE;
 use rmcp::transport::streamable_http_client::{SseError, StreamableHttpPostResponse};
@@ -41,7 +42,7 @@ struct SseClient {
     events: BoxedSseStream,
 }
 
-impl crate::mcp::upstream::stdio::MCPTransport for SseClient {
+impl upstream::stdio::MCPTransport for SseClient {
     async fn receive(&mut self) -> Option<ServerJsonRpcMessage> {
         loop {
             let raw = self.events.next().await?.ok()?;
@@ -113,7 +114,7 @@ impl ClientCore {
             .uri(&self.uri)
             .method(http::Method::GET)
             .header(ACCEPT, EVENT_STREAM_MIME_TYPE)
-            .body(http::Body::empty())
+            .body(PolyBody::empty())
             .map_err(ClientError::new)?;
 
         ctx.apply(&mut req);
