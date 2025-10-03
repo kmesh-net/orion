@@ -23,7 +23,7 @@ use std::{
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{mpsc, RwLock},
+    sync::{mpsc, Mutex, RwLock},
     time::Instant,
 };
 
@@ -91,13 +91,13 @@ pub struct InternalConnectionPair {
 #[derive(Debug)]
 pub struct InternalStream {
     metadata: InternalConnectionMetadata,
-    stream: tokio::io::DuplexStream,
+    stream: Mutex<tokio::io::DuplexStream>,
     is_closed: Arc<RwLock<bool>>,
 }
 
 impl InternalStream {
     fn new(metadata: InternalConnectionMetadata, stream: tokio::io::DuplexStream) -> Self {
-        Self { metadata, stream, is_closed: Arc::new(RwLock::new(false)) }
+        Self { metadata, stream: Mutex::new(stream), is_closed: Arc::new(RwLock::new(false)) }
     }
 }
 
@@ -121,7 +121,13 @@ impl AsyncRead for InternalStream {
         cx: &mut std::task::Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        tokio::io::AsyncRead::poll_read(std::pin::Pin::new(&mut self.get_mut().stream), cx, buf)
+        match self.stream.try_lock() {
+            Ok(mut stream) => tokio::io::AsyncRead::poll_read(std::pin::Pin::new(&mut *stream), cx, buf),
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 }
 
@@ -131,21 +137,39 @@ impl AsyncWrite for InternalStream {
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        tokio::io::AsyncWrite::poll_write(std::pin::Pin::new(&mut self.get_mut().stream), cx, buf)
+        match self.stream.try_lock() {
+            Ok(mut stream) => tokio::io::AsyncWrite::poll_write(std::pin::Pin::new(&mut *stream), cx, buf),
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut self.get_mut().stream), cx)
+        match self.stream.try_lock() {
+            Ok(mut stream) => tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut *stream), cx),
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 
     fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        tokio::io::AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut self.get_mut().stream), cx)
+        match self.stream.try_lock() {
+            Ok(mut stream) => tokio::io::AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut *stream), cx),
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 }
 
@@ -172,7 +196,7 @@ impl InternalConnectionFactory {
         let mut listeners = self.listeners.write().await;
 
         if listeners.contains_key(&name) {
-            return Err(Error::new(format!("Internal listener '{}' is already registered", name)));
+            return Err(Error::new(format!("Internal listener '{name}' is already registered")));
         }
 
         listeners.insert(name, handle.clone());
@@ -183,7 +207,7 @@ impl InternalConnectionFactory {
         let mut listeners = self.listeners.write().await;
 
         if listeners.remove(name).is_none() {
-            return Err(Error::new(format!("Internal listener '{}' was not registered", name)));
+            return Err(Error::new(format!("Internal listener '{name}' was not registered")));
         }
 
         Ok(())
@@ -191,11 +215,10 @@ impl InternalConnectionFactory {
 
     pub async fn connect_to_listener(&self, name: &str, endpoint_id: Option<String>) -> Result<AsyncStream> {
         let listeners = self.listeners.read().await;
-        let handle =
-            listeners.get(name).ok_or_else(|| Error::new(format!("Internal listener '{}' not found", name)))?;
+        let handle = listeners.get(name).ok_or_else(|| Error::new(format!("Internal listener '{name}' not found")))?;
 
         let connection_pair = handle.create_connection(endpoint_id)?;
-        Ok(Box::new(InternalStreamWrapper(connection_pair.upstream)))
+        Ok(Box::new(InternalStreamWrapper { inner: connection_pair.upstream }))
     }
 
     pub async fn list_listeners(&self) -> Vec<String> {
@@ -205,7 +228,7 @@ impl InternalConnectionFactory {
 
     pub async fn is_listener_active(&self, name: &str) -> bool {
         let listeners = self.listeners.read().await;
-        listeners.get(name).map_or(false, |handle| handle.is_alive())
+        listeners.get(name).is_some_and(InternalListenerHandle::is_alive)
     }
 
     pub async fn get_stats(&self) -> InternalConnectionStats {
@@ -229,48 +252,85 @@ pub struct InternalConnectionStats {
     pub max_pooled_connections: usize,
 }
 
-pub struct InternalStreamWrapper(Arc<InternalStream>);
+pub struct InternalStreamWrapper {
+    inner: Arc<InternalStream>,
+}
 
 impl Deref for InternalStreamWrapper {
     type Target = InternalStream;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.inner
     }
 }
 
 impl AsyncRead for InternalStreamWrapper {
     fn poll_read(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        _buf: &mut tokio::io::ReadBuf<'_>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        // InternalStreamWrapper is read-only - actual I/O happens in InternalStream
-        std::task::Poll::Pending
+        match self.inner.stream.try_lock() {
+            Ok(mut stream) => {
+                let pinned_stream = std::pin::Pin::new(&mut *stream);
+                tokio::io::AsyncRead::poll_read(pinned_stream, cx, buf)
+            },
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 }
 
 impl AsyncWrite for InternalStreamWrapper {
     fn poll_write(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-        _buf: &[u8],
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        std::task::Poll::Pending
+        match self.inner.stream.try_lock() {
+            Ok(mut stream) => {
+                let pinned_stream = std::pin::Pin::new(&mut *stream);
+                tokio::io::AsyncWrite::poll_write(pinned_stream, cx, buf)
+            },
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 
     fn poll_flush(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
+        match self.inner.stream.try_lock() {
+            Ok(mut stream) => {
+                let pinned_stream = std::pin::Pin::new(&mut *stream);
+                tokio::io::AsyncWrite::poll_flush(pinned_stream, cx)
+            },
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 
     fn poll_shutdown(
         self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
+        cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
+        match self.inner.stream.try_lock() {
+            Ok(mut stream) => {
+                let pinned_stream = std::pin::Pin::new(&mut *stream);
+                tokio::io::AsyncWrite::poll_shutdown(pinned_stream, cx)
+            },
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                std::task::Poll::Pending
+            },
+        }
     }
 }
 

@@ -1024,7 +1024,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                     add,
                     1,
                     trans_handler.thread_id(),
-                    &[KeyValue::new("listener", listener_name_for_route.to_string())]
+                    &[KeyValue::new("listener", listener_name_for_route.to_owned())]
                 );
 
                 if let Some(state) = trans_handler.span_state.as_ref() {
@@ -1049,7 +1049,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                             add,
                             nbytes + resp_head_size as u64,
                             trans_handler.thread_id(),
-                            &[KeyValue::new("listener", listener_name_for_response.to_string())]
+                            &[KeyValue::new("listener", listener_name_for_response.to_owned())]
                         );
 
                         let is_transaction_complete = if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {

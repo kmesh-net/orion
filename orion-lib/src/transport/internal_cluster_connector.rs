@@ -83,8 +83,8 @@ impl InternalChannelConnector {
         Ok(InternalChannel {
             stream,
             cluster_name: self.cluster_name,
-            listener_name: self.connector.listener_name().to_string(),
-            endpoint_id: self.connector.endpoint_id().map(|s| s.to_string()),
+            listener_name: self.connector.listener_name().to_owned(),
+            endpoint_id: self.connector.endpoint_id().map(std::borrow::ToOwned::to_owned),
         })
     }
 
@@ -115,7 +115,7 @@ impl InternalChannel {
 }
 
 pub mod cluster_helpers {
-    use super::*;
+    use super::{global_internal_connection_factory, InternalChannelConnector};
     use orion_configuration::config::cluster::InternalEndpointAddress;
 
     pub fn create_internal_connector(
@@ -125,7 +125,7 @@ pub mod cluster_helpers {
         InternalChannelConnector::new(
             internal_addr.server_listener_name.to_string(),
             cluster_name,
-            internal_addr.endpoint_id.as_ref().map(|s| s.to_string()),
+            internal_addr.endpoint_id.as_ref().map(std::string::ToString::to_string),
         )
     }
 
