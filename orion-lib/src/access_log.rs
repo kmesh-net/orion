@@ -214,9 +214,9 @@ mod tests {
 
     use super::*;
     use orion_format::{
+        DEFAULT_ACCESS_LOG_FORMAT, LogFormatter,
         context::{DownstreamContext, DownstreamResponse, FinishContext, InitContext, UpstreamContext},
         types::ResponseFlags,
-        LogFormatter, DEFAULT_ACCESS_LOG_FORMAT,
     };
     use tokio::{self, time::timeout};
 

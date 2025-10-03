@@ -18,9 +18,9 @@
 use criterion::black_box;
 use http::{Request, Response, StatusCode};
 use orion_format::{
+    LogFormatter, LogFormatterLocal,
     context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
     types::ResponseFlags,
-    LogFormatter, LogFormatterLocal,
 };
 use std::time::{Duration, Instant};
 

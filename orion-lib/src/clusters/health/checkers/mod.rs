@@ -28,16 +28,16 @@ use orion_configuration::config::cluster::health_check::{
     ClusterHealthCheck, GrpcHealthCheck, HttpHealthCheck, TcpHealthCheck,
 };
 use tokio::{
-    sync::{mpsc, Notify},
+    sync::{Notify, mpsc},
     task::JoinHandle,
 };
 
 use self::{grpc::spawn_grpc_health_checker, http::try_spawn_http_health_checker, tcp::spawn_tcp_health_checker};
 use super::{EndpointHealthUpdate, EndpointId, HealthStatus};
 use crate::{
+    Error,
     clusters::GrpcService,
     transport::{HttpChannel, TcpChannelConnector},
-    Error,
 };
 
 #[derive(Debug)]

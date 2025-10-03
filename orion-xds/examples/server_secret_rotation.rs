@@ -18,12 +18,12 @@
 use std::{future::IntoFuture, time::Duration};
 
 use orion_data_plane_api::envoy_data_plane_api::envoy::{
-    config::core::v3::{data_source::Specifier, DataSource},
-    extensions::transport_sockets::tls::v3::{secret, CertificateValidationContext},
+    config::core::v3::{DataSource, data_source::Specifier},
+    extensions::transport_sockets::tls::v3::{CertificateValidationContext, secret},
 };
 use orion_xds::xds::{
     resources,
-    server::{start_aggregate_server, ServerAction},
+    server::{ServerAction, start_aggregate_server},
 };
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

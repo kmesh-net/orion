@@ -102,11 +102,7 @@ fn group_by_numa(cores: Vec<CoreId>, cpuinfo: &str) -> Result<Vec<Vec<CoreId>>> 
             .filter(|l| l.starts_with(needle))
             .filter_map(|s| {
                 let xs = s.split(':').collect::<Vec<_>>();
-                if xs.len() == 2 {
-                    xs[1].trim().parse::<usize>().ok()
-                } else {
-                    None
-                }
+                if xs.len() == 2 { xs[1].trim().parse::<usize>().ok() } else { None }
             })
             .collect::<Vec<_>>()
     };

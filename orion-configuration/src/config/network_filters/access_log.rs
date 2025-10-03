@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use orion_data_plane_api::envoy_data_plane_api::envoy::{
-    config::accesslog::v3::{access_log::ConfigType, AccessLog as EnvoyAccessLog},
+    config::accesslog::v3::{AccessLog as EnvoyAccessLog, access_log::ConfigType},
     extensions::access_loggers::{
         file::v3::FileAccessLog as EnvoyFileAccessLog,
         stream::v3::{StderrAccessLog as EnvoyStderrAccessLog, StdoutAccessLog as EnvoyStdoutAccessLog},
@@ -41,7 +41,7 @@ use orion_data_plane_api::envoy_data_plane_api::{
     prost::Message,
 };
 
-use orion_format::{LogFormatter, DEFAULT_ACCESS_LOG_FORMAT};
+use orion_format::{DEFAULT_ACCESS_LOG_FORMAT, LogFormatter};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{common::*, core::DataSource};

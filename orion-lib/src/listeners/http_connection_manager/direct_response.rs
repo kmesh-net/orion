@@ -16,11 +16,11 @@
 //
 use super::{RequestHandler, TransactionHandler};
 use crate::{
-    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
     PolyBody, Result,
+    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
 };
 use http_body_util::Full;
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response, body::Incoming};
 use orion_configuration::config::network_filters::http_connection_manager::route::DirectResponseAction;
 
 use orion_format::context::UpstreamContext;

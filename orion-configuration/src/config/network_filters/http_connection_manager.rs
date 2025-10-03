@@ -570,13 +570,13 @@ mod tests {
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        header_modifer::HeaderModifier,
-        http_filters::{
-            router::Router, FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, SupportedEnvoyFilter,
-            SupportedEnvoyHttpFilter,
-        },
         CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn,
         RetryPolicy, Route, RouteConfiguration, RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
+        header_modifer::HeaderModifier,
+        http_filters::{
+            FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, SupportedEnvoyFilter,
+            SupportedEnvoyHttpFilter, router::Router,
+        },
     };
     use crate::config::{
         common::*,
@@ -588,17 +588,17 @@ mod envoy_conversions {
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::{
             core::v3::{
-                config_source::ConfigSourceSpecifier as EnvoyConfigSourceSpecifier, AggregatedConfigSource,
-                ConfigSource as EnvoyConfigSource,
+                AggregatedConfigSource, ConfigSource as EnvoyConfigSource,
+                config_source::ConfigSourceSpecifier as EnvoyConfigSourceSpecifier,
             },
             route::v3::{
-                retry_policy::RetryBackOff as EnvoyRetryBackoff, RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute,
-                RouteConfiguration as EnvoyRouteConfiguration, VirtualHost as EnvoyVirtualHost,
+                RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute, RouteConfiguration as EnvoyRouteConfiguration,
+                VirtualHost as EnvoyVirtualHost, retry_policy::RetryBackOff as EnvoyRetryBackoff,
             },
         },
         extensions::filters::network::http_connection_manager::v3::{
-            http_connection_manager::{CodecType as EnvoyCodecType, RouteSpecifier as EnvoyRouteSpecifier},
             HttpConnectionManager as EnvoyHttpConnectionManager, Rds as EnvoyRds,
+            http_connection_manager::{CodecType as EnvoyCodecType, RouteSpecifier as EnvoyRouteSpecifier},
         },
     };
     use std::{collections::HashMap, str::FromStr, time::Duration};

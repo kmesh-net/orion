@@ -31,10 +31,10 @@ use webpki::types::ServerName;
 
 use super::health::HealthStatus;
 use crate::{
+    Error, Result, SecretManager,
     clusters::load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
     secrets::TransportSecret,
     transport::{GrpcService, HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
-    Error, Result, SecretManager,
 };
 
 use dynamic::{DynamicCluster, DynamicClusterBuilder};

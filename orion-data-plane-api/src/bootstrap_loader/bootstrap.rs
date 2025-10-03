@@ -21,18 +21,18 @@ use std::{collections::HashSet, fs, path};
 use crate::envoy_validation::FilterValidation;
 use envoy_data_plane_api::envoy::{
     config::{
-        bootstrap::v3::{bootstrap::DynamicResources, Bootstrap},
+        bootstrap::v3::{Bootstrap, bootstrap::DynamicResources},
         cluster::v3::Cluster,
         core::v3::{
-            address, config_source::ConfigSourceSpecifier, grpc_service::TargetSpecifier, ApiConfigSource,
-            SocketAddress,
+            ApiConfigSource, SocketAddress, address, config_source::ConfigSourceSpecifier,
+            grpc_service::TargetSpecifier,
         },
-        endpoint::v3::{lb_endpoint::HostIdentifier, Endpoint},
-        listener::v3::{filter::ConfigType, Listener},
+        endpoint::v3::{Endpoint, lb_endpoint::HostIdentifier},
+        listener::v3::{Listener, filter::ConfigType},
         route::v3::RouteConfiguration,
     },
     extensions::filters::network::http_connection_manager::v3::{
-        http_connection_manager::RouteSpecifier, HttpConnectionManager,
+        HttpConnectionManager, http_connection_manager::RouteSpecifier,
     },
 };
 

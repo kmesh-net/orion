@@ -16,8 +16,8 @@
 //
 
 use super::upgrade_utils;
-use crate::{event_error::EventKind, listeners::synthetic_http_response::SyntheticHttpResponse, PolyBody};
-use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Response};
+use crate::{PolyBody, event_error::EventKind, listeners::synthetic_http_response::SyntheticHttpResponse};
+use http::{HeaderMap, HeaderName, HeaderValue, Method, Request, Response, header};
 use orion_configuration::config::network_filters::http_connection_manager::XffSettings;
 use orion_http_header::{X_ENVOY_EXTERNAL_ADDRESS, X_ENVOY_INTERNAL, X_FORWARDED_FOR};
 use std::net::{IpAddr, SocketAddr};

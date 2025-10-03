@@ -20,17 +20,17 @@ use super::{
     tcp_proxy::{TcpProxy, TcpProxyBuilder},
 };
 use crate::{
+    AsyncStream, ConversionContext, Error, Result,
     listeners::{
         filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
         http_connection_manager::ExtendedRequest,
     },
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::AsyncReadWrite,
-    AsyncStream, ConversionContext, Error, Result,
 };
 use compact_str::CompactString;
 use futures::TryFutureExt;
-use hyper::{service::Service, Request};
+use hyper::{Request, service::Service};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder as HyperServerBuilder;
 use opentelemetry::KeyValue;
@@ -45,7 +45,7 @@ use orion_metrics::{
     metrics::{http, tcp, tls},
     with_histogram, with_metric,
 };
-use rustls::{server::Acceptor, ServerConfig};
+use rustls::{ServerConfig, server::Acceptor};
 use scopeguard::defer;
 use std::{sync::Arc, thread::ThreadId};
 use tracing::{debug, warn};

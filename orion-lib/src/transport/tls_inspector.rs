@@ -49,7 +49,7 @@ pub async fn inspect_client_hello(stream: Box<dyn AsyncReadWrite>) -> (Inspector
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustls::{pki_types::ServerName, ClientConfig, ClientConnection};
+    use rustls::{ClientConfig, ClientConnection, pki_types::ServerName};
     use std::{io::Cursor, sync::Arc};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

@@ -15,20 +15,20 @@
 //
 //
 
-use futures::{future::BoxFuture, FutureExt, TryFutureExt};
+use futures::{FutureExt, TryFutureExt, future::BoxFuture};
 use http::{
-    uri::{Authority, Scheme},
     Request, Uri,
+    uri::{Authority, Scheme},
 };
 use std::{iter::Cycle, sync::Arc, vec::IntoIter};
 
-use orion_xds::grpc_deps::{to_grpc_body, GrpcBody};
+use orion_xds::grpc_deps::{GrpcBody, to_grpc_body};
 use tower::Service;
 
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind},
     listeners::http_connection_manager::{RequestHandler, TransactionHandler},
-    transport::{policy::RequestExt, HttpChannel},
+    transport::{HttpChannel, policy::RequestExt},
 };
 
 /// Adapts a [`HttpChannel`] to a [`Service`] that can be used as a channel for gRPC.

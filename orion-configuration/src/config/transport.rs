@@ -20,9 +20,9 @@ use crate::config::{cluster, common::*};
 use base64::Engine as _;
 use compact_str::CompactString;
 use serde::{
+    Deserialize, Serialize,
     de::{self, MapAccess, Visitor},
     ser::SerializeStruct,
-    Deserialize, Serialize,
 };
 use std::{
     ffi::{CStr, CString},
@@ -296,18 +296,19 @@ mod envoy_conversions {
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::core::v3::{
-                socket_option::Value as EnvoySocketOptionValue, ProxyProtocolConfig as EnvoyProxyProtocolConfig,
-                ProxyProtocolPassThroughTlVs as EnvoyPassTlvs, SocketOption as EnvoySocketOption,
-                TlvEntry as EnvoyTlvEntry,
+                ProxyProtocolConfig as EnvoyProxyProtocolConfig, ProxyProtocolPassThroughTlVs as EnvoyPassTlvs,
+                SocketOption as EnvoySocketOption, TlvEntry as EnvoyTlvEntry,
+                socket_option::Value as EnvoySocketOptionValue,
             },
             extensions::transport_sockets::{
                 proxy_protocol::v3::ProxyProtocolUpstreamTransport as EnvoyProxyProtocolUpstreamTransport,
                 raw_buffer::v3::RawBuffer as EnvoyRawBuffer,
                 tls::v3::{
+                    CommonTlsContext as EnvoyCommonTlsContext, DownstreamTlsContext as EnvoyDownstreamTlsContext,
+                    SdsSecretConfig as EnvoySdsSecretConfig, TlsParameters as EnvoyTlsParameters,
+                    UpstreamTlsContext as EnvoyUpstreamTlsContext,
                     common_tls_context::ValidationContextType as EnvoyValidationContextType,
-                    tls_parameters::TlsProtocol as EnvoyTlsProtocol, CommonTlsContext as EnvoyCommonTlsContext,
-                    DownstreamTlsContext as EnvoyDownstreamTlsContext, SdsSecretConfig as EnvoySdsSecretConfig,
-                    TlsParameters as EnvoyTlsParameters, UpstreamTlsContext as EnvoyUpstreamTlsContext,
+                    tls_parameters::TlsProtocol as EnvoyTlsProtocol,
                 },
             },
         },

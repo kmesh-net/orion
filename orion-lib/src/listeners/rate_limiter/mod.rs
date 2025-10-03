@@ -16,7 +16,7 @@
 //
 
 mod token_bucket;
-use http::{status::StatusCode, Request};
+use http::{Request, status::StatusCode};
 use tracing::warn;
 
 use token_bucket::TokenBucket;

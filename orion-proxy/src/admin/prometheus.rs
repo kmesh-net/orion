@@ -26,7 +26,7 @@ use orion_metrics::{
 use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
 
 use crate::admin::AdminState;
-use ::http::{header::HeaderMap, StatusCode};
+use ::http::{StatusCode, header::HeaderMap};
 use opentelemetry::KeyValue;
 use std::hash::Hash;
 use tracing::warn;

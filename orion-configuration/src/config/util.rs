@@ -20,7 +20,7 @@ pub(crate) use envoy_conversions::*;
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
-    use crate::config::{common::GenericError, WithNodeOnResult};
+    use crate::config::{WithNodeOnResult, common::GenericError};
     use http::StatusCode;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::r#type::v3::HttpStatus as EnvoyHttpStatus,

@@ -18,7 +18,7 @@
 pub use crate::config::network_filters::network_rbac::Action;
 use crate::config::{common::*, core::StringMatcher};
 use http::{HeaderMap, HeaderName, Method, Request, Response, Uri};
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Visitor};
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -339,10 +339,10 @@ mod envoy_conversions {
     use super::{HeaderMatcher, HeaderNames};
     use crate::config::{
         common::*,
-        core::{regex_from_envoy, StringMatcher, StringMatcherPattern},
+        core::{StringMatcher, StringMatcherPattern, regex_from_envoy},
     };
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::{
-        header_matcher::HeaderMatchSpecifier as EnvoyHeaderMatchSpecifier, HeaderMatcher as EnvoyHeaderMatcher,
+        HeaderMatcher as EnvoyHeaderMatcher, header_matcher::HeaderMatchSpecifier as EnvoyHeaderMatchSpecifier,
     };
     use std::str::FromStr;
 

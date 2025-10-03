@@ -35,7 +35,7 @@ mod tests {
     use std::ffi::CStr;
 
     use super::*;
-    use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::{socket_option, SocketOption};
+    use orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::{SocketOption, socket_option};
 
     #[test]
     fn envoy_bind_device_none() {

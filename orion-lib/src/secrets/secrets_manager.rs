@@ -18,13 +18,13 @@
 use crate::Result;
 use compact_str::{CompactString, ToCompactString};
 use orion_configuration::{
-    config::secret::{Secret, TlsCertificate, Type, ValidationContext},
     VerifySingleIter,
+    config::secret::{Secret, TlsCertificate, Type, ValidationContext},
 };
 use rustc_hash::FxHashMap as HashMap;
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
     RootCertStore,
+    pki_types::{CertificateDer, PrivateKeyDer},
 };
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::sync::Arc;

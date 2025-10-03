@@ -27,14 +27,14 @@ use orion_configuration::config::{
 };
 
 use crate::{
+    Result,
     clusters::{
+        GrpcService,
         clusters_manager::{RoutingContext, RoutingRequirement},
         load_assignment::ClusterLoadAssignment,
-        GrpcService,
     },
     secrets::TransportSecret,
     transport::{HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
-    Result,
 };
 
 use super::{ClusterOps, ClusterType};

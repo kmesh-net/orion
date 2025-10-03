@@ -30,12 +30,12 @@ use tokio::sync::mpsc;
 
 use super::*;
 use crate::{
+    PolyBody, Result,
     clusters::health::{
-        checkers::tests::{deref, TestFixture},
         HealthStatus,
+        checkers::tests::{TestFixture, deref},
     },
     listeners::http_connection_manager::TransactionHandler,
-    PolyBody, Result,
 };
 
 /// Channels to report every time an HTTP request is made, `requests`,

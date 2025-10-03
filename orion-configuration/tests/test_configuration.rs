@@ -15,7 +15,7 @@
 //
 //
 
-use orion_configuration::config::{deserialize_yaml, Bootstrap, Config};
+use orion_configuration::config::{Bootstrap, Config, deserialize_yaml};
 use orion_error::{Context, Error};
 use std::{fs::File, path::PathBuf};
 

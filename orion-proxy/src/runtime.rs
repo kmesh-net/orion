@@ -18,7 +18,7 @@
 use crate::core_affinity::{self, AffinityStrategy};
 use orion_configuration::config::runtime::Affinity;
 use orion_lib::runtime_config;
-use orion_metrics::{metrics::init_per_thread_metrics, Metrics};
+use orion_metrics::{Metrics, metrics::init_per_thread_metrics};
 use std::{fmt::Display, ops::Deref};
 use tokio::runtime::{Builder, Runtime};
 use tracing::{info, warn};

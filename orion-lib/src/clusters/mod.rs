@@ -26,8 +26,7 @@ pub use crate::transport::{GrpcService, SimpleRoundRobinGrpcServiceLB};
 pub use load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment};
 
 pub use clusters_manager::{
-    add_cluster, all_grpc_connections, change_cluster_load_assignment, get_all_clusters,
-    get_cluster_routing_requirements, get_grpc_connection, get_http_connection, get_tcp_connection, remove_cluster,
-    remove_cluster_load_assignment, resolve_cluster, update_endpoint_health, update_tls_context, RoutingContext,
-    RoutingRequirement,
+    RoutingContext, RoutingRequirement, add_cluster, all_grpc_connections, change_cluster_load_assignment,
+    get_all_clusters, get_cluster_routing_requirements, get_grpc_connection, get_http_connection, get_tcp_connection,
+    remove_cluster, remove_cluster_load_assignment, resolve_cluster, update_endpoint_health, update_tls_context,
 };

@@ -34,10 +34,10 @@ use arc_swap::ArcSwap;
 use compact_str::{CompactString, ToCompactString};
 use core::time::Duration;
 use futures::future::BoxFuture;
-use hyper::{body::Incoming, service::Service, Request, Response};
+use hyper::{Request, Response, body::Incoming, service::Service};
+use opentelemetry::KeyValue;
 use opentelemetry::global::BoxedSpan;
 use opentelemetry::trace::{Span, Status};
-use opentelemetry::KeyValue;
 use orion_configuration::config::GenericError;
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use orion_tracing::span_state::SpanState;
@@ -53,10 +53,10 @@ use orion_configuration::config::network_filters::tracing::{TracingConfig, Traci
 use orion_configuration::config::network_filters::{
     access_log::AccessLog,
     http_connection_manager::{
-        http_filters::{http_rbac::HttpRbac, HttpFilter as HttpFilterConfig, HttpFilterType},
-        route::{Action, RouteMatchResult},
         CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager as HttpConnectionManagerConfig,
         RdsSpecifier, RouteSpecifier, UpgradeType,
+        http_filters::{HttpFilter as HttpFilterConfig, HttpFilterType, http_rbac::HttpRbac},
+        route::{Action, RouteMatchResult},
     },
 };
 use orion_format::context::{
@@ -79,7 +79,7 @@ use upgrades as upgrade_utils;
 
 use crate::event_error::{EventKind, UpstreamTransportEventError};
 use crate::{
-    access_log::{is_access_log_enabled, log_access, log_access_reserve_balanced, AccessLogMessage, Target},
+    access_log::{AccessLogMessage, Target, is_access_log_enabled, log_access, log_access_reserve_balanced},
     body::{
         body_with_metrics::BodyWithMetrics,
         response_flags::{BodyKind, ResponseFlags},
@@ -87,13 +87,13 @@ use crate::{
 };
 
 use crate::{
+    ConversionContext, PolyBody, Result, RouteConfiguration,
     body::body_with_timeout::BodyWithTimeout,
     listeners::{
         access_log::AccessLogContext, filter_state::DownstreamMetadata, rate_limiter::LocalRateLimit,
         synthetic_http_response::SyntheticHttpResponse,
     },
     utils::http::{request_head_size, response_head_size},
-    ConversionContext, PolyBody, Result, RouteConfiguration,
 };
 use orion_tracing::http_tracer::{HttpTracer, SpanKind, SpanName};
 use orion_tracing::request_id::{RequestId, RequestIdManager};

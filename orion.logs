@@ -1,0 +1,321 @@
+2025-09-09T12:30:05.558606Z  WARN main orion_configuration::config::network_filters::http_connection_manager::envoy_conversions: unsupported field stat_prefix used in http_connection_manager. This field will be ignored.
+2025-09-09T12:30:05.558892Z  WARN main orion_configuration::config::network_filters::http_connection_manager::envoy_conversions: unsupported field stat_prefix used in http_connection_manager. This field will be ignored.
+2025-09-09T12:30:05.559579Z  WARN main orion_proxy: CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work
+2025-09-09T12:30:05.559616Z DEBUG main orion_proxy::proxy: Starting on thread Some("main")
+2025-09-09T12:30:05.560065Z DEBUG main orion_lib::listeners::listener: Listener 0.0.0.0_15090 :TLS Inspector is false
+2025-09-09T12:30:05.560155Z DEBUG main orion_lib::listeners::listener: Listener 0.0.0.0_15021 :TLS Inspector is false
+2025-09-09T12:30:05.560199Z DEBUG main orion_lib::clusters::cluster: Cluster prometheus_stats type Static(ClusterLoadAssignment { endpoints: [LocalityLbEndpoints { priority: 0, lb_endpoints: [LbEndpoint { address: Socket("127.0.0.1", 15000), health_status: Healthy, load_balancing_weight: 1 }] }], cluster_name: "prometheus_stats" }) 
+2025-09-09T12:30:05.560300Z DEBUG main orion_lib::clusters::cluster: Cluster agent type Static(ClusterLoadAssignment { endpoints: [LocalityLbEndpoints { priority: 0, lb_endpoints: [LbEndpoint { address: Socket("127.0.0.1", 15020), health_status: Healthy, load_balancing_weight: 1 }] }], cluster_name: "agent" }) 
+2025-09-09T12:30:05.560355Z DEBUG main orion_lib::clusters::cluster: Cluster sds-grpc type Static(ClusterLoadAssignment { endpoints: [LocalityLbEndpoints { priority: 0, lb_endpoints: [LbEndpoint { address: Pipe("./var/run/secrets/workload-spiffe-uds/socket", 0), health_status: Healthy, load_balancing_weight: 1 }] }], cluster_name: "sds-grpc" }) 
+2025-09-09T12:30:05.560414Z DEBUG main orion_lib::clusters::cluster: Cluster xds-grpc type Static(ClusterLoadAssignment { endpoints: [LocalityLbEndpoints { priority: 0, lb_endpoints: [LbEndpoint { address: Pipe("./etc/istio/proxy/XDS", 0), health_status: Healthy, load_balancing_weight: 1 }] }], cluster_name: "xds-grpc" }) 
+2025-09-09T12:30:05.560600Z  INFO main orion_proxy::proxy: using 2 runtimes with 1 threads each
+2025-09-09T12:30:05.560628Z  INFO main orion_metrics::metrics: Initializing global metrics...
+2025-09-09T12:30:05.560669Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.tcp" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560722Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.tcp" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560757Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.tcp" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560788Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.tcp" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560821Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.tls" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560849Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560874Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560902Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560939Z DEBUG main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.560961Z  INFO services_RT orion_proxy::proxy: OTEL metrics: stats_sink not configured (skipped)
+2025-09-09T12:30:05.560974Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561002Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561056Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561096Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561135Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561176Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561212Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561256Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561293Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561331Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561370Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.http" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561405Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.listeners" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561433Z  WARN services_RT orion_lib::transport::http_channel: Building address from a pipe ./var/run/secrets/workload-spiffe-uds/socket
+2025-09-09T12:30:05.561443Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.listeners" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561484Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.listeners" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561491Z  WARN services_RT orion_lib::transport::http_channel: Building address from a pipe unix://2e2f7661722f72756e2f736563726574732f776f726b6c6f61642d7370696666652d7564732f736f636b6574:0/
+2025-09-09T12:30:05.561522Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.listeners" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561580Z  WARN services_RT orion_lib::transport::http_channel: Building address from a pipe ./etc/istio/proxy/XDS
+2025-09-09T12:30:05.561566Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.listeners" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561615Z  WARN services_RT orion_lib::transport::http_channel: Building address from a pipe unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+2025-09-09T12:30:05.561610Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561651Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561691Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561731Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561768Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561799Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561827Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561855Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561884Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561912Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.561942Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.cluster" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.563434Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 1s connection_id=1
+2025-09-09T12:30:05.563622Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+2025-09-09T12:30:05.563818Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.server" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.563861Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.server" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+gRPC request body finalized
+2025-09-09T12:30:05.563952Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:05.564020Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:05.564045Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:05.564086Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:05.564112Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:05.565793Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.server" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.565840Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.server" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.565863Z DEBUG        main opentelemetry:  name="NoopMeterProvider.MeterCreation" meter_name="orion.server" Meter was obtained from a NoopMeterProvider. No metrics will be recorded. If global::meter_with_scope()/meter() was used, ensure that a valid MeterProvider is set globally before creating Meter.
+2025-09-09T12:30:05.565897Z  INFO        main orion_proxy::proxy: Launching with 2 cpus, 2 runtimes
+2025-09-09T12:30:05.566060Z  INFO    proxy_RT orion_metrics::metrics: Initializing per-thread metrics...
+2025-09-09T12:30:05.566075Z  INFO    proxy_RT orion_metrics::metrics: Initializing per-thread metrics...
+2025-09-09T12:30:05.566166Z DEBUG    proxy_RT orion_lib: listeners manager starting
+2025-09-09T12:30:05.566167Z DEBUG    proxy_RT orion_lib: listeners manager starting
+2025-09-09T12:30:05.566277Z  INFO    proxy_RT orion_lib::listeners::listeners_manager: Listener 0.0.0.0_15090 at 0.0.0.0:15090 (device bind:false)
+2025-09-09T12:30:05.566277Z  INFO    proxy_RT orion_lib::listeners::listeners_manager: Listener 0.0.0.0_15090 at 0.0.0.0:15090 (device bind:false)
+2025-09-09T12:30:05.566366Z  INFO    proxy_RT orion_lib::listeners::listeners_manager: Listener 0.0.0.0_15021 at 0.0.0.0:15021 (device bind:false)
+2025-09-09T12:30:05.566370Z  INFO    proxy_RT orion_lib::listeners::listeners_manager: Listener 0.0.0.0_15021 at 0.0.0.0:15021 (device bind:false)
+2025-09-09T12:30:05.566476Z  INFO    proxy_RT orion_lib::listeners::listener: listener '0.0.0.0_15090' started: 0.0.0.0:15090
+2025-09-09T12:30:05.566476Z  INFO    proxy_RT orion_lib::listeners::listener: listener '0.0.0.0_15090' started: 0.0.0.0:15090
+2025-09-09T12:30:05.566532Z  INFO    proxy_RT orion_lib::listeners::listener: listener '0.0.0.0_15021' started: 0.0.0.0:15021
+2025-09-09T12:30:05.566534Z  INFO    proxy_RT orion_lib::listeners::listener: listener '0.0.0.0_15021' started: 0.0.0.0:15021
+2025-09-09T12:30:07.565730Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=2
+2025-09-09T12:30:07.566195Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:07.567160Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:07.567442Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:07.567510Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:07.567671Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:07.567750Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:09.569566Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=3
+2025-09-09T12:30:09.569979Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:09.571052Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:09.571369Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:09.571454Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:09.571587Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:09.571683Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:11.573629Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=4
+2025-09-09T12:30:11.574325Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:11.575420Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:11.575651Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:11.575750Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:11.575918Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:11.576071Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:13.577653Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=5
+2025-09-09T12:30:13.578110Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:13.579095Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:13.579339Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:13.579418Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:13.579562Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:13.579654Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:15.581113Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=6
+2025-09-09T12:30:15.581598Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:15.582572Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:15.582784Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:15.582840Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:15.582978Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:15.583089Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:17.584581Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=7
+2025-09-09T12:30:17.584967Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:17.585975Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:17.586189Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:17.586297Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:17.586442Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:17.586574Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:19.587834Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=8
+2025-09-09T12:30:19.588419Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:19.589489Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:19.589729Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:19.589791Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:19.589933Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:19.590050Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:21.591654Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=9
+2025-09-09T12:30:21.592108Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:21.593310Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:21.593514Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:21.593601Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:21.593881Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:21.594028Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:23.595650Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=10
+2025-09-09T12:30:23.596134Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:23.597160Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:23.597465Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:23.597563Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:23.597710Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:23.597838Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:25.599454Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=11
+2025-09-09T12:30:25.599869Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:25.601067Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:25.601427Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:25.601539Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:25.601846Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:25.601974Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:27.603458Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=12
+2025-09-09T12:30:27.603657Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:27.604001Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:27.604070Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:27.604095Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:27.604145Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:27.604181Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:29.605611Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=13
+2025-09-09T12:30:29.605986Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:29.606685Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:29.606833Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:29.606868Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:29.606960Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:29.607021Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:31.608695Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=14
+2025-09-09T12:30:31.609107Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:31.610074Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:31.610309Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:31.610378Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:31.610539Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:31.610645Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:33.611135Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=15
+2025-09-09T12:30:33.611533Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:33.612259Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:33.612415Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:33.612469Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:33.612581Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:33.612667Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:35.613484Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=16
+2025-09-09T12:30:35.613840Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:35.614862Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:35.615087Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:35.615146Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:35.615326Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:35.615494Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:36.385521Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: listeners.downstream_cx_total
+2025-09-09T12:30:36.385677Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: listeners.downstream_cx_destroy
+2025-09-09T12:30:36.385750Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: listeners.downstream_cx_active
+2025-09-09T12:30:36.385890Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: listeners.no_filter_chain_match
+2025-09-09T12:30:36.387209Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_rq_timeout
+2025-09-09T12:30:36.387753Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_rq_per_try_timeout
+2025-09-09T12:30:36.387886Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_rq_retry
+2025-09-09T12:30:36.388029Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_total
+2025-09-09T12:30:36.388142Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_idle_timeout
+2025-09-09T12:30:36.388313Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_connect_fail
+2025-09-09T12:30:36.388482Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_connect_timeout
+2025-09-09T12:30:36.388617Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_destroy
+2025-09-09T12:30:36.388741Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: cluster.upstream_cx_active
+2025-09-09T12:30:36.388855Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_total
+2025-09-09T12:30:36.388968Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_ssl_total
+2025-09-09T12:30:36.389110Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_ssl_active
+2025-09-09T12:30:36.389248Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_destroy
+2025-09-09T12:30:36.389378Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_active
+2025-09-09T12:30:36.389490Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_1xx
+2025-09-09T12:30:36.389606Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_2xx
+2025-09-09T12:30:36.389703Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_3xx
+2025-09-09T12:30:36.389809Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_4xx
+2025-09-09T12:30:36.389956Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_5xx
+2025-09-09T12:30:36.390072Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_total
+2025-09-09T12:30:36.390212Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_rq_active
+2025-09-09T12:30:36.390373Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_rx_bytes_total
+2025-09-09T12:30:36.390490Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: http.downstream_cx_tx_bytes_total
+2025-09-09T12:30:36.391648Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: tcp.downstream_cx_total
+2025-09-09T12:30:36.391767Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: tcp.downstream_cx_destroy
+2025-09-09T12:30:36.391853Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: tcp.downstream_cx_active
+2025-09-09T12:30:36.391948Z  WARN services_RT orion_proxy::admin::prometheus: [prometheus] No data for metric: tls.handshake
+2025-09-09T12:30:37.616395Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=17
+2025-09-09T12:30:37.616771Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:37.617695Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:37.617874Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:37.617938Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:37.618060Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:37.618186Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:39.619775Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=18
+2025-09-09T12:30:39.620467Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:39.622061Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "1ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:39.622343Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:39.622399Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:39.622537Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:39.622617Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+gRPC request body finalized
+2025-09-09T12:30:41.628324Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=19
+2025-09-09T12:30:41.628537Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+2025-09-09T12:30:41.628930Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:41.628995Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:41.629009Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:41.629055Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:41.629074Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:43.630623Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=20
+2025-09-09T12:30:43.631006Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:43.632086Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:43.632412Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:43.632498Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:43.632656Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:43.632732Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:45.634446Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=21
+2025-09-09T12:30:45.634681Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:45.635141Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:45.635260Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:45.635288Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:45.635349Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:45.635398Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:47.636519Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=22
+2025-09-09T12:30:47.636924Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:47.637862Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:47.638070Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:47.638143Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:47.638365Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:47.638467Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:49.639707Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=23
+2025-09-09T12:30:49.640194Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:49.641302Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:49.641542Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:49.641610Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:49.641774Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:49.641868Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:51.643578Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=24
+2025-09-09T12:30:51.643999Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:51.644938Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:51.645165Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:51.645257Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:51.645387Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:51.645517Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:53.646641Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=25
+2025-09-09T12:30:53.647154Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:53.648134Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:53.648383Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:53.648473Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:53.648643Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:53.648783Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:55.650692Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=26
+2025-09-09T12:30:55.651203Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:55.652369Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:55.652610Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:55.652675Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:55.652865Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:55.652985Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:57.654458Z DEBUG services_RT orion_xds::xds::client: starting xDS (re)connect cycle 2s connection_id=27
+2025-09-09T12:30:57.654626Z  INFO services_RT orion_lib::transport::http_channel: Using UNIX channel and rewriting uris http://pipe_dream/envoy.service.discovery.v3.AggregatedDiscoveryService/DeltaAggregatedResources unix://2e2f6574632f697374696f2f70726f78792f584453:0/
+gRPC request body finalized
+2025-09-09T12:30:57.654943Z DEBUG services_RT orion_lib::transport::http_channel: Event (Reset) occurred after "0ms": UpstreamRemoteReset (UR)
+2025-09-09T12:30:57.655006Z  INFO services_RT orion_xds::xds::client: xDS stream established
+2025-09-09T12:30:57.655026Z DEBUG services_RT orion_xds::xds::client: XDS client connection backoff has been reset
+2025-09-09T12:30:57.655071Z  WARN services_RT orion_xds::xds::client: xDS client error: "gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502"
+2025-09-09T12:30:57.655099Z  WARN services_RT orion_xds::xds::client: xDS client terminated: gRPC error (The service is currently unavailable): grpc-status header missing, mapped from HTTP status code 502, retrying in 2s
+2025-09-09T12:30:58.484016Z  INFO    proxy_RT orion_proxy::proxy: CTRL+C (Proxy runtime)!
+2025-09-09T12:30:58.484008Z  INFO services_RT orion_proxy::proxy: CTRL+C (service runtime)!
+2025-09-09T12:30:58.484025Z  INFO    proxy_RT orion_proxy::proxy: CTRL+C (Proxy runtime)!

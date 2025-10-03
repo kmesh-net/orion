@@ -132,12 +132,12 @@ mod envoy_conversions {
                 HttpProtocolOptions as EnvoyCommonHttpProtocolOptions, KeepaliveSettings,
             },
             extensions::upstreams::http::v3::{
+                HttpProtocolOptions as EnvoyHttpProtocolOptions,
                 http_protocol_options::{
-                    explicit_http_config::ProtocolConfig as EnvoyProtocolConfig,
                     ExplicitHttpConfig as EnvoyExplicitHttpConfig,
                     UpstreamProtocolOptions as EnvoyUpstreamProtocolOptions,
+                    explicit_http_config::ProtocolConfig as EnvoyProtocolConfig,
                 },
-                HttpProtocolOptions as EnvoyHttpProtocolOptions,
             },
         },
         google::protobuf::Any,

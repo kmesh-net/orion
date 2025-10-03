@@ -19,8 +19,8 @@
 
 use orion_configuration::config::{Config, Runtime};
 use orion_configuration::options::Options;
-use orion_lib::configuration::get_listeners_and_clusters;
 use orion_lib::RUNTIME_CONFIG;
+use orion_lib::configuration::get_listeners_and_clusters;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tracing_test::traced_test;

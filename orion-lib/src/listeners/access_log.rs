@@ -15,7 +15,7 @@
 //
 //
 
-use orion_format::{context::Context, LogFormatterLocal};
+use orion_format::{LogFormatterLocal, context::Context};
 
 pub trait AccessLogContext {
     type Type;

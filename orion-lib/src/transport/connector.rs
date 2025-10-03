@@ -34,7 +34,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
 use tracing::debug;
 
-use crate::event_error::{elapsed, EventError};
+use crate::event_error::{EventError, elapsed};
 
 use super::{bind_device::BindDevice, resolve};
 

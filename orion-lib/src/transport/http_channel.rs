@@ -21,6 +21,7 @@ use super::{
     policy::{RequestContext, RequestExt},
 };
 use crate::{
+    Error, PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
     clusters::retry_policy::RetryCondition,
     event_error::{EventError, EventKind, TryInferFrom},
@@ -30,17 +31,16 @@ use crate::{
     },
     secrets::{TlsConfigurator, WantsToBuildClient},
     thread_local::{LocalBuilder, LocalObject},
-    Error, PolyBody, Result,
 };
 use http::{
-    uri::{Authority, Parts},
     HeaderValue, Response, Version,
+    uri::{Authority, Parts},
 };
 use http_body_util::BodyExt;
-use hyper::{body::Incoming, Request, Uri};
+use hyper::{Request, Uri, body::Incoming};
 use hyper_rustls::{FixedServerNameResolver, HttpsConnector};
 use hyper_util::{
-    client::legacy::{connect::Connect, Builder, Client},
+    client::legacy::{Builder, Client, connect::Connect},
     rt::tokio::{TokioExecutor, TokioTimer},
 };
 use opentelemetry::KeyValue;
@@ -68,8 +68,8 @@ use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
 use {
-    hyper_util::client::legacy::pool::{ConnectionEvent, EventHandler, Tag},
     hyper_util::client::legacy::PoolKey,
+    hyper_util::client::legacy::pool::{ConnectionEvent, EventHandler, Tag},
     std::any::Any,
 };
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);

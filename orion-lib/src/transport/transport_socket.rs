@@ -16,8 +16,8 @@
 //
 
 use crate::{
-    secrets::{TlsConfigurator, TransportSecret, WantsToBuildClient},
     Result, SecretManager,
+    secrets::{TlsConfigurator, TransportSecret, WantsToBuildClient},
 };
 use orion_configuration::config::transport::UpstreamTransportSocketConfig;
 use rustls::ClientConfig;

@@ -20,27 +20,27 @@ mod tests;
 
 use std::sync::Arc;
 
-use futures::{future::BoxFuture, FutureExt};
+use futures::{FutureExt, future::BoxFuture};
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, GrpcHealthCheck};
 use orion_xds::grpc_deps::{
-    tonic_health::pb::{
-        health_check_response::ServingStatus, health_client::HealthClient, HealthCheckRequest, HealthCheckResponse,
-    },
     Response as TonicResponse, Status as TonicStatus,
+    tonic_health::pb::{
+        HealthCheckRequest, HealthCheckResponse, health_check_response::ServingStatus, health_client::HealthClient,
+    },
 };
 use std::future::Future;
 use tokio::{
-    sync::{mpsc, Notify},
+    sync::{Notify, mpsc},
     task::JoinHandle,
 };
 
 use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};
 use crate::{
+    Error,
     clusters::health::{
-        checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter, EndpointHealthUpdate, EndpointId,
+        EndpointHealthUpdate, EndpointId, checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter,
     },
     transport::GrpcService,
-    Error,
 };
 
 /// Spawns an HTTP health checker and returns its handle. Must be called from a Tokio runtime context.

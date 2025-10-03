@@ -16,14 +16,14 @@
 //
 
 use crate::{
-    access_log::{log_access, log_access_reserve_balanced, Target},
+    AsyncStream, Result,
+    access_log::{Target, log_access, log_access_reserve_balanced},
     clusters::clusters_manager::{self, RoutingContext},
     event_error::{
-        find_error_in_chain, ConnectionTerminationDetails, ResponseCodeDetails, UpstreamTransportEventError,
+        ConnectionTerminationDetails, ResponseCodeDetails, UpstreamTransportEventError, find_error_in_chain,
     },
     listeners::{access_log::AccessLogContext, filter_state::DownstreamMetadata},
     transport::connector::TcpErrorContext,
-    AsyncStream, Result,
 };
 use compact_str::ToCompactString;
 use orion_configuration::config::{
@@ -31,9 +31,9 @@ use orion_configuration::config::{
     network_filters::{access_log::AccessLog, tcp_proxy::TcpProxy as TcpProxyConfig},
 };
 use orion_format::{
+    LogFormatterLocal,
     context::{FinishContext, InitContext, TcpContext},
     types::ResponseFlags,
-    LogFormatterLocal,
 };
 use std::{fmt, net::SocketAddr, sync::Arc, time::Instant};
 use tracing::{debug, error};

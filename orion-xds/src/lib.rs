@@ -39,9 +39,9 @@ use xds::client::{DeltaClientBackgroundWorker, DeltaDiscoverySubscriptionManager
 pub mod grpc_deps {
     pub use orion_data_plane_api::envoy_data_plane_api::{
         tonic::{
-            body::{boxed as to_grpc_body, BoxBody as GrpcBody},
-            codegen::StdError as Error,
             Response, Status,
+            body::{BoxBody as GrpcBody, boxed as to_grpc_body},
+            codegen::StdError as Error,
         },
         tonic_health,
     };

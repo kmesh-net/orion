@@ -15,7 +15,7 @@
 //
 //
 
-use super::{header_matcher::HeaderMatcher, RetryPolicy};
+use super::{RetryPolicy, header_matcher::HeaderMatcher};
 use crate::config::{
     cluster::ClusterSpecifier,
     common::*,
@@ -24,11 +24,11 @@ use crate::config::{
 use bytes::Bytes;
 use compact_str::CompactString;
 use http::{
-    uri::{Authority, InvalidUri, PathAndQuery, Scheme},
     HeaderName, Request, StatusCode,
+    uri::{Authority, InvalidUri, PathAndQuery, Scheme},
 };
 use regex::Regex;
-use serde::{de::Error, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error};
 use std::{
     borrow::Cow,
     hash::{Hash, Hasher},
@@ -776,23 +776,25 @@ mod tests {
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        Action, AuthorityRedirect, AuthorityRewriteSpecifier, Connect, DirectResponseAction, DirectResponseBody,
-        HashPolicy, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier,
-        QueryParameterMatcher, RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch,
-        UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
+        Action, AuthorityRedirect, AuthorityRewriteSpecifier, Connect, DEFAULT_TIMEOUT, DirectResponseAction,
+        DirectResponseBody, HashPolicy, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier,
+        QueryParameterMatchSpecifier, QueryParameterMatcher, RedirectAction, RedirectResponseCode,
+        RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig, Websocket,
     };
     use crate::config::{
         common::*,
-        core::{regex_from_envoy, DataSource},
+        core::{DataSource, regex_from_envoy},
         network_filters::http_connection_manager::RetryPolicy,
         util::{duration_from_envoy, http_status_from, parse_cluster_not_found_response_code},
     };
     use http::{
-        uri::{Authority, PathAndQuery, Scheme},
         HeaderName,
+        uri::{Authority, PathAndQuery, Scheme},
     };
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::route::v3::{
+            DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
+            RedirectAction as EnvoyRedirectAction, RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
             query_parameter_matcher::QueryParameterMatchSpecifier as EnvoyQueryParameterMatchSpecifier,
             redirect_action::{
                 PathRewriteSpecifier as EnvoyPathRewriteSpecifier, RedirectResponseCode as EnvoyRedirectResponseCode,
@@ -800,16 +802,14 @@ mod envoy_conversions {
             },
             route::Action as EnvoyAction,
             route_action::{
+                HashPolicy as EnvoyHashPolicy, HostRewriteSpecifier as EnvoyHostRewriteSpecifier,
+                UpgradeConfig as EnvoyUpgradeConfig,
                 hash_policy::{
                     ConnectionProperties as EnvoyConnectionProperties, Header as EnvoyHeader,
                     PolicySpecifier as EnvoyPolicySpecifier, QueryParameter as EnvoyQueryParameter,
                 },
-                HashPolicy as EnvoyHashPolicy, HostRewriteSpecifier as EnvoyHostRewriteSpecifier,
-                UpgradeConfig as EnvoyUpgradeConfig,
             },
             route_match::PathSpecifier as EnvoyPathSpecifier,
-            DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
-            RedirectAction as EnvoyRedirectAction, RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
         },
         r#type::matcher::v3::RegexMatchAndSubstitute as EnvoyRegexMatchAndSubstitute,
     };

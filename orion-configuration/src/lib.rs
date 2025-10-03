@@ -51,14 +51,14 @@ mod tests {
         use orion_data_plane_api::envoy_data_plane_api::{
             envoy::{
                 config::core::v3::{
+                    ApiConfigSource, ApiVersion, ConfigSource, GrpcService,
                     api_config_source::ApiType::Grpc,
                     config_source::ConfigSourceSpecifier,
                     grpc_service::{EnvoyGrpc, TargetSpecifier},
-                    ApiConfigSource, ApiVersion, ConfigSource, GrpcService,
                 },
                 extensions::filters::network::http_connection_manager::v3::{
-                    http_connection_manager::RouteSpecifier, http_filter::ConfigType,
                     HttpConnectionManager as EnvoyHttpConnectionManager, HttpFilter, Rds,
+                    http_connection_manager::RouteSpecifier, http_filter::ConfigType,
                 },
             },
             google::protobuf::Any,

@@ -20,18 +20,18 @@ mod tests;
 
 use std::sync::Arc;
 
-use futures::{future::BoxFuture, FutureExt, TryFutureExt};
+use futures::{FutureExt, TryFutureExt, future::BoxFuture};
 use orion_configuration::config::cluster::health_check::{ClusterHealthCheck, TcpHealthCheck};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, Notify},
+    sync::{Notify, mpsc},
     task::JoinHandle,
 };
 
 use crate::{
-    clusters::health::{checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter, EndpointId},
-    transport::TcpChannelConnector,
     EndpointHealthUpdate, Error,
+    clusters::health::{EndpointId, checkers::checker::HealthCheckerLoop, counter::HealthStatusCounter},
+    transport::TcpChannelConnector,
 };
 
 use super::checker::{IntervalWaiter, ProtocolChecker, WaitInterval};

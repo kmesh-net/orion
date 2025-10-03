@@ -70,10 +70,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_any_type, from_yaml, Any};
+    use super::{Any, decode_any_type, from_yaml};
     use envoy_data_plane_api::{
         envoy::{
-            config::listener::v3::{filter::ConfigType, Filter, FilterChain, Listener},
+            config::listener::v3::{Filter, FilterChain, Listener, filter::ConfigType},
             extensions::filters::network::http_connection_manager::v3::HttpConnectionManager,
         },
         prost::Message,

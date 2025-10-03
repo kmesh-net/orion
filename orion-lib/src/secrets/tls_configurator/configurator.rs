@@ -17,12 +17,12 @@
 
 use super::tls_configurator_builder::{WantsToBuildClient, WantsToBuildServer};
 use crate::{
+    Result, SecretManager,
     secrets::{
+        CertificateSecret, TransportSecret,
         secrets_manager::CertStore,
         tls_configurator::tls_configurator_builder::{SecretHolder, TlsContextBuilder},
-        CertificateSecret, TransportSecret,
     },
-    Result, SecretManager,
 };
 use compact_str::CompactString;
 use orion_configuration::config::{
@@ -32,11 +32,11 @@ use orion_configuration::config::{
     transport::{CommonTlsValidationContext, Secrets, TlsVersion},
 };
 use rustls::{
+    ClientConfig, RootCertStore, ServerConfig,
     client::danger::ServerCertVerifier,
     crypto::KeyProvider,
     pki_types::{CertificateDer, PrivateKeyDer},
     version::{TLS12, TLS13},
-    ClientConfig, RootCertStore, ServerConfig,
 };
 use rustls_platform_verifier::Verifier;
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};

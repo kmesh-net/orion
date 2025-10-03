@@ -17,15 +17,15 @@
 
 use super::{RequestHandler, TransactionHandler};
 use crate::{
+    PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
     event_error::EventKind,
     listeners::synthetic_http_response::SyntheticHttpResponse,
-    transport::{policy::RequestExt, HttpChannel},
-    PolyBody, Result,
+    transport::{HttpChannel, policy::RequestExt},
 };
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 
-use http::{header, HeaderMap, HeaderValue, StatusCode, Version};
+use http::{HeaderMap, HeaderValue, StatusCode, Version, header};
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 use orion_configuration::config::network_filters::http_connection_manager::UpgradeType;

@@ -102,8 +102,8 @@ mod envoy_conversions {
     use crate::config::common::*;
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::transport_sockets::tls::v3::{
-        secret::Type as EnvoyType, CertificateValidationContext as EnvoyCertificateValidationContext,
-        Secret as EnvoySecret, TlsCertificate as EnvoyTlsCertificate,
+        CertificateValidationContext as EnvoyCertificateValidationContext, Secret as EnvoySecret,
+        TlsCertificate as EnvoyTlsCertificate, secret::Type as EnvoyType,
     };
 
     impl TryFrom<EnvoySecret> for Secret {

@@ -38,8 +38,8 @@ pub mod transport;
 pub(crate) mod util;
 
 pub use crate::config::common::*;
-use crate::{options::Options, Result};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use crate::{Result, options::Options};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{fs::File, path::Path};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -86,11 +86,11 @@ pub fn deserialize_yaml<T: DeserializeOwned>(path: &Path) -> Result<T> {
 mod envoy_conversions {
     use std::path::Path;
 
-    use super::{deserialize_yaml, log::AccessLogConfig, Bootstrap, Config};
+    use super::{Bootstrap, Config, deserialize_yaml, log::AccessLogConfig};
     use crate::{
+        Result,
         config::{log::LogConfig, runtime::Runtime},
         options::Options,
-        Result,
     };
     use orion_data_plane_api::decode::from_serde_deserializer;
     pub use orion_data_plane_api::envoy_data_plane_api::envoy::config::bootstrap::v3::Bootstrap as EnvoyBootstrap;
@@ -163,7 +163,7 @@ mod envoy_conversions {
     }
     #[cfg(test)]
     mod tests {
-        use crate::{config::Config, options::Options, Result};
+        use crate::{Result, config::Config, options::Options};
         use tracing_test::traced_test;
         #[test]
         #[traced_test]

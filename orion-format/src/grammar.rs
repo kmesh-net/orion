@@ -18,8 +18,8 @@
 use std::sync::LazyLock;
 
 use crate::{
-    operator::{Category, HeaderName, Operator, ReqArgument, RespArgument},
     FormatError, Grammar, Template,
+    operator::{Category, HeaderName, Operator, ReqArgument, RespArgument},
 };
 use ptrie::Trie;
 use smol_str::SmolStr;

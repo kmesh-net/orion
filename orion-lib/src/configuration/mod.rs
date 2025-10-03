@@ -18,8 +18,8 @@
 use orion_configuration::config::bootstrap::Bootstrap;
 
 use crate::{
-    clusters::cluster::PartialClusterType, listeners::listener::ListenerFactory, ConversionContext, Error, Result,
-    SecretManager,
+    ConversionContext, Error, Result, SecretManager, clusters::cluster::PartialClusterType,
+    listeners::listener::ListenerFactory,
 };
 
 pub fn get_listeners_and_clusters(

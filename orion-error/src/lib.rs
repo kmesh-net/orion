@@ -81,11 +81,7 @@ impl<E: ErrorTrait + Send + Sync + 'static> WithContext<E> {
     }
 
     pub fn get_context_data<T: 'static>(&self) -> Option<&T> {
-        if let ErrorInfo { message: _, any: Some(val) } = &self.context {
-            val.downcast_ref::<T>()
-        } else {
-            None
-        }
+        if let ErrorInfo { message: _, any: Some(val) } = &self.context { val.downcast_ref::<T>() } else { None }
     }
 
     pub fn map_into<E2>(self) -> WithContext<E2>

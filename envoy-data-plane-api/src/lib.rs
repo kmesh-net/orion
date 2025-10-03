@@ -111,7 +111,7 @@ fn test_yaml_any_decode() {
     use crate::envoy::{
         config::{bootstrap::v3::Bootstrap, listener::v3::filter::ConfigType, route::v3::route_match::PathSpecifier},
         extensions::filters::network::http_connection_manager::v3::{
-            http_connection_manager::RouteSpecifier, HttpConnectionManager,
+            HttpConnectionManager, http_connection_manager::RouteSpecifier,
         },
     };
     use prost::{Message, Name};

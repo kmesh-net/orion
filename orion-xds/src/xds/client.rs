@@ -462,11 +462,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 decoded.ok().map(|value| XdsResourceUpdate::Update(resource_id, value, resource_version))
             })
             .collect();
-        if decoding_errors.is_empty() {
-            Ok(decoded_updates)
-        } else {
-            Err(decoding_errors)
-        }
+        if decoding_errors.is_empty() { Ok(decoded_updates) } else { Err(decoding_errors) }
     }
 
     fn extract_update_versions(updates: &[XdsResourceUpdate]) -> HashMap<ResourceId, ResourceVersion> {

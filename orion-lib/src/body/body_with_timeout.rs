@@ -29,13 +29,13 @@
 use http_body::Body;
 use pin_project::pin_project;
 use pingora_timeout::{
-    fast_timeout::{fast_timeout, FastTimeout},
     Timeout as PingoraTimeout,
+    fast_timeout::{FastTimeout, fast_timeout},
 };
 use std::{
-    future::{pending, Future, Pending},
+    future::{Future, Pending, pending},
     pin::Pin,
-    task::{ready, Context, Poll},
+    task::{Context, Poll, ready},
     time::Duration,
 };
 
@@ -123,7 +123,7 @@ mod tests {
     use http_body_util::BodyExt;
     use pin_project::pin_project;
     use std::{error::Error, fmt::Display};
-    use tokio::time::{sleep, Sleep};
+    use tokio::time::{Sleep, sleep};
 
     #[derive(Debug)]
     struct MockError;

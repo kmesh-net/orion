@@ -14,9 +14,10 @@
 // limitations under the License.
 //
 //
-use super::{http_modifiers, upgrades as upgrade_utils, RequestHandler, TransactionHandler};
+use super::{RequestHandler, TransactionHandler, http_modifiers, upgrades as upgrade_utils};
 use crate::event_error::{EventError, EventKind, TryInferFrom};
 use crate::{
+    PolyBody, Result,
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
     clusters::{
         balancers::hash_policy::HashState,
@@ -27,16 +28,15 @@ use crate::{
         synthetic_http_response::SyntheticHttpResponse,
     },
     transport::policy::{RequestContext, RequestExt},
-    PolyBody, Result,
 };
 
-use http::{uri::Parts as UriParts, Uri};
-use hyper::{body::Incoming, Request, Response};
-use opentelemetry::trace::Span;
+use http::{Uri, uri::Parts as UriParts};
+use hyper::{Request, Response, body::Incoming};
 use opentelemetry::KeyValue;
+use opentelemetry::trace::Span;
 use orion_configuration::config::network_filters::http_connection_manager::{
-    route::{RouteAction, RouteMatchResult},
     RetryPolicy,
+    route::{RouteAction, RouteMatchResult},
 };
 use orion_error::Context;
 use orion_format::{

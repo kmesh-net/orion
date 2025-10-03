@@ -390,11 +390,7 @@ pub(crate) mod envoy_conversions {
 
     macro_rules! convert_non_empty_vec {
         ($field:ident) => {
-            if !$field.is_used() {
-                Err(GenericError::MissingField(stringify!($field)))
-            } else {
-                convert_vec!($field)
-            }
+            if !$field.is_used() { Err(GenericError::MissingField(stringify!($field))) } else { convert_vec!($field) }
         };
     }
     pub(crate) use convert_non_empty_vec;

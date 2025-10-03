@@ -48,7 +48,7 @@ pub async fn wait_signal() {
 /// Unix-specific signal handling (SIGINT and SIGTERM)
 #[cfg(unix)]
 async fn listen_for_signals() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tokio::signal::unix::{signal, SignalKind};
+    use tokio::signal::unix::{SignalKind, signal};
 
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;

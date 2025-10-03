@@ -57,7 +57,7 @@ mod envoy_conversions {
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::listener::v3::{
-                listener_filter::ConfigType as EnvoyListenerFilterConfigType, ListenerFilter as EnvoyListenerFilter,
+                ListenerFilter as EnvoyListenerFilter, listener_filter::ConfigType as EnvoyListenerFilterConfigType,
             },
             extensions::filters::listener::{
                 kmesh_tlv::v3::KmeshTlv as EnvoyKmeshTlv, proxy_protocol::v3::ProxyProtocol as EnvoyProxyProtocol,

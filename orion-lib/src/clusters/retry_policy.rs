@@ -31,11 +31,7 @@ pub enum RetryCondition<'a, B> {
 
 impl<B: Body> RetryCondition<'_, B> {
     pub fn inner_response(&self) -> Option<&Response<B>> {
-        if let RetryCondition::Response(resp) = self {
-            Some(resp)
-        } else {
-            None
-        }
+        if let RetryCondition::Response(resp) = self { Some(resp) } else { None }
     }
 
     #[allow(dead_code)]

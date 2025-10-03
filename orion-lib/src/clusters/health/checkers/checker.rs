@@ -17,18 +17,18 @@
 
 use std::{future::Future, sync::Arc, time::Duration};
 
-use orion_configuration::config::cluster::{health_check::ClusterHealthCheck, HealthStatus};
+use orion_configuration::config::cluster::{HealthStatus, health_check::ClusterHealthCheck};
 use pingora_timeout::fast_timeout::fast_timeout;
-use rand::{distributions::Uniform, thread_rng, Rng};
+use rand::{Rng, distributions::Uniform, thread_rng};
 use tokio::{
     select,
-    sync::{mpsc, Notify},
+    sync::{Notify, mpsc},
     task::JoinHandle,
 };
 
 use crate::{
-    clusters::health::{counter::HealthStatusCounter, EndpointHealthUpdate, EndpointId},
     Error,
+    clusters::health::{EndpointHealthUpdate, EndpointId, counter::HealthStatusCounter},
 };
 
 use super::CurrentHealthStatus;
@@ -221,11 +221,7 @@ async fn wait_was_cancelled(interval: Duration, stop_signal: &Notify) -> bool {
 /// If the option has a value, wait for the `interval`. If the option is empty, return immediately.
 /// Returns `true` if it was cancelled during the wait.
 async fn wait_was_cancelled_opt(interval: Option<Duration>, stop_signal: &Notify) -> bool {
-    if let Some(interval) = interval {
-        wait_was_cancelled(interval, stop_signal).await
-    } else {
-        false
-    }
+    if let Some(interval) = interval { wait_was_cancelled(interval, stop_signal).await } else { false }
 }
 
 fn get_random_duration(max: Duration) -> Duration {

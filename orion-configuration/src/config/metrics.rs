@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 //
-use crate::config::{common::envoy_conversions::IsUsed, grpc::GrpcService, unsupported_field, GenericError};
+use crate::config::{GenericError, common::envoy_conversions::IsUsed, grpc::GrpcService, unsupported_field};
 use orion_data_plane_api::envoy_data_plane_api::{
     envoy::extensions::stat_sinks::open_telemetry::v3::SinkConfig as EnvoySinkConfig, google::protobuf::Any,
     prost::Message,

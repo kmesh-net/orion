@@ -25,7 +25,7 @@ pub use cluster_specifier::ClusterSpecifier;
 use crate::config::core::Address;
 
 use super::{
-    common::{is_default, MetadataKey},
+    common::{MetadataKey, is_default},
     secret::TlsCertificate,
     transport::{BindDevice, CommonTlsValidationContext, TlsParameters, UpstreamTransportSocketConfig},
 };
@@ -337,10 +337,10 @@ pub enum LbPolicy {
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
         Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
         InternalEndpointAddress, InternalUpstreamTransport, LbEndpoint, LbPolicy, LocalityLbEndpoints, MetadataKind,
         MetadataValueSource, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
+        health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
     };
     use crate::config::{
         common::*,
@@ -355,32 +355,32 @@ mod envoy_conversions {
         envoy::{
             config::{
                 cluster::v3::{
+                    Cluster as EnvoyCluster,
                     cluster::{
                         ClusterDiscoveryType as EnvoyClusterDiscoveryType, DiscoveryType as EnvoyDiscoveryType,
                         LbConfig as EnvoyLbConfig, LbPolicy as EnvoyLbPolicy,
                     },
-                    Cluster as EnvoyCluster,
                 },
                 core::v3::{
                     BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus,
                     TransportSocket as EnvoyTransportSocket,
                 },
                 endpoint::v3::{
-                    lb_endpoint::HostIdentifier as EnvoyHostIdentifier,
                     ClusterLoadAssignment as EnvoyClusterLoadAssignment, Endpoint as EnvoyEndpoint,
                     LbEndpoint as EnvoyLbEndpoint, LocalityLbEndpoints as EnvoyLocalityLbEndpoints,
+                    lb_endpoint::HostIdentifier as EnvoyHostIdentifier,
                 },
             },
             extensions::transport_sockets::{
                 internal_upstream::v3::{
-                    internal_upstream_transport::MetadataValueSource as EnvoyMetadataValueSource,
                     InternalUpstreamTransport as EnvoyInternalUpstreamTransport,
+                    internal_upstream_transport::MetadataValueSource as EnvoyMetadataValueSource,
                 },
                 tls::v3::UpstreamTlsContext,
             },
             r#type::metadata::v3::{
-                metadata_key::path_segment::Segment, metadata_kind::Kind as EnvoyMetadataKindType,
-                MetadataKind as EnvoyMetadataKind,
+                MetadataKind as EnvoyMetadataKind, metadata_key::path_segment::Segment,
+                metadata_kind::Kind as EnvoyMetadataKindType,
             },
         },
         google::protobuf::Any,

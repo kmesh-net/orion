@@ -16,12 +16,12 @@
 //
 
 use super::{
+    GenericError,
     network_filters::{
-        access_log::{AccessLog, AccessLogConf},
         HttpConnectionManager, NetworkRbac, TcpProxy,
+        access_log::{AccessLog, AccessLogConf},
     },
     transport::{BindDevice, CommonTlsContext},
-    GenericError,
 };
 use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
@@ -347,8 +347,8 @@ mod envoy_conversions {
             config::{
                 core::v3::TransportSocket as EnvoyTransportSocket,
                 listener::v3::{
-                    filter::ConfigType as EnvoyConfigType, Filter as EnvoyFilter, FilterChain as EnvoyFilterChain,
-                    FilterChainMatch as EnvoyFilterChainMatch, Listener as EnvoyListener,
+                    Filter as EnvoyFilter, FilterChain as EnvoyFilterChain, FilterChainMatch as EnvoyFilterChainMatch,
+                    Listener as EnvoyListener, filter::ConfigType as EnvoyConfigType,
                 },
             },
             extensions::{
@@ -450,7 +450,7 @@ mod envoy_conversions {
                         })
                     },
                     Address::Pipe(_, _) => {
-                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
+                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"));
                     },
                 };
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;

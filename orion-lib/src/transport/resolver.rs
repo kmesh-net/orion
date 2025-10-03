@@ -20,7 +20,7 @@
 
 use std::{io, net::SocketAddr, sync::OnceLock};
 
-use hickory_resolver::{name_server::TokioConnectionProvider, TokioAsyncResolver};
+use hickory_resolver::{TokioAsyncResolver, name_server::TokioConnectionProvider};
 
 static GLOBAL_DNS_RESOLVER: OnceLock<TokioAsyncResolver> = OnceLock::new();
 

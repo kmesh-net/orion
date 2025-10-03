@@ -21,16 +21,16 @@ use std::{
 };
 
 use crate::{
+    StringType,
     operator::{Category, Operator},
     types::{ResponseFlags, ResponseFlagsLong, ResponseFlagsShort},
-    StringType,
 };
 use ahash::AHasher;
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use http::{uri::Authority, Request, Response};
+use http::{Request, Response, uri::Authority};
 use orion_http_header::{X_ENVOY_ORIGINAL_PATH, X_REQUEST_ID};
 use orion_interner::StringInterner;
-use smol_str::{format_smolstr, SmolStr, SmolStrBuilder, ToSmolStr};
+use smol_str::{SmolStr, SmolStrBuilder, ToSmolStr, format_smolstr};
 use uuid::Uuid;
 
 pub trait Context {

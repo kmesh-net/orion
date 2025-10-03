@@ -110,14 +110,13 @@ mod envoy_conversions {
         envoy::{
             config::{
                 bootstrap::v3::{
-                    bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
                     Admin as EnvoyAdmin, Bootstrap as EnvoyBootstrap,
+                    bootstrap::{DynamicResources as EnvoyDynamicResources, StaticResources as EnvoyStaticResources},
                 },
                 core::v3::{
-                    address,
-                    grpc_service::{EnvoyGrpc, TargetSpecifier as EnvoyGrpcTargetSpecifier},
                     ApiConfigSource as EnvoyApiConfigSource, GrpcService as EnvoyGrpcService, Node as EnvoyNode,
-                    TypedExtensionConfig as EnvoyTypedExtensionConfig,
+                    TypedExtensionConfig as EnvoyTypedExtensionConfig, address,
+                    grpc_service::{EnvoyGrpc, TargetSpecifier as EnvoyGrpcTargetSpecifier},
                 },
                 metrics::v3::stats_sink::ConfigType,
             },

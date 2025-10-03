@@ -28,6 +28,7 @@ use tracing::warn;
 use webpki::types::ServerName;
 
 use crate::{
+    Result,
     clusters::{
         clusters_manager::{RoutingContext, RoutingRequirement},
         health::HealthStatus,
@@ -36,9 +37,8 @@ use crate::{
     transport::{
         GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
     },
-    Result,
 };
-use http::{uri::Authority, HeaderName, HeaderValue};
+use http::{HeaderName, HeaderValue, uri::Authority};
 use orion_configuration::config::cluster::HttpProtocolOptions;
 
 use super::{ClusterOps, ClusterType};
@@ -442,7 +442,7 @@ mod tests {
 
     use crate::secrets::SecretManager;
     use orion_configuration::config::cluster::{
-        http_protocol_options::Codec, Cluster as ClusterConfig, ClusterDiscoveryType, LbPolicy, OriginalDstConfig,
+        Cluster as ClusterConfig, ClusterDiscoveryType, LbPolicy, OriginalDstConfig, http_protocol_options::Codec,
     };
     use std::str::FromStr;
 

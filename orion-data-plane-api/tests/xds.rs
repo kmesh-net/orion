@@ -17,8 +17,8 @@
 use std::{
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -62,11 +62,11 @@ use orion_data_plane_api::envoy_data_plane_api::{
     prost::Message,
 };
 use tokio::{
-    sync::{mpsc, Mutex},
+    sync::{Mutex, mpsc},
     time::{self, sleep},
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{transport::Uri, Response, Status};
+use tonic::{Response, Status, transport::Uri};
 use tower::service_fn;
 pub struct MockDiscoveryService {
     relay: Arc<Mutex<mpsc::Receiver<Result<DeltaDiscoveryResponse, tonic::Status>>>>,

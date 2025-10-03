@@ -25,20 +25,21 @@ use crate::{
 use compact_str::ToCompactString;
 use futures::future::join_all;
 use orion_configuration::config::{
+    Bootstrap,
     bootstrap::Node,
     log::AccessLogConfig,
     network_filters::tracing::{TracingConfig, TracingKey},
     runtime::Affinity,
-    Bootstrap,
 };
 use orion_error::Context;
 use orion_lib::{
-    access_log::{start_access_loggers, update_configuration, Target},
+    ConfigurationReceivers, ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result,
+    SecretManager,
+    access_log::{Target, start_access_loggers, update_configuration},
     clusters::cluster::ClusterType,
-    get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
-    ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result, SecretManager,
+    get_listeners_and_clusters, new_configuration_channel, runtime_config,
 };
-use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
+use orion_metrics::{Metrics, VecMetrics, metrics::init_global_metrics, wait_for_metrics_setup};
 use parking_lot::RwLock;
 use std::{
     collections::HashMap,

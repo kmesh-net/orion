@@ -17,7 +17,7 @@
 
 #![allow(clippy::print_stdout)]
 
-use orion_configuration::{config::Config, options::Options, Result};
+use orion_configuration::{Result, config::Config, options::Options};
 use orion_error::Context;
 
 fn main() -> Result<()> {

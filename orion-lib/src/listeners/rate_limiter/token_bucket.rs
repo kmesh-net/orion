@@ -92,11 +92,7 @@ impl TokenBucket {
 
         let n = ((now - t).as_nanos() / self.time_per_token.as_nanos()) as usize;
 
-        if n > self.max_tokens {
-            self.max_tokens
-        } else {
-            n
-        }
+        if n > self.max_tokens { self.max_tokens } else { n }
     }
 }
 

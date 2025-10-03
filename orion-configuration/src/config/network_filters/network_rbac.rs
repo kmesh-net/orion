@@ -213,9 +213,9 @@ mod envoy_conversions {
     use crate::config::{common::*, core::CidrRange, util::u32_to_u16};
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::rbac::v3::{
+            Permission as EnvoyPermission, Policy as EnvoyPolicy, Principal as EnvoyPrincipal, Rbac as EnvoyRbac,
             permission::Rule as EnvoyPermissionRule, principal::Identifier as EnvoyPrincipalIdentifier,
-            rbac::Action as EnvoyAction, Permission as EnvoyPermission, Policy as EnvoyPolicy,
-            Principal as EnvoyPrincipal, Rbac as EnvoyRbac,
+            rbac::Action as EnvoyAction,
         },
         extensions::filters::network::rbac::v3::Rbac as EnvoyNetworkRbac,
         r#type::v3::Int32Range,
