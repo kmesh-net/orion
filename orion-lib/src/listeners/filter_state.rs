@@ -19,6 +19,17 @@ use compact_str::CompactString;
 use orion_configuration::config::common::TlvType;
 use std::{collections::HashMap, net::SocketAddr};
 
+/// Reserved internal address used as the peer address for in-process (internal) connections.
+/// Chosen from the loopback range (127.255.255.254:65534) to avoid conflicts with real network traffic.
+/// This address clearly identifies internal connections in logs and debugging.
+const INTERNAL_PEER_ADDR: std::net::SocketAddr =
+    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 255, 255, 254), 65534));
+
+/// Reserved internal address used as the local address for in-process (internal) connections.
+/// Chosen from the loopback range (127.255.255.255:65535) to avoid conflicts with real network traffic.
+/// This address clearly identifies internal connections in logs and debugging.
+const INTERNAL_LOCAL_ADDR: std::net::SocketAddr =
+    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 255, 255, 255), 65535));
 #[derive(Debug, Clone)]
 pub enum DownstreamConnectionMetadata {
     FromSocket {
@@ -39,6 +50,13 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
+    /// Internal connections from in-process communication (e.g., waypoint proxy)
+    /// - `listener_name`: identifies which internal listener accepted this connection
+    /// - `endpoint_id`: optional identifier for the specific endpoint (used for load balancing)
+    FromInternal {
+        listener_name: String,
+        endpoint_id: Option<String>,
+    },
 }
 
 impl DownstreamConnectionMetadata {
@@ -47,14 +65,25 @@ impl DownstreamConnectionMetadata {
             Self::FromSocket { peer_address, .. } => *peer_address,
             Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
             Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
+            Self::FromInternal { .. } => INTERNAL_PEER_ADDR,
         }
     }
+
     pub fn local_address(&self) -> SocketAddr {
         match self {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
             Self::FromTlv { original_destination_address, .. } => *original_destination_address,
+            Self::FromInternal { .. } => INTERNAL_LOCAL_ADDR,
         }
+    }
+
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Self::FromInternal { .. })
+    }
+
+    pub fn is_internal_address(addr: SocketAddr) -> bool {
+        addr == INTERNAL_PEER_ADDR || addr == INTERNAL_LOCAL_ADDR
     }
 }
 
