@@ -67,7 +67,7 @@ struct InternalConnectionWorkerPool {
 #[derive(Debug)]
 struct InternalConnectionTask {
     listener_name: String,
-    connection_pair: crate::transport::InternalConnectionPair,
+    connection_pair: orion_internal::InternalConnectionPair,
     filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
 }
 
@@ -402,7 +402,7 @@ impl Listener {
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
-        use crate::transport::global_internal_connection_factory;
+        use orion_internal::global_internal_connection_factory;
         use tracing::{debug, error, info, warn};
 
         let filter_chains = Arc::new(filter_chains);
@@ -985,7 +985,7 @@ filter_chains:
 
 async fn handle_internal_connection_static(
     listener_name: String,
-    connection_pair: crate::transport::InternalConnectionPair,
+    connection_pair: orion_internal::InternalConnectionPair,
     filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
 ) -> Result<()> {
     use crate::listeners::filter_state::DownstreamConnectionMetadata;

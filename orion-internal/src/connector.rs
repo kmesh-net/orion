@@ -15,8 +15,7 @@
 //
 //
 
-use super::{global_internal_connection_factory, AsyncStream};
-use crate::{Error, Result};
+use crate::{connection::global_internal_connection_factory, Error, InternalStreamWrapper, Result};
 
 #[derive(Debug, Clone)]
 pub struct InternalClusterConnector {
@@ -37,7 +36,7 @@ impl InternalClusterConnector {
         self.endpoint_id.as_deref()
     }
 
-    pub async fn connect(&self) -> Result<AsyncStream> {
+    pub async fn connect(&self) -> Result<Box<InternalStreamWrapper>> {
         let factory = global_internal_connection_factory();
 
         if !factory.is_listener_active(&self.listener_name).await {
@@ -94,7 +93,7 @@ impl InternalChannelConnector {
 }
 
 pub struct InternalChannel {
-    pub stream: AsyncStream,
+    pub stream: Box<InternalStreamWrapper>,
     pub cluster_name: &'static str,
     pub listener_name: String,
     pub endpoint_id: Option<String>,
@@ -116,6 +115,7 @@ impl InternalChannel {
 
 pub mod cluster_helpers {
     use super::{global_internal_connection_factory, InternalChannelConnector};
+    use crate::InternalConnectionStats;
     use orion_configuration::config::cluster::InternalEndpointAddress;
 
     pub fn create_internal_connector(
@@ -134,7 +134,7 @@ pub mod cluster_helpers {
         factory.is_listener_active(listener_name).await
     }
 
-    pub async fn get_internal_connection_stats() -> crate::transport::InternalConnectionStats {
+    pub async fn get_internal_connection_stats() -> InternalConnectionStats {
         let factory = global_internal_connection_factory();
         factory.get_stats().await
     }

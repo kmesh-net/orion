@@ -27,8 +27,7 @@ use tokio::{
     time::Instant,
 };
 
-use super::AsyncStream;
-use crate::{Error, Result};
+pub use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
 pub struct InternalConnectionMetadata {
@@ -213,7 +212,11 @@ impl InternalConnectionFactory {
         Ok(())
     }
 
-    pub async fn connect_to_listener(&self, name: &str, endpoint_id: Option<String>) -> Result<AsyncStream> {
+    pub async fn connect_to_listener(
+        &self,
+        name: &str,
+        endpoint_id: Option<String>,
+    ) -> Result<Box<InternalStreamWrapper>> {
         let listeners = self.listeners.read().await;
         let handle = listeners.get(name).ok_or_else(|| Error::new(format!("Internal listener '{name}' not found")))?;
 

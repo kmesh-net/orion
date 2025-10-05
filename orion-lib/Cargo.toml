@@ -37,6 +37,7 @@ orion-error.workspace = true
 orion-format.workspace = true
 orion-http-header.workspace = true
 orion-interner.workspace = true
+orion-internal.workspace = true
 orion-metrics.workspace = true
 orion-tracing.workspace = true
 orion-xds.workspace = true

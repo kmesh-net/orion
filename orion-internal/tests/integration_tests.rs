@@ -15,7 +15,7 @@
 //
 //
 
-use orion_lib::{global_internal_connection_factory, InternalChannelConnector};
+use orion_internal::{cluster_helpers::*, global_internal_connection_factory, InternalChannelConnector};
 
 #[tokio::test]
 async fn test_complete_internal_connection_flow() {
@@ -155,22 +155,29 @@ async fn test_statistics_and_monitoring() {
 #[tokio::test]
 async fn test_cluster_helpers() {
     use orion_configuration::config::cluster::InternalEndpointAddress;
-    use orion_lib::cluster_helpers::*;
 
     let internal_addr = InternalEndpointAddress {
-        server_listener_name: "test_listener".to_string().into(),
+        server_listener_name: "test_cluster_helpers_listener".to_string().into(),
         endpoint_id: Some("endpoint1".to_string().into()),
     };
 
     let connector = create_internal_connector(&internal_addr, "test_cluster");
     assert_eq!(connector.cluster_name(), "test_cluster");
-    assert_eq!(connector.listener_name(), "test_listener");
+    assert_eq!(connector.listener_name(), "test_cluster_helpers_listener");
 
-    assert!(!is_internal_listener_available("non_existent").await);
+    assert!(!is_internal_listener_available("non_existent_listener_xyz").await);
 
     let stats = get_internal_connection_stats().await;
     assert_eq!(stats.max_pooled_connections, 0);
 
+    let factory = global_internal_connection_factory();
+    let (_handle, _rx, _listener_ref) =
+        factory.register_listener("test_cluster_helpers_listener".to_string()).await.unwrap();
+
+    assert!(is_internal_listener_available("test_cluster_helpers_listener").await);
+
     let listeners = list_internal_listeners().await;
-    assert!(listeners.is_empty());
+    assert!(listeners.contains(&"test_cluster_helpers_listener".to_string()));
+
+    factory.unregister_listener("test_cluster_helpers_listener").await.unwrap();
 }

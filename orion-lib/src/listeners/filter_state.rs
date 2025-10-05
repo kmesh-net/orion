@@ -17,19 +17,9 @@
 
 use compact_str::CompactString;
 use orion_configuration::config::common::TlvType;
+use orion_internal::{is_internal_address, INTERNAL_LOCAL_ADDR, INTERNAL_PEER_ADDR};
 use std::{collections::HashMap, net::SocketAddr};
 
-/// Reserved internal address used as the peer address for in-process (internal) connections.
-/// Chosen from the loopback range (127.255.255.254:65534) to avoid conflicts with real network traffic.
-/// This address clearly identifies internal connections in logs and debugging.
-const INTERNAL_PEER_ADDR: std::net::SocketAddr =
-    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 255, 255, 254), 65534));
-
-/// Reserved internal address used as the local address for in-process (internal) connections.
-/// Chosen from the loopback range (127.255.255.255:65535) to avoid conflicts with real network traffic.
-/// This address clearly identifies internal connections in logs and debugging.
-const INTERNAL_LOCAL_ADDR: std::net::SocketAddr =
-    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 255, 255, 255), 65535));
 #[derive(Debug, Clone)]
 pub enum DownstreamConnectionMetadata {
     FromSocket {
@@ -83,7 +73,7 @@ impl DownstreamConnectionMetadata {
     }
 
     pub fn is_internal_address(addr: SocketAddr) -> bool {
-        addr == INTERNAL_PEER_ADDR || addr == INTERNAL_LOCAL_ADDR
+        is_internal_address(&addr)
     }
 }
 
