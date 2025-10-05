@@ -84,7 +84,6 @@ impl InternalConnectionWorkerPool {
                 while let Some(task) = receiver.recv().await {
                     if let Err(e) =
                         handle_internal_connection_static(task.listener_name, task.connection_pair, task.filter_chains)
-                            .await
                     {
                         warn!("Error handling internal connection task: {}", e);
                     }
@@ -112,8 +111,19 @@ impl InternalConnectionWorkerPool {
 
 static INTERNAL_WORKER_POOL: std::sync::OnceLock<InternalConnectionWorkerPool> = std::sync::OnceLock::new();
 
+pub fn init_internal_worker_pool(num_workers: Option<usize>) {
+    let workers = num_workers
+        .or_else(|| std::env::var("ORION_INTERNAL_WORKER_POOL_SIZE").ok().and_then(|s| s.parse::<usize>().ok()))
+        .unwrap_or(4);
+    let _ = INTERNAL_WORKER_POOL.set(InternalConnectionWorkerPool::new(workers));
+}
+
 fn get_internal_worker_pool() -> &'static InternalConnectionWorkerPool {
-    INTERNAL_WORKER_POOL.get_or_init(|| InternalConnectionWorkerPool::new(4)) // 4 workers by default
+    INTERNAL_WORKER_POOL.get_or_init(|| {
+        let workers =
+            std::env::var("ORION_INTERNAL_WORKER_POOL_SIZE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(4);
+        InternalConnectionWorkerPool::new(workers)
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -135,7 +145,6 @@ enum ListenerAddress {
 
 #[derive(Debug, Clone)]
 struct InternalListenerConfig {
-    #[allow(dead_code)]
     buffer_size_kb: Option<u32>,
 }
 #[derive(Debug, Clone)]
@@ -395,7 +404,7 @@ impl Listener {
 
     async fn run_internal_listener(
         name: &'static str,
-        _internal_config: InternalListenerConfig,
+        internal_config: InternalListenerConfig,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         _with_tls_inspector: bool,
         _with_tlv_listener_filter: bool,
@@ -408,13 +417,14 @@ impl Listener {
         let filter_chains = Arc::new(filter_chains);
         let factory = global_internal_connection_factory();
 
-        let (_handle, mut connection_receiver, _listener_ref) = match factory.register_listener(name.to_owned()).await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to register internal listener '{}': {}", name, e);
-                return e;
-            },
-        };
+        let (_handle, mut connection_receiver, _listener_ref) =
+            match factory.register_listener(name.to_owned(), internal_config.buffer_size_kb).await {
+                Ok(result) => result,
+                Err(e) => {
+                    error!("Failed to register internal listener '{}': {}", name, e);
+                    return e;
+                },
+            };
 
         info!("Internal listener '{}' registered to connection factory", name);
 
@@ -983,7 +993,7 @@ filter_chains:
     }
 }
 
-async fn handle_internal_connection_static(
+fn handle_internal_connection_static(
     listener_name: String,
     connection_pair: orion_internal::InternalConnectionPair,
     filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
@@ -1004,17 +1014,19 @@ async fn handle_internal_connection_static(
         return Err(crate::Error::new("No matching filter chain"));
     };
 
-    let _downstream_stream = connection_pair.downstream;
+    let downstream_stream = connection_pair.downstream;
 
     match &filter_chain.handler {
         crate::listeners::filterchain::ConnectionHandler::Http(_http_manager) => {
             info!("Processing internal connection through HTTP filter chain");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            // TODO: Implement HTTP connection processing
+            let _ = downstream_stream;
             Ok(())
         },
         crate::listeners::filterchain::ConnectionHandler::Tcp(_tcp_proxy) => {
             info!("Processing internal connection through TCP filter chain");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            // TODO: Implement TCP connection processing
+            let _ = downstream_stream;
             Ok(())
         },
     }

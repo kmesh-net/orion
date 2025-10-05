@@ -23,7 +23,7 @@ async fn test_complete_internal_connection_flow() {
 
     let listener_name = "test_integration_listener_global";
     let (_handle, mut connection_receiver, _listener_ref) =
-        factory.register_listener(listener_name.to_string()).await.expect("Failed to register listener");
+        factory.register_listener(listener_name.to_string(), None).await.expect("Failed to register listener");
 
     assert!(factory.is_listener_active(listener_name).await);
     let listeners = factory.list_listeners().await;
@@ -67,7 +67,7 @@ async fn test_connection_pooling() {
 
     let listener_name = "test_pooling_listener_global";
     let (_handle, mut connection_receiver, _listener_ref) =
-        factory.register_listener(listener_name.to_string()).await.expect("Failed to register listener");
+        factory.register_listener(listener_name.to_string(), None).await.expect("Failed to register listener");
 
     let connector = InternalChannelConnector::new(listener_name.to_string(), "test_cluster", None);
 
@@ -94,11 +94,11 @@ async fn test_error_scenarios() {
     assert!(result.is_err());
 
     let listener_name = "test_error_listener_global";
-    let result1 = factory.register_listener(listener_name.to_string()).await;
+    let result1 = factory.register_listener(listener_name.to_string(), None).await;
     assert!(result1.is_ok());
     let (_handle1, _rx1, _listener_ref1) = result1.unwrap();
 
-    let result2 = factory.register_listener(listener_name.to_string()).await;
+    let result2 = factory.register_listener(listener_name.to_string(), None).await;
     assert!(result2.is_err());
 
     let result = factory.unregister_listener("non_existent").await;
@@ -124,7 +124,7 @@ async fn test_global_factory() {
     let factory = global_internal_connection_factory();
 
     let listener_name = "test_global_listener";
-    let (_handle, _rx, _listener_ref) = factory.register_listener(listener_name.to_string()).await.unwrap();
+    let (_handle, _rx, _listener_ref) = factory.register_listener(listener_name.to_string(), None).await.unwrap();
 
     assert!(factory.is_listener_active(listener_name).await);
 
@@ -141,7 +141,7 @@ async fn test_statistics_and_monitoring() {
     let listener1 = "test_stats_listener1_global";
 
     let (_handle1, _rx1, _listener_ref1) =
-        factory.register_listener(listener1.to_string()).await.expect("Failed to register listener1");
+        factory.register_listener(listener1.to_string(), None).await.expect("Failed to register listener1");
 
     let stats = factory.get_stats().await;
     assert!(stats.active_listeners >= 1);
@@ -172,7 +172,7 @@ async fn test_cluster_helpers() {
 
     let factory = global_internal_connection_factory();
     let (_handle, _rx, _listener_ref) =
-        factory.register_listener("test_cluster_helpers_listener".to_string()).await.unwrap();
+        factory.register_listener("test_cluster_helpers_listener".to_string(), None).await.unwrap();
 
     assert!(is_internal_listener_available("test_cluster_helpers_listener").await);
 
@@ -180,4 +180,30 @@ async fn test_cluster_helpers() {
     assert!(listeners.contains(&"test_cluster_helpers_listener".to_string()));
 
     factory.unregister_listener("test_cluster_helpers_listener").await.unwrap();
+}
+
+#[tokio::test]
+async fn test_buffer_size_configuration() {
+    let factory = global_internal_connection_factory();
+
+    let listener_name = "test_buffer_size_listener";
+    let buffer_size_kb = Some(8);
+
+    let (_handle, mut connection_receiver, _listener_ref) =
+        factory.register_listener(listener_name.to_string(), buffer_size_kb).await.unwrap();
+
+    let connector = InternalChannelConnector::new(listener_name.to_string(), "test_cluster", None);
+
+    let connection_future = connector.connect();
+    let listener_future = connection_receiver.recv();
+    let (_cluster_conn, listener_pair) = tokio::join!(connection_future, listener_future);
+
+    assert!(listener_pair.is_some());
+    let connection_pair = listener_pair.unwrap();
+
+    let metadata = connection_pair.downstream.metadata();
+    assert_eq!(metadata.buffer_size_kb, Some(8));
+    assert_eq!(metadata.listener_name, listener_name);
+
+    factory.unregister_listener(listener_name).await.unwrap();
 }

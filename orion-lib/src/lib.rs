@@ -44,7 +44,7 @@ pub use clusters::{
     load_assignment::PartialClusterLoadAssignment,
     ClusterLoadAssignmentBuilder,
 };
-pub use listeners::listener::ListenerFactory;
+pub use listeners::listener::{init_internal_worker_pool, ListenerFactory};
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};
 pub use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
 use orion_configuration::config::{

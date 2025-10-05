@@ -42,6 +42,7 @@ pub struct InternalListenerHandle {
     pub name: String,
     pub connection_sender: mpsc::UnboundedSender<InternalConnectionPair>,
     listener_ref: Weak<()>,
+    buffer_size_kb: Option<u32>,
 }
 
 impl InternalListenerHandle {
@@ -49,8 +50,9 @@ impl InternalListenerHandle {
         name: String,
         connection_sender: mpsc::UnboundedSender<InternalConnectionPair>,
         listener_ref: Weak<()>,
+        buffer_size_kb: Option<u32>,
     ) -> Self {
-        Self { name, connection_sender, listener_ref }
+        Self { name, connection_sender, listener_ref, buffer_size_kb }
     }
 
     pub fn is_alive(&self) -> bool {
@@ -64,7 +66,7 @@ impl InternalListenerHandle {
 
         let metadata = InternalConnectionMetadata {
             listener_name: self.name.clone(),
-            buffer_size_kb: None,
+            buffer_size_kb: self.buffer_size_kb,
             created_at: Instant::now(),
             endpoint_id,
         };
@@ -185,12 +187,13 @@ impl InternalConnectionFactory {
     pub async fn register_listener(
         &self,
         name: String,
+        buffer_size_kb: Option<u32>,
     ) -> Result<(InternalListenerHandle, mpsc::UnboundedReceiver<InternalConnectionPair>, Arc<()>)> {
         let (connection_tx, connection_rx) = mpsc::unbounded_channel();
         let listener_ref = Arc::new(());
         let weak_ref = Arc::downgrade(&listener_ref);
 
-        let handle = InternalListenerHandle::new(name.clone(), connection_tx, weak_ref);
+        let handle = InternalListenerHandle::new(name.clone(), connection_tx, weak_ref, buffer_size_kb);
 
         let mut listeners = self.listeners.write().await;
 
@@ -337,8 +340,12 @@ impl AsyncWrite for InternalStreamWrapper {
     }
 }
 
+const DEFAULT_BUFFER_SIZE: usize = 8192;
+
 fn create_internal_connection_pair(metadata: InternalConnectionMetadata) -> (Arc<InternalStream>, Arc<InternalStream>) {
-    let (upstream_io, downstream_io) = tokio::io::duplex(1024);
+    let buffer_size = metadata.buffer_size_kb.map(|kb| (kb as usize) * 1024).unwrap_or(DEFAULT_BUFFER_SIZE);
+
+    let (upstream_io, downstream_io) = tokio::io::duplex(buffer_size);
 
     let upstream = Arc::new(InternalStream::new(metadata.clone(), upstream_io));
     let downstream = Arc::new(InternalStream::new(metadata, downstream_io));
@@ -368,14 +375,14 @@ mod tests {
     async fn test_listener_registration() {
         let factory = InternalConnectionFactory::new();
 
-        let result = factory.register_listener("test_listener".to_string()).await;
+        let result = factory.register_listener("test_listener".to_string(), None).await;
         assert!(result.is_ok());
         let (_handle, _rx, _listener_ref) = result.unwrap();
 
         let stats = factory.get_stats().await;
         assert_eq!(stats.active_listeners, 1);
 
-        let result = factory.register_listener("test_listener".to_string()).await;
+        let result = factory.register_listener("test_listener".to_string(), None).await;
         assert!(result.is_err());
     }
 
@@ -383,7 +390,7 @@ mod tests {
     async fn test_listener_unregistration() {
         let factory = InternalConnectionFactory::new();
 
-        let (_handle, _rx, _listener_ref) = factory.register_listener("test_listener".to_string()).await.unwrap();
+        let (_handle, _rx, _listener_ref) = factory.register_listener("test_listener".to_string(), None).await.unwrap();
         let result = factory.unregister_listener("test_listener").await;
         assert!(result.is_ok());
 
@@ -406,7 +413,7 @@ mod tests {
     async fn test_listener_lifecycle() {
         let factory = InternalConnectionFactory::new();
 
-        let (handle, _rx, _listener_ref) = factory.register_listener("test_listener".to_string()).await.unwrap();
+        let (handle, _rx, _listener_ref) = factory.register_listener("test_listener".to_string(), None).await.unwrap();
 
         assert!(factory.is_listener_active("test_listener").await);
         assert!(handle.is_alive());
@@ -423,8 +430,8 @@ mod tests {
         let listeners = factory.list_listeners().await;
         assert!(listeners.is_empty());
 
-        let (_handle1, _rx1, _listener_ref1) = factory.register_listener("listener1".to_string()).await.unwrap();
-        let (_handle2, _rx2, _listener_ref2) = factory.register_listener("listener2".to_string()).await.unwrap();
+        let (_handle1, _rx1, _listener_ref1) = factory.register_listener("listener1".to_string(), None).await.unwrap();
+        let (_handle2, _rx2, _listener_ref2) = factory.register_listener("listener2".to_string(), None).await.unwrap();
 
         let listeners = factory.list_listeners().await;
         assert_eq!(listeners.len(), 2);
@@ -437,5 +444,28 @@ mod tests {
         let factory = global_internal_connection_factory();
         let stats = factory.get_stats().await;
         assert_eq!(stats.max_pooled_connections, 0);
+    }
+
+    #[tokio::test]
+    async fn test_buffer_size_configuration() {
+        let metadata_default = InternalConnectionMetadata {
+            listener_name: "test".to_string(),
+            buffer_size_kb: None,
+            created_at: Instant::now(),
+            endpoint_id: None,
+        };
+        let (upstream, downstream) = create_internal_connection_pair(metadata_default);
+        assert!(upstream.is_active());
+        assert!(downstream.is_active());
+
+        let metadata_custom = InternalConnectionMetadata {
+            listener_name: "test".to_string(),
+            buffer_size_kb: Some(4),
+            created_at: Instant::now(),
+            endpoint_id: None,
+        };
+        let (upstream_custom, downstream_custom) = create_internal_connection_pair(metadata_custom);
+        assert!(upstream_custom.is_active());
+        assert!(downstream_custom.is_active());
     }
 }
