@@ -50,9 +50,81 @@ use std::{
 };
 use tokio::{
     net::{TcpListener, TcpSocket},
-    sync::broadcast::{self},
+    sync::{
+        broadcast::{self},
+        mpsc,
+    },
 };
 use tracing::{debug, info, warn};
+
+#[derive(Debug)]
+struct InternalConnectionWorkerPool {
+    workers: Vec<tokio::task::JoinHandle<()>>,
+    senders: Vec<mpsc::UnboundedSender<InternalConnectionTask>>,
+    next_worker: std::sync::atomic::AtomicUsize,
+}
+
+#[derive(Debug)]
+struct InternalConnectionTask {
+    listener_name: String,
+    connection_pair: orion_internal::InternalConnectionPair,
+    filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
+}
+
+impl InternalConnectionWorkerPool {
+    fn new(num_workers: usize) -> Self {
+        let mut senders: Vec<mpsc::UnboundedSender<InternalConnectionTask>> = Vec::with_capacity(num_workers);
+        let mut workers = Vec::with_capacity(num_workers);
+
+        for _ in 0..num_workers {
+            let (sender, mut receiver) = mpsc::unbounded_channel();
+            senders.push(sender);
+
+            let worker = tokio::spawn(async move {
+                while let Some(task) = receiver.recv().await {
+                    if let Err(e) =
+                        handle_internal_connection_static(task.listener_name, task.connection_pair, task.filter_chains)
+                    {
+                        warn!("Error handling internal connection task: {}", e);
+                    }
+                }
+            });
+            workers.push(worker);
+        }
+
+        Self { workers, senders, next_worker: std::sync::atomic::AtomicUsize::new(0) }
+    }
+
+    fn submit_task(&self, task: InternalConnectionTask) -> Result<()> {
+        let worker_index = self.next_worker.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % self.senders.len();
+        self.senders[worker_index].send(task).map_err(|_| Error::new("Worker pool is shut down"))
+    }
+
+    async fn shutdown(self) {
+        drop(self.senders);
+
+        for worker in self.workers {
+            let _ = worker.await;
+        }
+    }
+}
+
+static INTERNAL_WORKER_POOL: std::sync::OnceLock<InternalConnectionWorkerPool> = std::sync::OnceLock::new();
+
+pub fn init_internal_worker_pool(num_workers: Option<usize>) {
+    let workers = num_workers
+        .or_else(|| std::env::var("ORION_INTERNAL_WORKER_POOL_SIZE").ok().and_then(|s| s.parse::<usize>().ok()))
+        .unwrap_or(4);
+    let _ = INTERNAL_WORKER_POOL.set(InternalConnectionWorkerPool::new(workers));
+}
+
+fn get_internal_worker_pool() -> &'static InternalConnectionWorkerPool {
+    INTERNAL_WORKER_POOL.get_or_init(|| {
+        let workers =
+            std::env::var("ORION_INTERNAL_WORKER_POOL_SIZE").ok().and_then(|s| s.parse::<usize>().ok()).unwrap_or(4);
+        InternalConnectionWorkerPool::new(workers)
+    })
+}
 
 #[derive(Debug, Clone)]
 struct PartialListener {
@@ -311,7 +383,7 @@ impl Listener {
                 maybe_route_update = route_updates_receiver.recv() => {
                     //todo: add context to the error here once orion-error lands
                     match maybe_route_update {
-                        Ok(route_update) => {Self::process_route_update(&name, &filter_chains, route_update)},
+                        Ok(route_update) => {Self::process_route_update(name, &filter_chains, route_update)},
                         Err(e) => {return e.into();}
                     }
                 },
@@ -320,7 +392,7 @@ impl Listener {
                         Ok(secret_update) => {
                             // todo: possibly expensive clone - may need to rethink this structure
                             let mut filter_chains_clone = filter_chains.as_ref().clone();
-                            Self::process_secret_update(&name, &mut filter_chains_clone, secret_update);
+                            Self::process_secret_update(name, &mut filter_chains_clone, secret_update);
                             filter_chains = Arc::new(filter_chains_clone);
                         }
                         Err(e) => {return e.into();}
@@ -332,38 +404,88 @@ impl Listener {
 
     async fn run_internal_listener(
         name: &'static str,
-        _internal_config: InternalListenerConfig,
+        internal_config: InternalListenerConfig,
         filter_chains: HashMap<FilterChainMatch, FilterchainType>,
         _with_tls_inspector: bool,
         _with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
     ) -> Error {
-        let filter_chains = Arc::new(filter_chains);
+        use orion_internal::global_internal_connection_factory;
+        use tracing::{debug, error, info, warn};
 
-        // For now, internal listeners just wait for updates
-        // The actual connection handling will be implemented when we add the internal connection factory
+        let filter_chains = Arc::new(filter_chains);
+        let factory = global_internal_connection_factory();
+
+        let (_handle, mut connection_receiver, _listener_ref) =
+            match factory.register_listener(name.to_owned(), internal_config.buffer_size_kb).await {
+                Ok(result) => result,
+                Err(e) => {
+                    error!("Failed to register internal listener '{}': {}", name, e);
+                    return e;
+                },
+            };
+
+        info!("Internal listener '{}' registered to connection factory", name);
+
         loop {
             tokio::select! {
+                maybe_connection = connection_receiver.recv() => {
+                    if let Some(connection_pair) = maybe_connection {
+                        debug!("Internal listener '{}' received new connection", name);
+
+                        let filter_chains_clone = filter_chains.clone();
+                        let listener_name = name.to_owned();
+
+                        // Use worker pool instead of tokio::spawn for better performance
+                        // with large numbers of short connections
+                        let task = InternalConnectionTask {
+                            listener_name,
+                            connection_pair,
+                            filter_chains: filter_chains_clone,
+                        };
+
+                        if let Err(e) = get_internal_worker_pool().submit_task(task) {
+                            warn!("Failed to submit internal connection task: {}", e);
+                        }
+                    } else {
+                        warn!("Internal listener '{}' connection channel closed", name);
+                        break;
+                    }
+                },
                 maybe_route_update = route_updates_receiver.recv() => {
                     match maybe_route_update {
-                        Ok(route_update) => {Self::process_route_update(&name, &filter_chains, route_update);}
-                        Err(e) => {return e.into();}
+                        Ok(route_update) => {
+                            Self::process_route_update(name, &filter_chains, route_update);
+                        }
+                        Err(e) => {
+                            error!("Route update error for internal listener '{}': {}", name, e);
+                            return e.into();
+                        }
                     }
                 },
                 maybe_secret_update = secret_updates_receiver.recv() => {
                     match maybe_secret_update {
                         Ok(secret_update) => {
                             let mut filter_chains_clone = filter_chains.as_ref().clone();
-                            Self::process_secret_update(&name, &mut filter_chains_clone, secret_update);
-                            // Note: For internal listeners, we'd need to update the shared state
-                            // This will be implemented when we add the internal connection factory
+                            Self::process_secret_update(name, &mut filter_chains_clone, secret_update);
+                            // TODO: Update the shared filter chains state for active connections
                         }
-                        Err(e) => {return e.into();}
+                        Err(e) => {
+                            error!("Secret update error for internal listener '{}': {}", name, e);
+                            return e.into();
+                        }
                     }
                 }
             }
         }
+
+        if let Err(e) = factory.unregister_listener(name).await {
+            warn!("Failed to unregister internal listener '{}': {}", name, e);
+        }
+
+        info!("Internal listener '{}' shutting down", name);
+        Error::new("Internal listener shutdown")
     }
 
     fn select_filterchain<'a, T>(
@@ -472,8 +594,8 @@ impl Listener {
 
         let ssl = AtomicBool::new(false);
         defer! {
-                            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
-            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
+                            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_owned())]);
+            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_owned())]);
             if ssl.load(Ordering::Relaxed) {
                 with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
             }
@@ -512,7 +634,7 @@ impl Listener {
                         add,
                         1,
                         shard_id,
-                        &[KeyValue::new("listener", listener_name.to_string())]
+                        &[KeyValue::new("listener", listener_name.to_owned())]
                     );
                     with_metric!(
                         http::DOWNSTREAM_CX_SSL_ACTIVE,
@@ -868,5 +990,44 @@ filter_chains:
             Some(2)
         );
         assert_eq!(Listener::select_filterchain(&m, &metadata, Some("hello.world")).unwrap().copied(), Some(3));
+    }
+}
+
+fn handle_internal_connection_static(
+    listener_name: String,
+    connection_pair: orion_internal::InternalConnectionPair,
+    filter_chains: Arc<HashMap<FilterChainMatch, FilterchainType>>,
+) -> Result<()> {
+    use crate::listeners::filter_state::DownstreamConnectionMetadata;
+
+    debug!("Handling new internal connection for listener '{}'", listener_name);
+
+    let downstream_metadata = DownstreamConnectionMetadata::FromInternal {
+        listener_name: listener_name.clone(),
+        endpoint_id: connection_pair.downstream.metadata().endpoint_id.clone(),
+    };
+
+    let filter_chain = if let Some(fc) = Listener::select_filterchain(&filter_chains, &downstream_metadata, None)? {
+        fc
+    } else {
+        warn!("No matching filter chain found for internal connection");
+        return Err(crate::Error::new("No matching filter chain"));
+    };
+
+    let downstream_stream = connection_pair.downstream;
+
+    match &filter_chain.handler {
+        crate::listeners::filterchain::ConnectionHandler::Http(_http_manager) => {
+            info!("Processing internal connection through HTTP filter chain");
+            // TODO: Implement HTTP connection processing
+            let _ = downstream_stream;
+            Ok(())
+        },
+        crate::listeners::filterchain::ConnectionHandler::Tcp(_tcp_proxy) => {
+            info!("Processing internal connection through TCP filter chain");
+            // TODO: Implement TCP connection processing
+            let _ = downstream_stream;
+            Ok(())
+        },
     }
 }

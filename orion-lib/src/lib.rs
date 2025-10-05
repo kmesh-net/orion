@@ -44,7 +44,7 @@ pub use clusters::{
     load_assignment::PartialClusterLoadAssignment,
     ClusterLoadAssignmentBuilder,
 };
-pub use listeners::listener::ListenerFactory;
+pub use listeners::listener::{init_internal_worker_pool, ListenerFactory};
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};
 pub use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
 use orion_configuration::config::{
@@ -55,6 +55,11 @@ use orion_configuration::config::{
 };
 pub use secrets::SecretManager;
 pub(crate) use transport::AsyncStream;
+
+pub use orion_internal::{
+    cluster_helpers, global_internal_connection_factory, InternalChannelConnector, InternalConnectionFactory,
+    InternalConnectionPair, InternalConnectionStats, InternalListenerHandle,
+};
 
 pub type Error = orion_error::Error;
 pub type Result<T> = ::core::result::Result<T, Error>;

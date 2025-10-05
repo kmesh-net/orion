@@ -6,6 +6,7 @@ members = [
   "orion-error",
   "orion-http-header",
   "orion-interner",
+  "orion-internal",
   "orion-format",
   "orion-lib",
   "orion-metrics",
@@ -35,6 +36,7 @@ orion-error          = { path = "orion-error" }
 orion-format         = { path = "orion-format" }
 orion-http-header    = { path = "orion-http-header" }
 orion-interner       = { path = "orion-interner" }
+orion-internal       = { path = "orion-internal" }
 orion-lib            = { path = "orion-lib" }
 orion-metrics        = { path = "orion-metrics" }
 orion-tracing        = { path = "orion-tracing" }

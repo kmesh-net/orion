@@ -194,7 +194,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                         let err = err.into_inner();
                         let event_error = EventError::try_infer_from(&err);
                         let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                        let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
+                        let event_kind = event_error.map_or(EventKind::ViaUpstream, EventKind::Error);
                         debug!(
                             "HttpConnectionManager Error processing response {:?}: {}({})",
                             err,
@@ -211,7 +211,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                 let err = err.into_inner();
                 let event_error = EventError::try_infer_from(&err);
                 let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
+                let event_kind = event_error.map_or(EventKind::ViaUpstream, EventKind::Error);
                 debug!(
                     "Failed to get an HTTP connection: {:?}: {}({})",
                     err,

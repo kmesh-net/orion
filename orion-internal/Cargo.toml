@@ -1,0 +1,16 @@
+[package]
+name = "orion-internal"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Internal connection and internal listener infrastructure for Orion proxy"
+
+[dependencies]
+tokio = { version = "1.42.0", features = ["full"] }
+tracing = "0.1.41"
+orion-error = { path = "../orion-error" }
+orion-configuration = { path = "../orion-configuration" }
+compact_str = "0.8.0"
+
+[dev-dependencies]
+tokio-test = "0.4"

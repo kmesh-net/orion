@@ -237,7 +237,7 @@ fn spawn_proxy_runtime_from_thread(
                 _ = start_proxy(configuration_receivers, ct.clone()) => {
                     info!("Proxy Runtime terminated!");
                 }
-                _ = ct.cancelled() => {
+                () = ct.cancelled() => {
                     info!("Shutdown channel closed, shutting down Proxy runtime!");
                 }
             }
@@ -264,7 +264,7 @@ fn spawn_services_runtime_from_thread(
                     }
                     info!("Services Runtime terminated!");
                 }
-                _ = ct.cancelled() => {
+                () = ct.cancelled() => {
                     info!("Shutdown channel closed, shutting down Services runtime!");
                 }
             }
