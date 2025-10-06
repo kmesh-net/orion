@@ -25,6 +25,7 @@
 
 mod direct_response;
 mod http_modifiers;
+mod mcp_route;
 mod redirect;
 mod route;
 mod upgrades;

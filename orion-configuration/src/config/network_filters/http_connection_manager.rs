@@ -18,6 +18,7 @@
 pub mod header_matcher;
 pub mod header_modifer;
 pub mod http_filters;
+pub mod mcp_route;
 pub mod route;
 
 use compact_str::CompactString;
