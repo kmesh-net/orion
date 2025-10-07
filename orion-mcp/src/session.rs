@@ -9,7 +9,8 @@ use ::http::request::Parts;
 use anyhow::anyhow;
 use futures_util::StreamExt;
 use http_body_util::BodyExt;
-use orion_lib::{PolyBody, PolyBodyError};
+use orion_configuration::body::poly_body::PolyBody;
+use orion_configuration::body::poly_body::PolyBodyError;
 use rmcp::ErrorData;
 use rmcp::model::{
     ClientInfo, ClientJsonRpcMessage, ClientRequest, ErrorCode, Implementation, JsonRpcError, ProtocolVersion,

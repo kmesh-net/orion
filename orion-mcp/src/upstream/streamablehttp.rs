@@ -6,7 +6,8 @@ use anyhow::anyhow;
 
 use futures::StreamExt;
 use http::header::ACCEPT;
-use orion_lib::PolyBody;
+
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;

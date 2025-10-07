@@ -12,7 +12,6 @@ members = [
   "orion-proxy",
   "orion-tracing",
   "orion-xds",
-  "orion-mcp"
 ]
 
 resolver = "2"
@@ -38,7 +37,6 @@ orion-http-header    = { path = "orion-http-header" }
 orion-interner       = { path = "orion-interner" }
 orion-lib            = { path = "orion-lib" }
 orion-metrics        = { path = "orion-metrics" }
-orion-mcp            = { path = "orion-mcp" }
 orion-tracing        = { path = "orion-tracing" }
 orion-xds            = { path = "orion-xds" }
 

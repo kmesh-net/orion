@@ -2076,7 +2076,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.1",
  "chrono",
  "getrandom 0.2.16",
  "http",
@@ -2346,6 +2346,7 @@ dependencies = [
  "enum_dispatch",
  "exponential-backoff",
  "futures",
+ "futures-core",
  "futures-util",
  "h2",
  "hickory-resolver",
@@ -2356,6 +2357,7 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "ipnet",
+ "itertools 0.14.0",
  "lru_time_cache",
  "multimap",
  "once_cell",
@@ -2376,6 +2378,7 @@ dependencies = [
  "pretty-duration",
  "rand 0.8.5",
  "regex",
+ "rmcp",
  "rustc-hash 1.1.0",
  "rustls",
  "rustls-pemfile",
@@ -2403,44 +2406,6 @@ dependencies = [
  "url",
  "uuid",
  "x509-parser",
-]
-
-[[package]]
-name = "orion-mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-stream",
- "atomic-take",
- "axum 0.8.6",
- "bytes",
- "futures",
- "futures-core",
- "futures-util",
- "http",
- "http-body-util",
- "hyper",
- "indexmap 2.11.4",
- "itertools 0.14.0",
- "orion-configuration",
- "orion-data-plane-api",
- "orion-error",
- "orion-lib",
- "pin-project-lite",
- "rmcp",
- "serde",
- "serde_json",
- "serde_yaml",
- "sse-stream",
- "thiserror 2.0.17",
- "tokio",
- "tokio-stream",
- "tower 0.5.2",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -2920,7 +2885,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "thiserror 2.0.17",
  "tokio",
  "tracing",
@@ -2957,9 +2922,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4295,9 +4260,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
+checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "unicode-ident"

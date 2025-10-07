@@ -17,6 +17,7 @@ compact_str.workspace = true
 enum_dispatch = "0.3.13"
 exponential-backoff.workspace = true
 futures.workspace = true
+futures-core  = "0.3"
 futures-util = { version = "0.3", default-features = false }
 h2 = "0.4.5"
 hickory-resolver = { version = "0.24", features = ["system-config"] }
@@ -26,6 +27,7 @@ http-body-util.workspace = true
 hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
 ipnet = "2.9"
+itertools = "0.14.0"
 lru_time_cache = "0.11.11"
 multimap = "0.10.0"
 once_cell = { version = "1.19" }
@@ -53,6 +55,16 @@ rustls = "0.23"
 rustls-pemfile = "2.1"
 rustls-platform-verifier = { version = "0.3" }
 rustls-webpki = "0.102"
+rmcp = { version = "0.7", features = [
+    "client",
+    "transport-sse-server",
+    "transport-sse-client",
+    "transport-child-process",
+    "transport-streamable-http-server",
+    "transport-streamable-http-client",
+    "reqwest",
+    "auth",
+] }
 scopeguard = "1.2.0"
 serde.workspace = true
 smol_str = "0.3.2"
@@ -73,7 +85,11 @@ url.workspace = true
 uuid = { version = "1.17.0", features = ["v4"] }
 x509-parser = { version = "0.17", features = ["default"] }
 tokio-util = "0.7.16"
-
+sse-stream = "0.2.1"
+pin-project-lite = "0.2"
+arc-swap = "1.7.1"
+indexmap = "2.11"
+url = "2.5"
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true

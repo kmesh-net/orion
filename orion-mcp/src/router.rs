@@ -5,12 +5,11 @@ use http::Method;
 use http::StatusCode;
 use itertools::Itertools;
 
-use orion_lib::PolyBody;
-use orion_lib::Result;
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::transport::StreamableHttpServerConfig;
-use tracing::warn;
 
 use crate::MCPInfo;
+use crate::filters;
 use crate::handler::Relay;
 use crate::json;
 use crate::json::from_body;
@@ -20,7 +19,7 @@ use crate::json::from_body;
 // use crate::proxy::httpproxy::PolicyClient;
 use crate::Request;
 use crate::session::SessionManager;
-use crate::sse::LegacySSEService;
+
 //use crate::store::{BackendPolicies, Stores};
 use crate::Response;
 use crate::streamablehttp::StreamableHttpService;
@@ -31,16 +30,15 @@ use crate::streamablehttp::StreamableHttpService;
 
 #[derive(Debug, Clone)]
 pub struct App {
-    state: Stores,
+    //state: Stores,
     // _drain: DrainWatcher,
-    session: Arc<SessionManager>,
+    session_manager: Arc<SessionManager>,
 }
 
 impl App {
-    pub fn new(state: Stores, registry: &mut Registry) -> Self {
-        let session: Arc<SessionManager> = Arc::new(Default::default());
-
-        Self { state, session }
+    pub fn new() -> Self {
+        let session_manager: Arc<SessionManager> = Arc::new(Default::default());
+        Self { session_manager }
     }
 
     pub fn should_passthrough(
@@ -74,94 +72,13 @@ impl App {
         backend: McpBackend,
         mut req: Request,
     ) -> Response {
-        let (backends, authorization_policies, authn) = {
-            let binds = self.state.read_binds();
-            let (authorization_policies, authn) = binds.mcp_policies(name.clone());
-            let nt = backend
-                .targets
-                .iter()
-                .map(|t| {
-                    let backend_policies = binds.backend_policies(name.clone(), None, Some(t.name.clone()));
-                    Arc::new(McpTarget { name: t.name.clone(), spec: t.spec.clone(), backend_policies })
-                })
-                .collect_vec();
-            (McpBackendGroup { targets: nt }, authorization_policies, authn)
-        };
-
-        let sm = self.session.clone();
-        let client = PolicyClient { inputs: pi.clone() };
-
-        // TODO: today we duplicate everything which is error prone. It would be ideal to re-use the parent one
-        // The problem is that we decide whether to include various attributes before we pick the backend,
-        // so we don't know to register the MCP policies
-        let mut ctx = ContextBuilder::new();
-        authorization_policies.register(&mut ctx);
-        let needs_body = ctx.with_request(&req);
-        if needs_body && let Ok(body) = crate::http::inspect_body(req.body_mut()).await {
-            ctx.with_request_body(body);
-        }
-        if let Some(jwt) = req.extensions().get::<Claims>() {
-            ctx.with_jwt(jwt);
-        }
-        ctx.with_source(
-            req.extensions().get::<TCPConnectionInfo>().unwrap(),
-            req.extensions().get::<TLSConnectionInfo>(),
+        let sm = self.session_manager.clone();
+        let streamable = StreamableHttpService::new(
+            move || Relay::new(pi.clone(), backends.clone()),
+            sm,
+            StreamableHttpServerConfig { stateful_mode: backend.stateful, ..Default::default() },
         );
-
-        // `response` is not valid here, since we run authz first
-        // MCP context is added later
-        req.extensions_mut().insert(Arc::new(ctx));
-
-        // Check if authentication is required and JWT token is missing
-        if let Some(_) = &authn
-            && req.extensions().get::<Claims>().is_none()
-            && !Self::is_well_known_endpoint(req.uri().path())
-        {
-            return Self::create_auth_required_response(&req);
-        }
-
-        match (req.uri().path(), req.method(), authn) {
-            ("/sse", _, _) => {
-                // Assume this is streamable HTTP otherwise
-                let sse = LegacySSEService::new(move || Relay::new(pi.clone(), backends.clone()), sm);
-                sse.handle(req).await
-            },
-            (path, _, Some(auth)) if path.ends_with("client-registration") => {
-                if let Ok(resp) = self.client_registration(req, auth, client.clone()).await {
-                    resp
-                } else {
-                    warn!("client_registration error");
-                    http::Response::builder()
-                        .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(PolyBody::empty())
-                        .unwrap()
-                }
-            },
-
-            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-protected-resource") => {
-                self.protected_resource_metadata(req, auth).await
-            },
-            (path, _, Some(auth)) if path.starts_with("/.well-known/oauth-authorization-server") => {
-                if let Ok(resp) = self.authorization_server_metadata(req, auth, client.clone()).await {
-                    resp
-                } else {
-                    warn!("authorization_server_metadata error");
-                    http::Response::builder()
-                        .status(http::StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(PolyBody::empty())
-                        .unwrap()
-                }
-            },
-            _ => {
-                // Assume this is streamable HTTP otherwise
-                let streamable = StreamableHttpService::new(
-                    move || Relay::new(pi.clone(), backends.clone()),
-                    sm,
-                    StreamableHttpServerConfig { stateful_mode: backend.stateful, ..Default::default() },
-                );
-                streamable.handle(req).await
-            },
-        }
+        streamable.handle(req).await
     }
 
     fn is_well_known_endpoint(path: &str) -> bool {
@@ -254,7 +171,7 @@ impl App {
         req: Request,
         auth: McpAuthentication,
         client: PolicyClient,
-    ) -> Result<Response> {
+    ) -> Result<Response, orion_error::Error> {
         let ureq = ::http::Request::builder()
             .uri(format!("{}/.well-known/oauth-authorization-server", auth.issuer))
             .body(PolyBody::empty())?;
@@ -310,7 +227,7 @@ impl App {
         req: Request,
         auth: McpAuthentication,
         client: PolicyClient,
-    ) -> Result<Response> {
+    ) -> Result<Response, orion_error::Error> {
         let ureq = ::http::Request::builder()
             .uri(format!("{}/clients-registrations/openid-connect", auth.issuer))
             .method(Method::POST)

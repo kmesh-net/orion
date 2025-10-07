@@ -8,7 +8,8 @@ use axum::response::{IntoResponse, Sse};
 
 use futures_util::StreamExt;
 use http::Uri;
-use orion_lib::PolyBody;
+
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientRequest};
 use rmcp::transport::sse_server::PostEventQuery;
 use tokio_stream::wrappers::ReceiverStream;
@@ -16,19 +17,19 @@ use tracing::trace;
 use url::Url;
 
 use crate::handler::Relay;
-use crate::http::{DropBody, filters};
+//use http::{DropBody, filters};
 use crate::session;
 use crate::session::SessionManager;
 use crate::*;
 
 pub struct LegacySSEService {
     session_manager: Arc<SessionManager>,
-    service_factory: Arc<dyn Fn() -> Result<Relay, orion_lib::Error> + Send + Sync>,
+    service_factory: Arc<dyn Fn() -> Result<Relay, orion_error::Error> + Send + Sync>,
 }
 
 impl LegacySSEService {
     pub fn new(
-        service_factory: impl Fn() -> Result<Relay, orion_lib::Error> + Send + Sync + 'static,
+        service_factory: impl Fn() -> Result<Relay, orion_error::Error> + Send + Sync + 'static,
         session_manager: Arc<SessionManager>,
     ) -> Self {
         Self { session_manager, service_factory: Arc::new(service_factory) }
@@ -43,7 +44,7 @@ impl LegacySSEService {
             _ => ::http::Response::builder()
                 .status(http::StatusCode::METHOD_NOT_ALLOWED)
                 .header(http::header::ALLOW, "GET, POST")
-                .body(orion_lib::PolyBody::from("Method Not Allowed"))
+                .body(PolyBody::from("Method Not Allowed"))
                 .expect("valid response"),
         }
     }
@@ -142,7 +143,7 @@ fn accepted_response() -> Response {
     http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
 }
 
-pub fn modify_url(uri: &mut Uri, f: impl FnOnce(&mut Url) -> anyhow::Result<()>) -> orion_lib::Result<()> {
+pub fn modify_url(uri: &mut Uri, f: impl FnOnce(&mut Url) -> anyhow::Result<()>) -> Result<(), orion_error::Error> {
     fn url_to_uri(url: &Url) -> anyhow::Result<Uri> {
         if !url.has_authority() {
             anyhow::bail!("no authority");

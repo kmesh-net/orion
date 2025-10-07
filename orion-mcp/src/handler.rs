@@ -5,6 +5,7 @@ use futures_core::Stream;
 use http::StatusCode;
 use http::request::Parts;
 use itertools::Itertools;
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::ErrorData;
 use rmcp::model::{
     ClientNotification, ClientRequest, Implementation, JsonRpcNotification, JsonRpcRequest, ListPromptsResult,
@@ -43,7 +44,7 @@ impl Relay {
         backend: McpBackendGroup,
         //policies: McpAuthorizationSet,
         //client: PolicyClient,
-    ) -> orion_lib::Result<Self> {
+    ) -> Result<Self, orion_error::Error> {
         let default_target_name =
             if backend.targets.len() != 1 { None } else { Some(backend.targets[0].name.to_string()) };
         Ok(Self { upstreams: Arc::new(UpstreamGroup::new(pi, client, backend)?), default_target_name })
@@ -333,5 +334,5 @@ fn messages_to_response(
 }
 
 fn accepted_response() -> Response {
-    ::http::Response::builder().status(StatusCode::ACCEPTED).body(orion_lib::PolyBody::empty()).expect("valid response")
+    ::http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
 }

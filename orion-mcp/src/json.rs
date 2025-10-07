@@ -1,6 +1,6 @@
 use bytes::Bytes;
+use orion_configuration::body::poly_body::PolyBody;
 use orion_error::Error;
-use orion_lib::PolyBody;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 

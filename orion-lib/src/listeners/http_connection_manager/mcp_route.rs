@@ -6,6 +6,7 @@ use orion_format::{
     context::{UpstreamContext, UpstreamRequest},
     types::{ResponseFlagsLong, ResponseFlagsShort},
 };
+use orion_mcp;
 use orion_tracing::{
     attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME},
     http_tracer::{SpanKind, SpanName},
@@ -21,8 +22,8 @@ use crate::{
     listeners::{
         access_log::AccessLogContext,
         http_connection_manager::{
-            HttpConnectionManager, RequestHandler, TransactionHandler, http_modifiers, route::MatchedRequest,
-            upgrades as upgrade_utils,
+            HttpConnectionManager, RequestHandler, TransactionHandler, http_modifiers, mcp_route,
+            route::MatchedRequest, upgrades as upgrade_utils,
         },
         synthetic_http_response::SyntheticHttpResponse,
     },
@@ -42,14 +43,28 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
             retry_policy,
             remote_address,
             route_match,
-            websocket_enabled_by_default,
+            websocket_enabled_by_default: _,
         } = request;
-        let cluster_id = clusters_manager::resolve_cluster(&self.cluster_specifier)
-            .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
+
+        let cluster_id = if let Some(authority) = downstream_request.uri().authority()
+            && let Some(cluster_specifier) = self.cluster_mappings.get(authority.host())
+        {
+            clusters_manager::resolve_cluster(cluster_specifier)
+                .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?
+        } else {
+            return Err(format!("Failed to find cluster for {:?}", downstream_request.uri().authority()).into());
+        };
+
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
-        let hash_state = HashState::new(&vec![], &downstream_request, remote_address);
+        let hash_state = HashState::new(&[], &downstream_request, remote_address);
         let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;
+
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
+
+        // for MCP we need to get a channel per configured MCP server
+        // then we need to pass those to MCP App
+        //
+        let app = orion_mcp::router::App::new();
 
         match maybe_channel {
             Ok(svc_channel) => {
@@ -117,7 +132,6 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
                     ]);
                 }
 
-                // ... store the span in the span_state
                 if let Some(ref span_state) = trans_handler.span_state {
                     *span_state.client_span.lock() = client_span;
                 }
@@ -126,26 +140,6 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
                     ctx.lock().loggers.with_context(&UpstreamRequest(&upstream_request));
                 }
 
-                let websocket_enabled = if let Some(upgrade_config) = self.upgrade_config {
-                    upgrade_config.is_websocket_enabled(websocket_enabled_by_default)
-                } else {
-                    websocket_enabled_by_default
-                };
-                let should_upgrade_websocket = if websocket_enabled {
-                    match upgrade_utils::is_valid_websocket_upgrade_request(upstream_request.headers()) {
-                        Ok(maybe_upgrade) => maybe_upgrade,
-                        Err(upgrade_error) => {
-                            debug!("Failed to upgrade to websockets {upgrade_error}");
-                            return Ok(SyntheticHttpResponse::bad_request(EventKind::UpgradeFailed).into_response(ver));
-                        },
-                    }
-                } else {
-                    false
-                };
-                if should_upgrade_websocket {
-                    return upgrade_utils::handle_websocket_upgrade(trans_handler, upstream_request, &svc_channel)
-                        .await;
-                }
                 if let Some(direct_response) = http_modifiers::apply_preflight_functions(&mut upstream_request) {
                     return Ok(direct_response);
                 }

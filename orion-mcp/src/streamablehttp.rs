@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
 use ::http::StatusCode;
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientRequest};
 use rmcp::transport::StreamableHttpServerConfig;
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 
 use crate::*;
 
-use orion_lib::PolyBody;
 use {handler::Relay, session::SessionManager};
 
 pub struct StreamableHttpService {

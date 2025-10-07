@@ -12,8 +12,6 @@ orion-configuration.workspace = true
 
 orion-data-plane-api.workspace = true
 orion-error.workspace          = true
-orion-lib.workspace            = true
-
 
 http.workspace    = true
 serde.workspace   = true

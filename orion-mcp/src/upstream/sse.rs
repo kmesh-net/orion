@@ -4,7 +4,8 @@ use anyhow::anyhow;
 use futures_core::stream::BoxStream;
 use futures_util::{StreamExt, TryFutureExt};
 use http::header::ACCEPT;
-use orion_lib::PolyBody;
+
+use orion_configuration::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::EVENT_STREAM_MIME_TYPE;
 use rmcp::transport::streamable_http_client::{SseError, StreamableHttpPostResponse};

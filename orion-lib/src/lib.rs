@@ -21,14 +21,14 @@ pub mod configuration;
 pub mod event_error;
 
 pub mod access_log;
-mod body;
+
 pub mod clusters;
 mod listeners;
+mod mcp;
 mod secrets;
 pub(crate) mod thread_local;
 mod transport;
 mod utils;
-
 use std::sync::OnceLock;
 
 use listeners::listeners_manager;
