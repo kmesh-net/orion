@@ -64,6 +64,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
         // then we need to pass those to MCP App
         //
         let app = mcp::App::new();
+        app.serve(pi, name, backend, req);
 
         match maybe_channel {
             Ok(svc_channel) => {

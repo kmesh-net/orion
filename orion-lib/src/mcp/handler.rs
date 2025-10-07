@@ -15,7 +15,6 @@ use rmcp::model::{
 
 use super::{ClientError, ProxyInputs, Response, mergestream};
 
-use super::http::jwt::Claims;
 use super::mergestream::MergeFn;
 use crate::proxy::httpproxy::PolicyClient;
 
@@ -288,31 +287,6 @@ impl Relay {
 		}
     }
 }
-
-// pub fn setup_request_log(http: &Parts, span_name: &str) -> (BoxedSpan, AsyncLog<MCPInfo>, Arc<ContextBuilder>) {
-//     let traceparent = http.extensions.get::<TraceParent>();
-//     let mut ctx = Context::new();
-//     if let Some(tp) = traceparent {
-//         ctx = ctx.with_remote_span_context(SpanContext::new(
-//             tp.trace_id.into(),
-//             tp.span_id.into(),
-//             TraceFlags::new(tp.flags),
-//             true,
-//             TraceState::default(),
-//         ));
-//     }
-//     let claims = http.extensions.get::<Claims>();
-
-//     let log = http.extensions.get::<AsyncLog<MCPInfo>>().cloned().unwrap_or_default();
-
-//     let cel = http.extensions.get::<Arc<ContextBuilder>>().cloned().expect("CelContextBuilder must be set");
-
-//     let tracer = trcng::get_tracer();
-//     let _span = trcng::start_span(span_name.to_string(), &Identity::new(claims.cloned()))
-//         .with_kind(SpanKind::Server)
-//         .start_with_context(tracer, &ctx);
-//     (_span, log, cel)
-// }
 
 fn messages_to_response(
     id: RequestId,

@@ -21,22 +21,19 @@ use super::{
     types::agent::McpTargetSpec,
 };
 use crate::mcp::{ClientError, Request};
-use http::jwt::Claims;
 
 #[derive(Debug, Clone)]
 pub struct IncomingRequestContext {
     headers: http::HeaderMap,
-    claims: Option<Claims>,
 }
 
 impl IncomingRequestContext {
     #[cfg(test)]
     pub fn empty() -> Self {
-        Self { headers: http::HeaderMap::new(), claims: None }
+        Self { headers: http::HeaderMap::new() }
     }
     pub fn new(parts: ::http::request::Parts) -> Self {
-        let claims = parts.extensions.get::<Claims>().cloned();
-        Self { headers: parts.headers, claims }
+        Self { headers: parts.headers }
     }
     pub fn apply(&self, req: &mut Request) {
         for (k, v) in &self.headers {
@@ -47,9 +44,6 @@ impl IncomingRequestContext {
             if !req.headers().contains_key(k) {
                 req.headers_mut().insert(k.clone(), v.clone());
             }
-        }
-        if let Some(claims) = self.claims.as_ref() {
-            req.extensions_mut().insert(claims.clone());
         }
     }
 }
@@ -166,13 +160,13 @@ pub(crate) struct UpstreamGroup {
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(pi: Arc<ProxyInputs>, backend: McpBackendGroup) -> Result<Self> {
+    pub(crate) fn new(pi: Arc<ProxyInputs>, backend: McpBackendGroup) -> Result<Self, orion_error::Error> {
         let mut s = Self { backend, pi, by_name: IndexMap::new() };
         s.setup_connections()?;
         Ok(s)
     }
 
-    pub(crate) fn setup_connections(&mut self) -> Result<()> {
+    pub(crate) fn setup_connections(&mut self) -> Result<(), orion_error::Error> {
         for tgt in &self.backend.targets {
             debug!("initializing target: {}", tgt.name);
             let transport = self.setup_upstream(tgt.as_ref())?;
@@ -184,8 +178,11 @@ impl UpstreamGroup {
     pub(crate) fn iter_named(&self) -> impl Iterator<Item = (String, Arc<upstream::Upstream>)> {
         self.by_name.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
-    pub(crate) fn get(&self, name: &str) -> Result<&upstream::Upstream> {
-        self.by_name.get(name).map(|v| v.as_ref()).ok_or_else(|| anyhow!("requested target {name} is not initialized",))
+    pub(crate) fn get(&self, name: &str) -> Result<&upstream::Upstream, orion_error::Error> {
+        self.by_name
+            .get(name)
+            .map(|v| v.as_ref())
+            .ok_or_else(|| orion_error::Error::from("requested target {name} is not initialized"))
     }
 
     fn setup_upstream(&self, target: &McpTarget) -> Result<upstream::Upstream, orion_error::Error> {
