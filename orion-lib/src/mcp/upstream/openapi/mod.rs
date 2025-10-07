@@ -501,12 +501,9 @@ impl Handler {
         name: &str,
         args: Option<JsonObject>,
         ctx: &IncomingRequestContext,
-    ) -> Result<serde_json::Value, anyhow::Error> {
-        let (_tool, info) = self
-            .tools
-            .iter()
-            .find(|(t, _info)| t.name == name)
-            .ok_or_else(|| anyhow::anyhow!("tool {} not found", name))?;
+    ) -> Result<serde_json::Value, Error> {
+        let (_tool, info) =
+            self.tools.iter().find(|(t, _info)| t.name == name).ok_or_else(|| anyhow!("tool {} not found", name))?;
 
         let args = args.unwrap_or_default();
 
@@ -544,7 +541,7 @@ impl Handler {
 
         // --- Request Building ---
         let method = Method::from_bytes(info.method.to_uppercase().as_bytes())
-            .map_err(|e| anyhow::anyhow!("Invalid HTTP method '{}' for tool '{}': {}", info.method, name, e))?;
+            .map_err(|e| anyhow!("Invalid HTTP method '{}' for tool '{}': {}", info.method, name, e))?;
 
         // Build query string
         let query_string = if !query_params.is_empty() {
@@ -602,7 +599,7 @@ impl Handler {
         };
 
         // Build the final request
-        let mut request = rb.body(body.into()).map_err(|e| anyhow::anyhow!("Failed to build request: {}", e))?;
+        let mut request = rb.body(body.into()).map_err(|e| anyhow!("Failed to build request: {}", e))?;
 
         ctx.apply(&mut request);
 
@@ -618,7 +615,7 @@ impl Handler {
             Ok(body)
         } else {
             let body = String::from_utf8(axum::body::to_bytes(response.into_body(), 2_097_152).await?.to_vec())?;
-            Err(anyhow::anyhow!("Upstream API call for tool '{}' failed with status {}: {}", name, status, body))
+            Err(anyhow!("Upstream API call for tool '{}' failed with status {}: {}", name, status, body))
         }
     }
 
@@ -1133,12 +1130,9 @@ impl Handler {
         name: &str,
         args: Option<JsonObject>,
         ctx: &IncomingRequestContext,
-    ) -> Result<serde_json::Value, anyhow::Error> {
-        let (_tool, info) = self
-            .tools
-            .iter()
-            .find(|(t, _info)| t.name == name)
-            .ok_or_else(|| anyhow::anyhow!("tool {} not found", name))?;
+    ) -> Result<serde_json::Value, Error> {
+        let (_tool, info) =
+            self.tools.iter().find(|(t, _info)| t.name == name).ok_or_else(|| anyhow!("tool {} not found", name))?;
 
         let args = args.unwrap_or_default();
 
@@ -1176,7 +1170,7 @@ impl Handler {
 
         // --- Request Building ---
         let method = Method::from_bytes(info.method.to_uppercase().as_bytes())
-            .map_err(|e| anyhow::anyhow!("Invalid HTTP method '{}' for tool '{}': {}", info.method, name, e))?;
+            .map_err(|e| anyhow!("Invalid HTTP method '{}' for tool '{}': {}", info.method, name, e))?;
 
         // Build query string
         let query_string = if !query_params.is_empty() {
@@ -1234,7 +1228,7 @@ impl Handler {
         };
 
         // Build the final request
-        let mut request = rb.body(body.into()).map_err(|e| anyhow::anyhow!("Failed to build request: {}", e))?;
+        let mut request = rb.body(body.into()).map_err(|e| anyhow!("Failed to build request: {}", e))?;
 
         ctx.apply(&mut request);
 
@@ -1250,7 +1244,7 @@ impl Handler {
             Ok(body)
         } else {
             let body = String::from_utf8(axum::body::to_bytes(response.into_body(), 2_097_152).await?.to_vec())?;
-            Err(anyhow::anyhow!("Upstream API call for tool '{}' failed with status {}: {}", name, status, body))
+            Err(anyhow!("Upstream API call for tool '{}' failed with status {}: {}", name, status, body))
         }
     }
 

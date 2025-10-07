@@ -4,25 +4,23 @@ use bytes::Bytes;
 use http::Method;
 use http::StatusCode;
 use itertools::Itertools;
+use rmcp::serde_json;
 
-use orion_configuration::body::poly_body::PolyBody;
+use crate::body::poly_body::PolyBody;
+use crate::mcp::Request;
+use crate::mcp::Response;
+use crate::mcp::filters;
+use crate::mcp::handler::Relay;
+use crate::mcp::json;
+use crate::mcp::json::from_body;
+use crate::mcp::session::SessionManager;
+use crate::mcp::streamablehttp::StreamableHttpService;
 use rmcp::transport::StreamableHttpServerConfig;
 
-use crate::MCPInfo;
-use crate::filters;
-use crate::handler::Relay;
-use crate::json;
-use crate::json::from_body;
 // use crate::http::jwt::Claims;
 // use crate::http::*;
 // use crate::json::from_body;
 // use crate::proxy::httpproxy::PolicyClient;
-use crate::Request;
-use crate::session::SessionManager;
-
-//use crate::store::{BackendPolicies, Stores};
-use crate::Response;
-use crate::streamablehttp::StreamableHttpService;
 
 // use crate::transport::stream::{TCPConnectionInfo, TLSConnectionInfo};
 // use crate::types::agent::{BackendName, McpAuthentication, McpBackend, McpIDP, McpTargetSpec, SimpleBackendReference};

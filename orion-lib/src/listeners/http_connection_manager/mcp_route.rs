@@ -1,3 +1,4 @@
+use crate::mcp;
 use http::{Request, Response, Uri, uri::Parts as UriParts};
 use opentelemetry::{KeyValue, trace::Span};
 use orion_configuration::config::network_filters::http_connection_manager::mcp_route::MCPRouteAction;
@@ -6,7 +7,6 @@ use orion_format::{
     context::{UpstreamContext, UpstreamRequest},
     types::{ResponseFlagsLong, ResponseFlagsShort},
 };
-use orion_mcp;
 use orion_tracing::{
     attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME},
     http_tracer::{SpanKind, SpanName},
@@ -22,8 +22,7 @@ use crate::{
     listeners::{
         access_log::AccessLogContext,
         http_connection_manager::{
-            HttpConnectionManager, RequestHandler, TransactionHandler, http_modifiers, mcp_route,
-            route::MatchedRequest, upgrades as upgrade_utils,
+            HttpConnectionManager, RequestHandler, TransactionHandler, http_modifiers, route::MatchedRequest,
         },
         synthetic_http_response::SyntheticHttpResponse,
     },
@@ -64,7 +63,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
         // for MCP we need to get a channel per configured MCP server
         // then we need to pass those to MCP App
         //
-        let app = orion_mcp::router::App::new();
+        let app = mcp::App::new();
 
         match maybe_channel {
             Ok(svc_channel) => {

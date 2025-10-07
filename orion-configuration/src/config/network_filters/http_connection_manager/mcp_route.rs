@@ -17,7 +17,7 @@
 
 //todo: impl serialize, deserialize on DirectResponsebody to prepare the bytes at deserialization
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,14 +25,17 @@ use crate::config::cluster::ClusterSpecifier;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct MCPRouteAction {
-    pub cluster_specifier: ClusterSpecifier,
+    pub cluster_mappings: HashMap<String, ClusterSpecifier>,
 
     #[serde(with = "humantime_serde")]
     #[serde(skip_serializing_if = "is_default_timeout", default = "default_timeout_deser")]
     pub timeout: Option<Duration>,
-
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub upgrade_config: Option<UpgradeConfig>,
+    pub rewrite: Option<super::route::PathRewriteSpecifier>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub authority_rewrite: Option<super::route::AuthorityRewriteSpecifier>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub retry_policy: Option<super::RetryPolicy>,
 }
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -43,32 +46,4 @@ const fn default_timeout_deser() -> Option<Duration> {
 #[allow(clippy::ref_option)]
 fn is_default_timeout(timeout: &Option<Duration>) -> bool {
     *timeout == default_timeout_deser()
-}
-
-#[derive(Clone, Debug, Copy, Deserialize, Serialize, PartialEq, Eq)]
-pub enum Websocket {
-    Enabled,
-    Disabled,
-}
-
-#[derive(Clone, Debug, Copy, Deserialize, Serialize, PartialEq, Eq)]
-pub enum Connect {
-    Enabled { allow_post: bool /* , proxy_protocol_config: Option<...> */ },
-    Disabled,
-}
-
-#[derive(Clone, Debug, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct UpgradeConfig {
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub websocket: Option<Websocket>,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub connect: Option<Connect>,
-}
-
-impl UpgradeConfig {
-    pub fn is_websocket_enabled(&self, enabled_via_hcm: bool) -> bool {
-        let locally_enabled = matches!(self.websocket, Some(Websocket::Enabled));
-        let locally_disabled = matches!(self.websocket, Some(Websocket::Disabled));
-        locally_enabled || (enabled_via_hcm && !locally_disabled)
-    }
 }

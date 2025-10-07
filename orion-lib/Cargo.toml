@@ -12,6 +12,7 @@ arc-swap = "1.7.1"
 arrayvec = "0.7.6"
 async-stream = "0.3"
 atomic-time = "0.1.4"
+axum.workspace = true
 bytes.workspace = true
 compact_str.workspace = true
 enum_dispatch = "0.3.13"
@@ -87,9 +88,8 @@ x509-parser = { version = "0.17", features = ["default"] }
 tokio-util = "0.7.16"
 sse-stream = "0.2.1"
 pin-project-lite = "0.2"
-arc-swap = "1.7.1"
 indexmap = "2.11"
-url = "2.5"
+
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true

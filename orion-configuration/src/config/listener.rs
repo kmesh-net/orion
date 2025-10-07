@@ -450,7 +450,9 @@ mod envoy_conversions {
                         })
                     },
                     Address::Pipe(_, _) => {
-                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"));
+                        return Err(GenericError::unsupported_variant(
+                            "Pipe addresses are not supported for listeners",
+                        ));
                     },
                 };
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;

@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use crate::body::poly_body::PolyBody;
 use futures_core::Stream;
 use http::StatusCode;
-use http::request::Parts;
 use itertools::Itertools;
-use orion_configuration::body::poly_body::PolyBody;
 use rmcp::ErrorData;
 use rmcp::model::{
     ClientNotification, ClientRequest, Implementation, JsonRpcNotification, JsonRpcRequest, ListPromptsResult,
@@ -14,14 +13,14 @@ use rmcp::model::{
     ToolsCapability,
 };
 
-use crate::{ClientError, ProxyInputs, Response, mergestream};
+use super::{ClientError, ProxyInputs, Response, mergestream};
 
-use crate::http::jwt::Claims;
-use crate::mergestream::MergeFn;
+use super::http::jwt::Claims;
+use super::mergestream::MergeFn;
 use crate::proxy::httpproxy::PolicyClient;
 
-use crate::router::McpBackendGroup;
-use crate::upstream::{IncomingRequestContext, UpstreamError, UpstreamGroup};
+use super::router::McpBackendGroup;
+use super::upstream::{IncomingRequestContext, UpstreamError, UpstreamGroup};
 
 const DELIMITER: &str = "_";
 
@@ -330,7 +329,7 @@ fn messages_to_response(
         // TODO: is it ok to have no event_id here?
         ServerSseMessage { event_id: None, message: Arc::new(r) }
     });
-    Ok(crate::session::sse_stream_response(stream, None))
+    Ok(crate::mcp::session::sse_stream_response(stream, None))
 }
 
 fn accepted_response() -> Response {

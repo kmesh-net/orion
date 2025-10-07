@@ -1,15 +1,15 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use anyhow::anyhow;
 use futures_core::Stream;
 use futures_core::stream::BoxStream;
 use futures_util::StreamExt;
 use itertools::Itertools;
 use rmcp::model::{RequestId, ServerJsonRpcMessage, ServerResult};
+use rmcp::serde_json;
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
 
-pub(crate) use crate::ClientError;
+use crate::mcp::ClientError;
 
 pub(crate) struct Messages(BoxStream<'static, Result<ServerJsonRpcMessage, ClientError>>);
 
@@ -51,7 +51,7 @@ impl TryFrom<StreamableHttpPostResponse> for Messages {
     type Error = ClientError;
     fn try_from(value: StreamableHttpPostResponse) -> Result<Self, Self::Error> {
         match value {
-            StreamableHttpPostResponse::Accepted => Err(ClientError::new(anyhow!("unexpected 'accepted' response"))),
+            StreamableHttpPostResponse::Accepted => Err(ClientError::new("unexpected 'accepted' response".to_owned())),
             StreamableHttpPostResponse::Json(r, _) => Ok(r.into()),
             StreamableHttpPostResponse::Sse(sse, _) => Ok(Messages(
                 sse.filter_map(|item| async {

@@ -13,9 +13,9 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, warn};
 
-use crate::AtomicOption;
-use crate::mergestream::Messages;
-use crate::upstream::{IncomingRequestContext, UpstreamError};
+use crate::mcp::AtomicOption;
+use crate::mcp::mergestream::Messages;
+use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
 
 pub struct Process {
     sender: mpsc::Sender<(ClientJsonRpcMessage, IncomingRequestContext)>,

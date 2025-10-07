@@ -1,24 +1,24 @@
 use std::sync::Arc;
 
+use crate::body::poly_body::PolyBody;
+use crate::mcp::handler::Relay;
+use crate::mcp::{Request, Response, json};
 use ::http::StatusCode;
-use orion_configuration::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientRequest};
 use rmcp::transport::StreamableHttpServerConfig;
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 
-use crate::*;
-
-use {handler::Relay, session::SessionManager};
+use crate::mcp::session::SessionManager;
 
 pub struct StreamableHttpService {
     config: StreamableHttpServerConfig,
     session_manager: Arc<SessionManager>,
-    service_factory: Arc<dyn Fn() -> Result<Relay, orion_error::Error> + Send + Sync>,
+    service_factory: Arc<dyn Fn() -> crate::Result<Relay> + Send + Sync>,
 }
 
 impl StreamableHttpService {
     pub fn new(
-        service_factory: impl Fn() -> Result<Relay, orion_error::Error> + Send + Sync + 'static,
+        service_factory: impl Fn() -> crate::Result<Relay> + Send + Sync + 'static,
         session_manager: Arc<SessionManager>,
         config: StreamableHttpServerConfig,
     ) -> Self {

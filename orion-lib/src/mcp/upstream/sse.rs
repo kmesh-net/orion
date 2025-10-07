@@ -1,26 +1,28 @@
+use std::sync::Arc;
+
 use ::http::Uri;
 use ::http::header::CONTENT_TYPE;
-use anyhow::anyhow;
 use futures_core::stream::BoxStream;
 use futures_util::{StreamExt, TryFutureExt};
 use http::header::ACCEPT;
+use rmcp::serde_json;
 
-use orion_configuration::body::poly_body::PolyBody;
+use crate::body::poly_body::PolyBody;
+use crate::mcp::ClientError;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::EVENT_STREAM_MIME_TYPE;
 use rmcp::transport::streamable_http_client::{SseError, StreamableHttpPostResponse};
 use sse_stream::{Sse, SseStream};
 
-use crate::ClientError;
+use crate::mcp::mergestream::Messages;
+use crate::mcp::upstream::stdio::Process;
+use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
 use crate::proxy::httpproxy::PolicyClient;
 use crate::store::BackendPolicies;
 use crate::types::agent::SimpleBackend;
 use crate::*;
-use mergestream::Messages;
-use upstream::stdio::Process;
-use upstream::{IncomingRequestContext, UpstreamError};
 
-type BoxedSseStream = BoxStream<'static, Result<Sse, SseError>>;
+type BoxedSseStream = BoxStream<'static, std::result::Result<Sse, SseError>>;
 
 #[derive(Debug, Clone)]
 struct ClientCore {
@@ -43,7 +45,7 @@ struct SseClient {
     events: BoxedSseStream,
 }
 
-impl upstream::stdio::MCPTransport for SseClient {
+impl crate::mcp::upstream::stdio::MCPTransport for SseClient {
     async fn receive(&mut self) -> Option<ServerJsonRpcMessage> {
         loop {
             let raw = self.events.next().await?.ok()?;
@@ -66,12 +68,12 @@ impl upstream::stdio::MCPTransport for SseClient {
         &mut self,
         item: ClientJsonRpcMessage,
         ctx: &IncomingRequestContext,
-    ) -> impl Future<Output = Result<(), UpstreamError>> + Send + 'static {
+    ) -> impl Future<Output = std::result::Result<(), UpstreamError>> + Send + 'static {
         let ctx = ctx.clone();
         let client = self.client.clone();
         Box::pin(async move { client.send_message(item, &ctx).map_err(Into::into).await })
     }
-    async fn close(&mut self) -> Result<(), UpstreamError> {
+    async fn close(&mut self) -> std::result::Result<(), UpstreamError> {
         Ok(())
     }
 }
@@ -81,7 +83,7 @@ impl ClientCore {
         &self,
         message: ClientJsonRpcMessage,
         ctx: &IncomingRequestContext,
-    ) -> Result<(), ClientError> {
+    ) -> std::result::Result<(), ClientError> {
         let client = self.client.clone();
 
         let body = serde_json::to_vec(&message).map_err(ClientError::new)?;
@@ -108,7 +110,10 @@ impl ClientCore {
 }
 
 impl ClientCore {
-    async fn establish_sse(&self, ctx: &IncomingRequestContext) -> Result<StreamableHttpPostResponse, ClientError> {
+    async fn establish_sse(
+        &self,
+        ctx: &IncomingRequestContext,
+    ) -> std::result::Result<StreamableHttpPostResponse, ClientError> {
         let client = self.client.clone();
 
         let mut req = ::http::Request::builder()
@@ -126,7 +131,7 @@ impl ClientCore {
             .map_err(ClientError::new)?;
 
         if resp.status() == http::StatusCode::ACCEPTED {
-            return Err(ClientError::new(anyhow!("expected an SSE stream")));
+            return Err(ClientError::new("expected an SSE stream".to_owned()));
         }
 
         if !resp.status().is_success() {
@@ -140,17 +145,12 @@ impl ClientCore {
                 let event_stream = SseStream::from_byte_stream(resp.into_body().into_data_stream()).boxed();
                 Ok(StreamableHttpPostResponse::Sse(event_stream, None))
             },
-            _ => Err(ClientError::new(anyhow!("establish sse: unexpected content type: {:?}", content_type))),
+            _ => Err(ClientError::new(format!("establish sse: unexpected content type: {content_type:?}").into())),
         }
     }
 }
 impl Client {
-    pub fn new(
-        backend: SimpleBackend,
-        path: String,
-        client: PolicyClient,
-        policies: BackendPolicies,
-    ) -> anyhow::Result<Self> {
+    pub fn new(backend: SimpleBackend, path: String, client: PolicyClient, policies: BackendPolicies) -> Result<Self> {
         let hp = backend.hostport();
         Ok(Self {
             client: ClientCore {
@@ -162,7 +162,7 @@ impl Client {
             active_stream: Default::default(),
         })
     }
-    pub async fn stop(&self) -> Result<(), UpstreamError> {
+    pub async fn stop(&self) -> std::result::Result<(), UpstreamError> {
         let mut stream = self.active_stream.lock().await;
         if let Some(s) = stream.as_ref() {
             s.stop().await?;
@@ -170,7 +170,7 @@ impl Client {
         *stream = None;
         Ok(())
     }
-    async fn get_stream(&self, ctx: &IncomingRequestContext) -> Result<Arc<Process>, UpstreamError> {
+    async fn get_stream(&self, ctx: &IncomingRequestContext) -> std::result::Result<Arc<Process>, UpstreamError> {
         let mut stream = self.active_stream.lock().await;
         if let Some(s) = stream.clone() {
             Ok(s)
@@ -183,16 +183,19 @@ impl Client {
             Ok(proc)
         }
     }
-    async fn establish_sse(&self, ctx: &IncomingRequestContext) -> Result<(Uri, BoxedSseStream), ClientError> {
+    async fn establish_sse(
+        &self,
+        ctx: &IncomingRequestContext,
+    ) -> std::result::Result<(Uri, BoxedSseStream), ClientError> {
         let res = Box::pin(self.client.establish_sse(ctx)).await?;
         let mut s = match res {
             StreamableHttpPostResponse::Sse(s, _) => s,
-            _ => return Err(ClientError::new(anyhow!("unexpected return typ"))),
+            _ => return Err(ClientError::new("unexpected return type".to_owned())),
         };
         let parsed = loop {
             let sse = futures_util::StreamExt::next(&mut s)
                 .await
-                .ok_or_else(|| ClientError::new(anyhow!("unexpected empty stream")))?
+                .ok_or_else(|| ClientError::new("unexpected empty stream".to_owned()))?
                 .map_err(ClientError::new)?;
             let Some("endpoint") = sse.event.as_deref() else {
                 continue;
@@ -203,7 +206,10 @@ impl Client {
         };
         Ok((parsed, s))
     }
-    pub async fn connect_to_event_stream(&self, ctx: &IncomingRequestContext) -> Result<Messages, UpstreamError> {
+    pub async fn connect_to_event_stream(
+        &self,
+        ctx: &IncomingRequestContext,
+    ) -> std::result::Result<Messages, UpstreamError> {
         let stream = self.get_stream(ctx).await?;
         Ok(stream.get_event_stream().await)
     }
@@ -211,7 +217,7 @@ impl Client {
         &self,
         req: JsonRpcRequest<ClientRequest>,
         ctx: &IncomingRequestContext,
-    ) -> Result<ServerJsonRpcMessage, UpstreamError> {
+    ) -> std::result::Result<ServerJsonRpcMessage, UpstreamError> {
         let stream = self.get_stream(ctx).await?;
         stream.send_message(req, ctx).await
     }
@@ -220,13 +226,13 @@ impl Client {
         &self,
         req: ClientNotification,
         ctx: &IncomingRequestContext,
-    ) -> Result<(), UpstreamError> {
+    ) -> std::result::Result<(), UpstreamError> {
         let stream = self.get_stream(ctx).await?;
         stream.send_notification(req, ctx).await
     }
 }
 
-fn message_endpoint(base: Uri, endpoint: String) -> Result<Uri, http::uri::InvalidUri> {
+fn message_endpoint(base: Uri, endpoint: String) -> std::result::Result<Uri, http::uri::InvalidUri> {
     // If endpoint is a full URL, parse and return it directly
     if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
         return endpoint.parse::<Uri>();

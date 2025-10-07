@@ -1,14 +1,19 @@
+use crate::body::poly_body::PolyBody;
 use bytes::Bytes;
-use orion_configuration::body::poly_body::PolyBody;
 use orion_error::Error;
+use rmcp::serde_json;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
-pub fn must_traverse<'a, T>(value: &'a Value, path: &[&str], f: impl Fn(&'a Value) -> Option<T>) -> anyhow::Result<T> {
+pub fn must_traverse<'a, T>(
+    value: &'a Value,
+    path: &[&str],
+    f: impl Fn(&'a Value) -> Option<T>,
+) -> Result<T, orion_error::Error> {
     if let Some(res) = traverse(value, path).and_then(f) {
         Ok(res)
     } else {
-        Err(anyhow::anyhow!("missing field {}", path.join(".")))
+        Err(format!("missing field {}", path.join(".")).into())
     }
 }
 

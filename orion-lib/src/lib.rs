@@ -22,6 +22,7 @@ pub mod event_error;
 
 pub mod access_log;
 
+mod body;
 pub mod clusters;
 mod listeners;
 mod mcp;

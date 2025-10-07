@@ -37,7 +37,7 @@ tracing.workspace              = true
 pingora-timeout                = "0.3.0"
 
 
-axum = "0.8.4"
+axum.workspace = true
 compact_str.workspace = true
 http.workspace = true
 opentelemetry = "0.29.0"

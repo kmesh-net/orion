@@ -3,22 +3,24 @@ mod sse;
 mod stdio;
 mod streamablehttp;
 
-use std::io;
-
 use indexmap::IndexMap;
 use orion_error::Context;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::{TokioChildProcess, streamable_http_client::StreamableHttpPostResponse};
+use std::io;
+use std::result::Result;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::process::Command;
 use tracing::{debug, trace};
 
-use crate::mergestream::Messages;
 //use crate::proxy::httpproxy::PolicyClient;
-use crate::router::{McpBackendGroup, McpTarget};
-use crate::types::agent::McpTargetSpec;
-use crate::*;
-use crate::{mergestream, upstream};
+use super::{mergestream, upstream};
+use super::{
+    router::{McpBackendGroup, McpTarget},
+    types::agent::McpTargetSpec,
+};
+use crate::mcp::{ClientError, Request};
 use http::jwt::Claims;
 
 #[derive(Debug, Clone)]
@@ -67,7 +69,7 @@ pub enum UpstreamError {
     #[error("http upstream error: {0}")]
     Http(#[from] ClientError),
     #[error("openapi upstream error: {0}")]
-    OpenAPIError(#[from] anyhow::Error),
+    OpenAPIError(#[from] orion_error::Error),
     #[error("stdio upstream error: {0}")]
     Stdio(#[from] io::Error),
     #[error("upstream closed on send")]
@@ -164,13 +166,13 @@ pub(crate) struct UpstreamGroup {
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(pi: Arc<ProxyInputs>, backend: McpBackendGroup) -> anyhow::Result<Self> {
+    pub(crate) fn new(pi: Arc<ProxyInputs>, backend: McpBackendGroup) -> Result<Self> {
         let mut s = Self { backend, pi, by_name: IndexMap::new() };
         s.setup_connections()?;
         Ok(s)
     }
 
-    pub(crate) fn setup_connections(&mut self) -> anyhow::Result<()> {
+    pub(crate) fn setup_connections(&mut self) -> Result<()> {
         for tgt in &self.backend.targets {
             debug!("initializing target: {}", tgt.name);
             let transport = self.setup_upstream(tgt.as_ref())?;
@@ -182,11 +184,8 @@ impl UpstreamGroup {
     pub(crate) fn iter_named(&self) -> impl Iterator<Item = (String, Arc<upstream::Upstream>)> {
         self.by_name.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
-    pub(crate) fn get(&self, name: &str) -> anyhow::Result<&upstream::Upstream> {
-        self.by_name
-            .get(name)
-            .map(|v| v.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("requested target {name} is not initialized",))
+    pub(crate) fn get(&self, name: &str) -> Result<&upstream::Upstream> {
+        self.by_name.get(name).map(|v| v.as_ref()).ok_or_else(|| anyhow!("requested target {name} is not initialized",))
     }
 
     fn setup_upstream(&self, target: &McpTarget) -> Result<upstream::Upstream, orion_error::Error> {
@@ -241,11 +240,11 @@ impl UpstreamGroup {
             //     panic!("Not ported yet");
 
             //     // let tools = openapi::parse_openapi_schema(&open.schema).map_err(|e| {
-            //     //     anyhow::anyhow!("Failed to parse tools from OpenAPI schema for target {}: {}", target.name, e)
+            //     //     anyhow!("Failed to parse tools from OpenAPI schema for target {}: {}", target.name, e)
             //     // })?;
 
             //     // let prefix = openapi::get_server_prefix(&open.schema).map_err(|e| {
-            //     //     anyhow::anyhow!("Failed to get server prefix from OpenAPI schema for target {}: {}", target.name, e)
+            //     //     anyhow!("Failed to get server prefix from OpenAPI schema for target {}: {}", target.name, e)
             //     // })?;
             //     // let be = crate::proxy::resolve_simple_backend(&open.backend, &self.pi)?;
             //     // upstream::Upstream::OpenAPI(Box::new(openapi::Handler {

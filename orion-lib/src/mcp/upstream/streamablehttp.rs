@@ -2,22 +2,23 @@ use std::sync::Arc;
 
 use ::http::Uri;
 use ::http::header::CONTENT_TYPE;
-use anyhow::anyhow;
 
 use futures::StreamExt;
 use http::header::ACCEPT;
+use rmcp::serde_json;
 
-use orion_configuration::body::poly_body::PolyBody;
+use crate::body::poly_body::PolyBody;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
 use sse_stream::SseStream;
 
+use super::upstream::IncomingRequestContext;
+use crate::mcp::{AtomicOption, ClientError, Request, json};
+
 use crate::proxy::httpproxy::PolicyClient;
 use crate::store::BackendPolicies;
 use crate::types::agent::SimpleBackend;
-use crate::upstream::IncomingRequestContext;
-use crate::{AtomicOption, ClientError, Request, json};
 
 #[derive(Clone, Debug)]
 pub struct Client {
@@ -34,7 +35,7 @@ impl Client {
         path: String,
         client: PolicyClient,
         policies: BackendPolicies,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, orion_error::Error> {
         let hp = backend.hostport();
         Ok(Self {
             backend: Arc::new(backend),
@@ -114,7 +115,7 @@ impl Client {
                     json::from_body::<ServerJsonRpcMessage>(resp.into_body()).await.map_err(ClientError::new)?;
                 Ok(StreamableHttpPostResponse::Json(message, session_id))
             },
-            _ => Err(ClientError::new(anyhow!("unexpected content type: {:?}", content_type))),
+            _ => Err(ClientError::new(format!("unexpected content type: {content_type:?}").into())),
         }
     }
     pub async fn send_delete(&self, ctx: &IncomingRequestContext) -> Result<StreamableHttpPostResponse, ClientError> {
@@ -173,7 +174,7 @@ impl Client {
                 let event_stream = SseStream::from_byte_stream(resp.into_body().into_data_stream()).boxed();
                 Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
             },
-            _ => Err(ClientError::new(anyhow!("unexpected content type for GET streams: {:?}", content_type))),
+            _ => Err(ClientError::new(format!("unexpected content type for GET streams: {content_type:?}").into())),
         }
     }
 

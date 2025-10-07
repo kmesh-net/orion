@@ -3,19 +3,20 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::body::poly_body::PolyBody;
+use crate::body::poly_body::PolyBodyError;
 use ::http::StatusCode;
 use ::http::header::CONTENT_TYPE;
 use ::http::request::Parts;
-use anyhow::anyhow;
+
 use futures_util::StreamExt;
 use http_body_util::BodyExt;
-use orion_configuration::body::poly_body::PolyBody;
-use orion_configuration::body::poly_body::PolyBodyError;
 use rmcp::ErrorData;
 use rmcp::model::{
     ClientInfo, ClientJsonRpcMessage, ClientRequest, ErrorCode, Implementation, JsonRpcError, ProtocolVersion,
     RequestId, ServerJsonRpcMessage,
 };
+use rmcp::serde_json;
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE};
 use rmcp::transport::common::server_side_http::{ServerSseMessage, session_id};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
@@ -24,10 +25,10 @@ use std::sync::RwLock;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tracing::{debug, trace};
 
-use crate::handler::Relay;
-use crate::mergestream::Messages;
-use crate::upstream::{IncomingRequestContext, UpstreamError};
-use crate::{ClientError, Response, handler, json};
+use crate::mcp::handler::Relay;
+use crate::mcp::mergestream::Messages;
+use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
+use crate::mcp::{ClientError, Response, json};
 
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -92,7 +93,7 @@ impl Session {
     /// optimize for the non-deprecated code paths; this works fine.
     pub async fn forward_legacy_sse(&self, resp: Response) -> Result<(), ClientError> {
         let Some(tx) = self.tx.clone() else {
-            return Err(ClientError::new(anyhow!("may only be called for SSE streams",)));
+            return Err(ClientError::new("may only be called for SSE streams".to_owned()));
         };
         let content_type = resp.headers().get(CONTENT_TYPE);
         let sse = match content_type {

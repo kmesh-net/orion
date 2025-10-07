@@ -4,15 +4,13 @@ mod mergestream;
 //mod metrics;
 //mod rbac;
 mod filters;
-mod router;
+pub mod router;
 mod session;
-mod sse;
 mod streamablehttp;
 mod upstream;
 
 use std::sync::Arc;
 
-use orion_configuration::body::poly_body::PolyBody;
 use orion_error::Error as BoxError;
 
 pub use router::App;
@@ -20,10 +18,12 @@ use thiserror::Error;
 
 use arc_swap::{ArcSwap, ArcSwapOption};
 
+use crate::PolyBody;
+
 type AtomicOption<T> = Arc<ArcSwapOption<T>>;
 type Atomic<T> = Arc<ArcSwap<T>>;
-type Response = http::Response<PolyBody>;
-type Request = http::Request<PolyBody>;
+pub(crate) type Response = http::Response<PolyBody>;
+pub(crate) type Request = http::Request<PolyBody>;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
