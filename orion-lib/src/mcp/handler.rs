@@ -37,12 +37,7 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(
-        pi: Arc<ProxyInputs>,
-        backend: McpBackendGroup,
-        //policies: McpAuthorizationSet,
-        //client: PolicyClient,
-    ) -> Result<Self, orion_error::Error> {
+    pub fn new(http_channels: HashMap<String, HttpChannel>) -> Result<Self, orion_error::Error> {
         let default_target_name =
             if backend.targets.len() != 1 { None } else { Some(backend.targets[0].name.to_string()) };
         Ok(Self { upstreams: Arc::new(UpstreamGroup::new(pi, client, backend)?), default_target_name })

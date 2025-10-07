@@ -3,16 +3,18 @@ mod sse;
 mod stdio;
 mod streamablehttp;
 
+use ahash::HashMap;
 use indexmap::IndexMap;
 use orion_error::Context;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::{TokioChildProcess, streamable_http_client::StreamableHttpPostResponse};
+use std::collections::BTreeSet;
 use std::io;
 use std::result::Result;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::process::Command;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 //use crate::proxy::httpproxy::PolicyClient;
 use super::{mergestream, upstream};
@@ -21,6 +23,7 @@ use super::{
     types::agent::McpTargetSpec,
 };
 use crate::mcp::{ClientError, Request};
+use crate::transport::HttpChannel;
 
 #[derive(Debug, Clone)]
 pub struct IncomingRequestContext {
@@ -154,106 +157,44 @@ impl Upstream {
 
 #[derive(Debug)]
 pub(crate) struct UpstreamGroup {
-    pi: Arc<ProxyInputs>,
-    backend: McpBackendGroup,
-    by_name: IndexMap<String, Arc<upstream::Upstream>>,
+    http_channels: HashMap<String, HttpChannel>,
+    initialized_channels: BTreeSet<String>,
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(pi: Arc<ProxyInputs>, backend: McpBackendGroup) -> Result<Self, orion_error::Error> {
-        let mut s = Self { backend, pi, by_name: IndexMap::new() };
+    pub(crate) fn new(http_channels: HashMap<String, HttpChannel>) -> Result<Self, orion_error::Error> {
+        let mut s = Self { http_channels, initialized_channels: BTreeSet::new() };
         s.setup_connections()?;
         Ok(s)
     }
 
     pub(crate) fn setup_connections(&mut self) -> Result<(), orion_error::Error> {
-        for tgt in &self.backend.targets {
-            debug!("initializing target: {}", tgt.name);
-            let transport = self.setup_upstream(tgt.as_ref())?;
-            self.by_name.insert(tgt.name.clone(), Arc::new(transport));
+        for (name, channel) in &self.http_channels {
+            debug!("initializing target: {}", name);
+            if let Ok(()) = self.setup_upstream(name, channel) {
+                self.initialized_channels.insert(name.clone());
+            } else {
+                warn!("Unable to initialize {name}");
+            }
         }
         Ok(())
     }
 
-    pub(crate) fn iter_named(&self) -> impl Iterator<Item = (String, Arc<upstream::Upstream>)> {
-        self.by_name.iter().map(|(k, v)| (k.clone(), v.clone()))
-    }
-    pub(crate) fn get(&self, name: &str) -> Result<&upstream::Upstream, orion_error::Error> {
-        self.by_name
-            .get(name)
-            .map(|v| v.as_ref())
-            .ok_or_else(|| orion_error::Error::from("requested target {name} is not initialized"))
-    }
+    // fn setup_upstream(&self, name: &str, http_channel: &HttpChannel) -> Result<upstream::Upstream, orion_error::Error> {
+    //     debug!("connecting to target: {name}");
 
-    fn setup_upstream(&self, target: &McpTarget) -> Result<upstream::Upstream, orion_error::Error> {
-        trace!("connecting to target: {}", target.name);
-        let target = match &target.spec {
-            McpTargetSpec::Sse(sse) => {
-                debug!("starting streamable http transport for target: {}", target.name);
-                let path = match sse.path.as_str() {
-                    "" => "/sse",
-                    _ => sse.path.as_str(),
-                };
-                let be = crate::proxy::resolve_simple_backend(&sse.backend, &self.pi)?;
-                let client = sse::Client::new(be, path.into(), self.client.clone(), target.backend_policies.clone())?;
+    //     McpTargetSpec::Mcp(mcp) => {
+    //         debug!("starting streamable http transport for target: {}", target.name);
+    //         let path = match mcp.path.as_str() {
+    //             "" => "/mcp",
+    //             _ => mcp.path.as_str(),
+    //         };
+    //         let be = crate::proxy::resolve_simple_backend(&mcp.backend, &self.pi)?;
+    //         let client =
+    //             streamablehttp::Client::new(be, path.into(), self.client.clone(), target.backend_policies.clone())?;
 
-                upstream::Upstream::McpSSE(client)
-            },
-            McpTargetSpec::Mcp(mcp) => {
-                debug!("starting streamable http transport for target: {}", target.name);
-                let path = match mcp.path.as_str() {
-                    "" => "/mcp",
-                    _ => mcp.path.as_str(),
-                };
-                let be = crate::proxy::resolve_simple_backend(&mcp.backend, &self.pi)?;
-                let client =
-                    streamablehttp::Client::new(be, path.into(), self.client.clone(), target.backend_policies.clone())?;
-
-                upstream::Upstream::McpStreamable(client)
-            },
-            McpTargetSpec::Stdio { cmd, args, env } => {
-                debug!("starting stdio transport for target: {}", target.name);
-                #[cfg(target_os = "windows")]
-                // Command has some weird behavior on Windows where it expects the executable extension to be
-                // .exe. The which create will resolve the actual command for us.
-                // See https://github.com/rust-lang/rust/issues/37519#issuecomment-1694507663
-                // for more context.
-                let cmd = which::which(cmd)?;
-                #[cfg(target_family = "unix")]
-                let mut c = Command::new(cmd);
-                #[cfg(target_os = "windows")]
-                let mut c = Command::new(&cmd);
-                c.args(args);
-                for (k, v) in env {
-                    c.env(k, v);
-                }
-                let proc =
-                    TokioChildProcess::new(c).with_context_msg(format!("failed to run command '{:?}'", &cmd).into())?;
-                upstream::Upstream::McpStdio(upstream::stdio::Process::new(proc))
-            },
-            // McpTargetSpec::OpenAPI(open) => {
-            //     // Renamed for clarity
-            //     debug!("starting OpenAPI transport for target: {}", target.name);
-            //     panic!("Not ported yet");
-
-            //     // let tools = openapi::parse_openapi_schema(&open.schema).map_err(|e| {
-            //     //     anyhow!("Failed to parse tools from OpenAPI schema for target {}: {}", target.name, e)
-            //     // })?;
-
-            //     // let prefix = openapi::get_server_prefix(&open.schema).map_err(|e| {
-            //     //     anyhow!("Failed to get server prefix from OpenAPI schema for target {}: {}", target.name, e)
-            //     // })?;
-            //     // let be = crate::proxy::resolve_simple_backend(&open.backend, &self.pi)?;
-            //     // upstream::Upstream::OpenAPI(Box::new(openapi::Handler {
-            //     //     backend: be,
-            //     //     client: self.client.clone(),
-            //     //     default_policies: target.backend_policies.clone(),
-            //     //     tools,  // From parse_openapi_schema
-            //     //     prefix, // From get_server_prefix
-            //     // }))
-            // },
-        };
-
-        Ok(target)
-    }
+    //         upstream::Upstream::McpStreamable(client)
+    //     };
+    //     Ok(target)
+    // }
 }

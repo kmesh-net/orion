@@ -1,0 +1,43 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+{
+  "features": {},
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false
+  },
+  "ui_font_size": 16,
+  "buffer_font_size": 12,
+  "theme": {
+    "mode": "system",
+    "light": "Tokyo Night",
+    "dark": "One Dark"
+  },
+  "format_on_save": "on",
+  "formatter": "language_server",
+  "lsp": {
+    "rust-analyzer": {
+      "enable_lsp_tasks": true,
+      "initialization_options": {
+        "inlayHints": {
+          "maxLength": null,
+          "lifetimeElisionHints": {
+            "enable": "skip_trivial",
+            "useParameterNames": true
+          },
+          "closureReturnTypeHints": {
+            "enable": "always"
+          }
+        },
+        "check": {
+          "command": "clippy" // rust-analyzer.check.command (default: "check")
+        },
+        "cargo": {
+          "allTargets": true
+        }
+      }
+    }
+  }
+}

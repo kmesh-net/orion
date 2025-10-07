@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ahash::HashMap;
 use bytes::Bytes;
 use http::Method;
 use http::StatusCode;
@@ -15,6 +16,7 @@ use crate::mcp::json;
 use crate::mcp::json::from_body;
 use crate::mcp::session::SessionManager;
 use crate::mcp::streamablehttp::StreamableHttpService;
+use crate::transport::HttpChannel;
 use rmcp::transport::StreamableHttpServerConfig;
 
 // use crate::http::jwt::Claims;
@@ -63,13 +65,7 @@ impl App {
             _ => None,
         }
     }
-    pub async fn serve(
-        &self,
-        pi: Arc<ProxyInputs>,
-        name: BackendName,
-        backend: McpBackend,
-        mut req: Request,
-    ) -> Response {
+    pub async fn serve(&self, http_channels: HashMap<String, HttpChannel>, mut req: Request) -> Response {
         let sm = self.session_manager.clone();
         let streamable = StreamableHttpService::new(
             move || Relay::new(pi.clone(), backends.clone()),
