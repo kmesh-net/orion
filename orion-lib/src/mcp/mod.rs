@@ -27,8 +27,8 @@ pub(crate) type Request = http::Request<BodyWithMetrics<PolyBody>>;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
-    #[error("http request failed with code: {}", .0)]
-    Status(http::StatusCode),
+    #[error("http request failed with code: {}", .0.status())]
+    Status(Response),
     #[error("http request failed: {0}")]
     General(orion_error::Error),
 }

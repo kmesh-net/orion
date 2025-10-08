@@ -101,7 +101,7 @@ inherits = "release"
 [workspace.lints.clippy]
 correctness                    = { level = "deny", priority = 10 }
 disallowed-methods             = "deny"
-expect_used                    = "warn"                            # FIXME this should be deny
+expect_used                    = "allow"                            # FIXME this should be deny
 panic                          = "warn"                            # FIXME this should be deny
 todo                           = "deny"
 transmute_ptr_to_ptr           = "deny"

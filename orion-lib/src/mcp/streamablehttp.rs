@@ -13,12 +13,12 @@ use crate::mcp::session::SessionManager;
 pub struct StreamableHttpService {
     config: StreamableHttpServerConfig,
     session_manager: Arc<SessionManager>,
-    service_factory: Arc<dyn Fn() -> crate::Result<Relay> + Send + Sync>,
+    service_factory: Arc<dyn Fn() -> Relay + Send + Sync>,
 }
 
 impl StreamableHttpService {
     pub fn new(
-        service_factory: impl Fn() -> crate::Result<Relay> + Send + Sync + 'static,
+        service_factory: impl Fn() -> Relay + Send + Sync + 'static,
         session_manager: Arc<SessionManager>,
         config: StreamableHttpServerConfig,
     ) -> Self {
@@ -27,10 +27,7 @@ impl StreamableHttpService {
 
     pub async fn handle(&self, request: Request) -> Response {
         let method = request.method().clone();
-        let allowed_methods = match self.config.stateful_mode {
-            true => "GET, POST, DELETE",
-            false => "POST",
-        };
+        let allowed_methods = if self.config.stateful_mode { "GET, POST, DELETE" } else { "POST" };
 
         match (method, self.config.stateful_mode) {
             (http::Method::POST, _) => self.handle_post(request).await,
@@ -40,7 +37,7 @@ impl StreamableHttpService {
             _ => {
                 // Handle other methods or return an error
 
-                ::http::Response::builder()
+                http::Response::builder()
                     .status(http::StatusCode::METHOD_NOT_ALLOWED)
                     .header(http::header::ALLOW, allowed_methods)
                     .body(PolyBody::from("Method Not Allowed"))
@@ -88,15 +85,7 @@ impl StreamableHttpService {
         };
 
         if !self.config.stateful_mode {
-            let relay = match (self.service_factory)() {
-                Ok(r) => r,
-                Err(e) => {
-                    return http_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        PolyBody::from(format!("fail to create relay: {e}")),
-                    );
-                },
-            };
+            let relay = (self.service_factory)();
             let session = self.session_manager.create_session(relay);
             return session.stateless_send_and_initialize(part, message).await;
         }
@@ -117,15 +106,7 @@ impl StreamableHttpService {
                     PolyBody::from("session header is required for non-initialize requests"),
                 );
             }
-            let relay = match (self.service_factory)() {
-                Ok(r) => r,
-                Err(e) => {
-                    return http_error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        PolyBody::from(format!("fail to create relay: {e}")),
-                    );
-                },
-            };
+            let relay = (self.service_factory)();
             let session = self.session_manager.create_session(relay);
             (session, true)
         };
@@ -172,23 +153,23 @@ impl StreamableHttpService {
             // unauthorized
             return http_error(StatusCode::UNAUTHORIZED, PolyBody::from("Unauthorized: Session ID is required"));
         };
-        let session_id = session_id.to_string();
+        let session_id = session_id.to_owned();
         let (parts, _) = request.into_parts();
         self.session_manager.delete_session(&session_id, parts).await.unwrap_or_else(accepted_response)
     }
 }
 
 fn http_error(status: StatusCode, body: PolyBody) -> Response {
-    ::http::Response::builder().status(status).body(body.into()).expect("valid response")
+    http::Response::builder().status(status).body(body).expect("valid response")
 }
 
 fn internal_error_response(context: &str) -> Response {
-    ::http::Response::builder()
+    http::Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
         .body(PolyBody::from(format!("Encounter an error when {context}")))
         .expect("valid response")
 }
 
 fn accepted_response() -> Response {
-    ::http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
+    http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
 }

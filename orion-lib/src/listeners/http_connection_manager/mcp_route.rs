@@ -1,49 +1,31 @@
-use crate::{
-    body::{body_with_timeout::BodyWithTimeout, response_flags::BodyKind},
-    mcp,
-    transport::HttpChannel,
-};
+use crate::{body::response_flags::BodyKind, mcp, transport::HttpChannel};
 use ahash::{HashMap, HashMapExt};
 use http::{Request, Response, Uri, request::Parts, uri::Parts as UriParts};
 use http_body_util::BodyExt;
-use hyper::body::Incoming;
-use opentelemetry::{KeyValue, trace::Span};
 use orion_configuration::config::network_filters::http_connection_manager::{
-    RetryPolicy, mcp_route::MCPRouteAction, route::RouteMatchResult,
+    mcp_route::McpRouteAction, route::RouteMatchResult,
 };
 use orion_error::Context;
-use orion_format::{
-    context::{UpstreamContext, UpstreamRequest},
-    types::{ResponseFlagsLong, ResponseFlagsShort},
-};
-use orion_tracing::{
-    attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME},
-    http_tracer::{SpanKind, SpanName},
-};
-use smol_str::ToSmolStr;
+use orion_format::context::UpstreamContext;
+
 use tracing::{debug, warn};
 
 use crate::{
     PolyBody, Result,
-    body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
+    body::body_with_metrics::BodyWithMetrics,
     clusters::{RoutingContext, balancers::hash_policy::HashState, clusters_manager},
-    event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
         access_log::AccessLogContext,
-        http_connection_manager::{
-            HttpConnectionManager, RequestHandler, TransactionHandler, http_modifiers, route::MatchedRequest,
-        },
-        synthetic_http_response::SyntheticHttpResponse,
+        http_connection_manager::{HttpConnectionManager, RequestHandler, TransactionHandler, route::MatchedRequest},
     },
-    transport::policy::{RequestContext, RequestExt},
 };
 
-impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRouteAction {
+impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRouteAction {
     #[allow(clippy::too_many_lines)]
     async fn to_response(
         self,
         trans_handler: &TransactionHandler,
-        (request, connection_manager): (MatchedRequest<'a>, &HttpConnectionManager),
+        (request, _connection_manager): (MatchedRequest<'a>, &HttpConnectionManager),
     ) -> Result<Response<PolyBody>> {
         let MatchedRequest {
             request: downstream_request,
@@ -80,18 +62,17 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
                         Err(orion_error::Error::from(format!(
                             "Failed to find cluster for {:?}",
                             downstream_request.uri().authority()
-                        ))
-                        .into()),
+                        ))),
                     )
                 }
             })
             .collect::<HashMap<_, _>>();
 
-        channels.iter().for_each(|(k, v)| {
+        for (k, v) in &channels {
             if v.is_err() {
                 warn!("Problem when processing {k} {v:?} ")
             }
-        });
+        }
 
         if channels.iter().any(|(_, v)| v.is_err()) {
             return Err(orion_error::Error::from("Problem when processing channels".to_owned()));
@@ -102,20 +83,23 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
         let data = b.inner.collect().await?.to_bytes();
 
         let mut channel_request_map = HashMap::new();
-        for (k, v) in channels.into_iter() {
-            let channel = v.unwrap();
-            match process_channel(
-                self,
-                (p.clone(), BodyWithMetrics::new(BodyKind::Request, PolyBody::from(data.clone()), |_, _, _| {})),
-                &channel,
-                route_name,
-                &route_match,
-                trans_handler,
-            ) {
-                Ok(new_request) => {
-                    channel_request_map.insert(k.clone(), (channel, new_request.uri().clone()));
-                },
-                Err(e) => return Err(e),
+        for (k, channel) in channels {
+            if let Ok(channel) = channel {
+                match process_channel(
+                    self,
+                    (p.clone(), BodyWithMetrics::new(BodyKind::Request, PolyBody::from(data.clone()), |_, _, _| {})),
+                    &channel,
+                    route_name,
+                    &route_match,
+                    trans_handler,
+                ) {
+                    Ok(new_request) => {
+                        channel_request_map.insert(k.clone(), (channel, new_request.uri().clone()));
+                    },
+                    Err(e) => return Err(e),
+                }
+            } else {
+                return Err(orion_error::Error::from("Serious problem since this shouldn't be an errror"));
             }
         }
         let original_request = Request::from_parts(
@@ -128,7 +112,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
 }
 
 fn process_channel<'a, B>(
-    mcp_route: &MCPRouteAction,
+    mcp_route: &McpRouteAction,
     downstream_request: (Parts, B),
     svc_channel: &HttpChannel,
     route_name: &str,
@@ -144,11 +128,10 @@ fn process_channel<'a, B>(
     }
 
     let (mut parts, body) = downstream_request;
-    let ver = parts.version;
 
     let upstream_request = {
         let path_and_query_replacement = if let Some(rewrite) = &mcp_route.rewrite {
-            rewrite.apply(parts.uri.path_and_query(), &route_match)?
+            rewrite.apply(parts.uri.path_and_query(), route_match)?
         } else {
             None
         };

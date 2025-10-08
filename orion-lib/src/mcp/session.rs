@@ -12,6 +12,7 @@ use ::http::request::Parts;
 use futures_util::StreamExt;
 use http_body_util::BodyExt;
 use rmcp::ErrorData;
+use rmcp::model::JsonRpcVersion2_0;
 use rmcp::model::{
     ClientInfo, ClientJsonRpcMessage, ClientRequest, ErrorCode, Implementation, JsonRpcError, ProtocolVersion,
     RequestId, ServerJsonRpcMessage,
@@ -54,11 +55,7 @@ impl Session {
         let is_init = matches!(&message, ClientJsonRpcMessage::Request(r) if matches!(&r.request, &ClientRequest::InitializeRequest(_)));
         if !is_init {
             // first, send the initialize
-            let init_request = rmcp::model::InitializeRequest {
-                method: Default::default(),
-                params: get_client_info(),
-                extensions: Default::default(),
-            };
+            let init_request = rmcp::model::InitializeRequest { params: get_client_info(), ..Default::default() };
             let res = self
                 .send(parts.clone(), ClientJsonRpcMessage::request(init_request.into(), RequestId::Number(0)))
                 .await;
@@ -67,10 +64,8 @@ impl Session {
             }
 
             // And we need to notify as well.
-            let notification = ClientJsonRpcMessage::notification(
-                rmcp::model::InitializedNotification { method: Default::default(), extensions: Default::default() }
-                    .into(),
-            );
+            let notification =
+                ClientJsonRpcMessage::notification(rmcp::model::InitializedNotification::default().into());
             let res = self.send(parts.clone(), notification).await;
             if !res.status().is_success() {
                 return res;
@@ -148,11 +143,11 @@ impl Session {
         move |e| {
             if let UpstreamError::Http(ClientError::Status(resp)) = e {
                 // Forward response as-is
-                return *resp;
+                return resp;
             }
             let err = if let Some(req_id) = req_id {
                 serde_json::to_string(&JsonRpcError {
-                    jsonrpc: Default::default(),
+                    jsonrpc: JsonRpcVersion2_0::default(),
                     id: req_id,
                     error: ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
@@ -178,7 +173,6 @@ impl Session {
         // It's very common to not have any notifications, though.
         match message {
             ClientJsonRpcMessage::Request(mut r) => {
-                let method = r.request.method();
                 //let (_span, log, cel) = handler::setup_request_log(&parts, method);
 
                 let ctx = IncomingRequestContext::new(parts);
@@ -196,87 +190,48 @@ impl Session {
                         self.relay.send_fanout(r, ctx, self.relay.merge_prompts()).await
                     },
                     ClientRequest::ListResourcesRequest(_) => {
-                        if !self.relay.is_multiplexing() {
-                            self.relay.send_fanout(r, ctx, self.relay.merge_resources()).await
-                        } else {
+                        if self.relay.is_multiplexing() {
                             // TODO(https://github.com/agentgateway/agentgateway/issues/404)
                             // Find a mapping of URL
-                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_string()))
+                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_owned()))
+                        } else {
+                            self.relay.send_fanout(r, ctx, self.relay.merge_resources()).await
                         }
                     },
                     ClientRequest::ListResourceTemplatesRequest(_) => {
-                        if !self.relay.is_multiplexing() {
-                            self.relay.send_fanout(r, ctx, self.relay.merge_resource_templates()).await
-                        } else {
+                        if self.relay.is_multiplexing() {
                             // TODO(https://github.com/agentgateway/agentgateway/issues/404)
                             // Find a mapping of URL
-                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_string()))
+                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_owned()))
+                        } else {
+                            self.relay.send_fanout(r, ctx, self.relay.merge_resource_templates()).await
                         }
                     },
                     ClientRequest::CallToolRequest(ctr) => {
                         let name = ctr.params.name.clone();
                         let (service_name, tool) = self.relay.parse_resource_name(&name)?;
-                        // log.non_atomic_mutate(|l| {
-                        //     l.tool_call_name = Some(tool.to_string());
-                        //     l.target_name = Some(service_name.to_string());
-                        // });
-                        // if !self.relay.policies.validate(
-                        //     // &rbac::ResourceType::Tool(rbac::ResourceId::new(
-                        //     //     service_name.to_string(),
-                        //     //     tool.to_string(),
-                        //     // )),
-                        //     // cel.as_ref(),
-                        // ) {
-                        //     return Err(UpstreamError::Authorization);
-                        // }
-
-                        let tn = tool.to_string();
+                        let tn = tool.to_owned();
                         ctr.params.name = tn.into();
                         self.relay.send_single(r, ctx, service_name).await
                     },
                     ClientRequest::GetPromptRequest(gpr) => {
                         let name = gpr.params.name.clone();
                         let (service_name, prompt) = self.relay.parse_resource_name(&name)?;
-                        // log.non_atomic_mutate(|l| {
-                        //     l.target_name = Some(service_name.to_string());
-                        // });
-                        // if !self.relay.policies.validate(
-                        //     &rbac::ResourceType::Prompt(rbac::ResourceId::new(
-                        //         service_name.to_string(),
-                        //         prompt.to_string(),
-                        //     )),
-                        //     cel.as_ref(),
-                        // ) {
-                        //     return Err(UpstreamError::Authorization);
-                        // }
-                        gpr.params.name = prompt.to_string();
+                        gpr.params.name = prompt.to_owned();
                         self.relay.send_single(r, ctx, service_name).await
                     },
-                    ClientRequest::ReadResourceRequest(rrr) => {
-                        if let Some(service_name) = self.relay.default_target_name() {
-                            let uri = rrr.params.uri.clone();
-                            // log.non_atomic_mutate(|l| {
-                            //     l.target_name = Some(service_name.to_string());
-                            // });
-                            // if !self.relay.policies.validate(
-                            //     &rbac::ResourceType::Resource(rbac::ResourceId::new(
-                            //         service_name.to_string(),
-                            //         uri.to_string(),
-                            //     )),
-                            //     cel.as_ref(),
-                            // ) {
-                            //     return Err(UpstreamError::Authorization);
-                            // }
+                    ClientRequest::ReadResourceRequest(_rrr) => {
+                        if let Some(_service_name) = self.relay.default_target_name() {
                             self.relay.send_single_without_multiplexing(r, ctx).await
                         } else {
                             // TODO(https://github.com/agentgateway/agentgateway/issues/404)
                             // Find a mapping of URL
-                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_string()))
+                            Err(UpstreamError::InvalidMethodWithMultiplexing(r.request.method().to_owned()))
                         }
                     },
                     ClientRequest::SubscribeRequest(_) | ClientRequest::UnsubscribeRequest(_) => {
                         // TODO(https://github.com/agentgateway/agentgateway/issues/404)
-                        Err(UpstreamError::InvalidMethod(r.request.method().to_string()))
+                        Err(UpstreamError::InvalidMethod(r.request.method().to_owned()))
                     },
                     ClientRequest::CompleteRequest(_) => {
                         // For now, we don't have a sane mapping of incoming requests to a specific
@@ -292,7 +247,7 @@ impl Session {
                 self.relay.send_notification(r, ctx).await
             },
 
-            _ => Err(UpstreamError::InvalidRequest("unsupported message type".to_string())),
+            _ => Err(UpstreamError::InvalidRequest("unsupported message type".to_owned())),
         }
     }
 }
@@ -378,11 +333,11 @@ pub(crate) fn sse_stream_response(
     let stream = match keep_alive {
         Some(duration) => PolyBody::Stream({
             let s = stream.with_keep_alive::<TokioSseTimer>(KeepAlive::new().interval(duration)).boxed_unsync();
-            let s = s.map_err(|e| PolyBodyError::from(e));
+            let s = s.map_err(PolyBodyError::from);
             s.boxed_unsync()
         }),
         None => PolyBody::Stream({
-            let s = stream.map_err(|e| PolyBodyError::from(e));
+            let s = stream.map_err(PolyBodyError::from);
             s.boxed_unsync()
         }),
     };
@@ -429,7 +384,7 @@ fn get_client_info() -> ClientInfo {
             elicitation: None,
         },
         client_info: Implementation {
-            name: "orion-proxy".to_string(),
+            name: "orion-proxy".to_owned(),
             version: "0.1.0-hack".to_owned(),
             ..Default::default()
         },

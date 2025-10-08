@@ -726,6 +726,7 @@ impl
         Arc<DownstreamMetadata>,
     )> for Arc<RouteConfiguration>
 {
+    #[allow(clippy::too_many_lines)]
     async fn to_response(
         self,
         trans_handler: &TransactionHandler,
@@ -793,6 +794,24 @@ impl
                     rd.to_response(trans_handler, (request, chosen_route.route_match, &chosen_route.route.name)).await
                 },
                 Action::Route(route) => {
+                    route
+                        .to_response(
+                            trans_handler,
+                            (
+                                MatchedRequest {
+                                    request,
+                                    route_name: &chosen_route.route.name,
+                                    retry_policy: chosen_route.vh.retry_policy.as_ref(),
+                                    route_match: chosen_route.route_match,
+                                    remote_address: downstream_metadata.connection.peer_address(),
+                                    websocket_enabled_by_default,
+                                },
+                                &connection_manager,
+                            ),
+                        )
+                        .await
+                },
+                Action::McpRoute(route) => {
                     route
                         .to_response(
                             trans_handler,

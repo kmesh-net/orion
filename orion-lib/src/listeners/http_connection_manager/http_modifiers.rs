@@ -50,13 +50,13 @@ fn filter_disallowed_requests<T>(request: &Request<T>) -> Option<Response<PolyBo
                 .into_response(request.version()),
         );
     }
-    if let Some(connection_header) = request.headers().get(header::CONNECTION) {
-        if upgrade_utils::is_upgrade_connection(connection_header.to_str().ok()?) {
-            return Some(
-                SyntheticHttpResponse::forbidden(EventKind::UpgradeFailed, "upgrade not permitted")
-                    .into_response(request.version()),
-            );
-        }
+    if let Some(connection_header) = request.headers().get(header::CONNECTION)
+        && upgrade_utils::is_upgrade_connection(connection_header.to_str().ok()?)
+    {
+        return Some(
+            SyntheticHttpResponse::forbidden(EventKind::UpgradeFailed, "upgrade not permitted")
+                .into_response(request.version()),
+        );
     }
     None
 }

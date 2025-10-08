@@ -104,8 +104,9 @@ impl Upstream {
                 if is_init {
                     let sid = match &res {
                         StreamableHttpPostResponse::Accepted => None,
-                        StreamableHttpPostResponse::Json(_, sid) => sid.as_ref(),
-                        StreamableHttpPostResponse::Sse(_, sid) => sid.as_ref(),
+                        StreamableHttpPostResponse::Json(_, sid) | StreamableHttpPostResponse::Sse(_, sid) => {
+                            sid.as_ref()
+                        },
                     };
                     if let Some(sid) = sid {
                         c.set_session_id(sid.clone())
@@ -136,7 +137,7 @@ pub(crate) struct UpstreamGroup {
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(http_channels: HashMap<String, (HttpChannel, Uri)>) -> Result<Self, orion_error::Error> {
+    pub(crate) fn new(http_channels: HashMap<String, (HttpChannel, Uri)>) -> Self {
         let streamable_clients = http_channels
             .into_iter()
             .map(|(k, (channel, uri))| {
@@ -144,15 +145,14 @@ impl UpstreamGroup {
             })
             .collect();
         let mut s = Self { streamable_clients };
-        s.setup_connections()?;
-        Ok(s)
+        s.setup_connections();
+        s
     }
 
-    pub(crate) fn setup_connections(&mut self) -> Result<(), orion_error::Error> {
-        for (name, _) in &self.streamable_clients {
+    pub(crate) fn setup_connections(&mut self) {
+        self.streamable_clients.iter().for_each(|(name, _)| {
             debug!("initializing target: {}", name);
-        }
-        Ok(())
+        });
     }
 
     pub(crate) fn iter_named(&self) -> impl Iterator<Item = (&str, &upstream::Upstream)> {

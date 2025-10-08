@@ -20,6 +20,7 @@ use crate::config::{
     cluster::ClusterSpecifier,
     common::*,
     core::{CaseSensitive, DataSource, StringMatcher},
+    network_filters::http_connection_manager::mcp_route::McpRouteAction,
 };
 use bytes::Bytes;
 use compact_str::CompactString;
@@ -44,6 +45,7 @@ pub enum Action {
     Route(RouteAction),
     DirectResponse(DirectResponseAction),
     Redirect(RedirectAction),
+    McpRoute(McpRouteAction),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -793,8 +795,9 @@ mod envoy_conversions {
     };
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::route::v3::{
-            DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
-            RedirectAction as EnvoyRedirectAction, RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
+            DirectResponseAction as EnvoyDirectResponseAction, McpRouteAction as EnvoyMcpRouteAction,
+            QueryParameterMatcher as EnvoyQueryParameterMatcher, RedirectAction as EnvoyRedirectAction,
+            RouteAction as EnvoyRouteAction, RouteMatch as EnvoyRouteMatch,
             query_parameter_matcher::QueryParameterMatchSpecifier as EnvoyQueryParameterMatchSpecifier,
             redirect_action::{
                 PathRewriteSpecifier as EnvoyPathRewriteSpecifier, RedirectResponseCode as EnvoyRedirectResponseCode,
@@ -836,6 +839,7 @@ mod envoy_conversions {
                 EnvoyAction::NonForwardingAction(_) => {
                     return Err(GenericError::unsupported_variant("NonForwardingAction"));
                 },
+                EnvoyAction::McpRoute(r) => Self::McpRoute(r.try_into()?),
             })
         }
     }

@@ -1,15 +1,13 @@
 use ::http::header::CONTENT_TYPE;
 use http::Uri;
+use http_body_util::BodyExt;
 use std::sync::Arc;
 
 use crate::body::body_with_metrics::BodyWithMetrics;
 use crate::body::poly_body::PolyBody;
 use crate::body::response_flags::BodyKind;
 use crate::listeners::http_connection_manager::{RequestHandler, TransactionHandler};
-use crate::transport::{
-    HttpChannel,
-    policy::{RequestContext, RequestExt},
-};
+use crate::transport::{HttpChannel, policy::RequestExt};
 use futures::StreamExt;
 use http::header::ACCEPT;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
@@ -30,7 +28,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(http_channel: HttpChannel, uri: Uri) -> Self {
-        Self { http_channel, uri, session_id: Default::default() }
+        Self { http_channel, uri, session_id: Arc::default() }
     }
     pub fn set_session_id(&self, s: String) {
         self.session_id.store(Some(Arc::new(s)));
@@ -60,8 +58,6 @@ impl Client {
 
         ctx: &IncomingRequestContext,
     ) -> Result<StreamableHttpPostResponse, ClientError> {
-        let client = self.http_channel.client.clone();
-
         let body = serde_json::to_vec(&message).map_err(ClientError::new)?;
 
         let mut req = ::http::Request::builder()
@@ -69,7 +65,7 @@ impl Client {
             .method(http::Method::POST)
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "))
-            .body(BodyWithMetrics::new(BodyKind::Request, PolyBody::from(body), |a, b, c| {}))
+            .body(BodyWithMetrics::new(BodyKind::Request, PolyBody::from(body), |_, _, _| {}))
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
@@ -80,52 +76,48 @@ impl Client {
             .http_channel
             .to_response(&transaction_handler, RequestExt::new(req))
             .await
-            .map_err(|e| ClientError::General(e))?;
+            .map_err(ClientError::General)?;
 
         if resp.status() == http::StatusCode::ACCEPTED {
             return Ok(StreamableHttpPostResponse::Accepted);
         }
 
         if !resp.status().is_success() {
-            return Err(ClientError::Status(resp.status()));
+            return Err(ClientError::Status(resp));
         }
 
         let content_type = resp.headers().get(CONTENT_TYPE);
-        let session_id = resp.headers().get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        let session_id =
+            resp.headers().get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok()).map(std::string::ToString::to_string);
 
         match content_type {
-            Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
-                let event_stream = SseStream::from_byte_stream(resp.into_body().into_data_stream()).boxed();
-                Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
-            },
             Some(ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
                 let message =
                     json::from_body::<ServerJsonRpcMessage>(resp.into_body()).await.map_err(ClientError::new)?;
                 Ok(StreamableHttpPostResponse::Json(message, session_id))
             },
-            _ => Err(ClientError::new(format!("unexpected content type: {content_type:?}").into())),
+            _ => Err(ClientError::new(format!("unexpected content type: {content_type:?}"))),
         }
     }
     pub async fn send_delete(&self, ctx: &IncomingRequestContext) -> Result<StreamableHttpPostResponse, ClientError> {
-        let client = self.client.clone();
-
         let mut req = ::http::Request::builder()
             .uri(&self.uri)
             .method(http::Method::DELETE)
-            .body(PolyBody::empty())
+            .body(BodyWithMetrics::new(BodyKind::Request, PolyBody::empty(), |_, _, _| {}))
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
 
         ctx.apply(&mut req);
-
-        let resp = client
-            .call_with_default_policies(req, &self.backend, self.policies.clone())
+        let transaction_handler = TransactionHandler::default();
+        let resp = self
+            .http_channel
+            .to_response(&transaction_handler, RequestExt::new(req))
             .await
-            .map_err(ClientError::new)?;
+            .map_err(ClientError::General)?;
 
         if !resp.status().is_success() {
-            return Err(ClientError::Status(Box::new(resp)));
+            return Err(ClientError::Status(resp));
         }
         Ok(StreamableHttpPostResponse::Accepted)
     }
@@ -133,36 +125,37 @@ impl Client {
         &self,
         ctx: &IncomingRequestContext,
     ) -> Result<StreamableHttpPostResponse, ClientError> {
-        let client = self.client.clone();
-
         let mut req = ::http::Request::builder()
             .uri(&self.uri)
             .method(http::Method::GET)
             .header(ACCEPT, EVENT_STREAM_MIME_TYPE)
-            .body(PolyBody::empty())
+            .body(BodyWithMetrics::new(BodyKind::Request, PolyBody::empty(), |_, _, _| {}))
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
 
         ctx.apply(&mut req);
 
-        let resp = client
-            .call_with_default_policies(req, &self.backend, self.policies.clone())
+        let transaction_handler = TransactionHandler::default();
+        let resp = self
+            .http_channel
+            .to_response(&transaction_handler, RequestExt::new(req))
             .await
-            .map_err(ClientError::new)?;
+            .map_err(ClientError::General)?;
 
         if !resp.status().is_success() {
-            return Err(ClientError::Status(Box::new(resp)));
+            return Err(ClientError::Status(resp));
         }
 
         let content_type = resp.headers().get(CONTENT_TYPE);
-        let session_id = resp.headers().get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+        let session_id =
+            resp.headers().get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok()).map(std::string::ToString::to_string);
         match content_type {
             Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
                 let event_stream = SseStream::from_byte_stream(resp.into_body().into_data_stream()).boxed();
                 Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
             },
-            _ => Err(ClientError::new(format!("unexpected content type for GET streams: {content_type:?}").into())),
+            _ => Err(ClientError::new(format!("unexpected content type for GET streams: {content_type:?}"))),
         }
     }
 

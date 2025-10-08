@@ -627,7 +627,7 @@ fn maybe_update_host<B>(mut request: Request<B>, version: Codec) -> Result<Reque
     Ok(request)
 }
 
-fn maybe_normalize_uri<T>(mut request: Request<T>, is_tls: bool) -> crate::Result<Request<BodyWithMetrics<PolyBody>>> {
+fn maybe_normalize_uri<T>(mut request: Request<T>, is_tls: bool) -> crate::Result<Request<T>> {
     let uri = request.uri();
     if !is_absolute(uri) {
         if let Some(host_header) = request.headers().get("host") {

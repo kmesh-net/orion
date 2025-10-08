@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::body::poly_body::PolyBody;
-use crate::mcp::Request;
 use crate::transport::HttpChannel;
 use ahash::HashMap;
 use futures_core::Stream;
@@ -25,7 +24,7 @@ use super::upstream::{IncomingRequestContext, UpstreamError, UpstreamGroup};
 const DELIMITER: &str = "_";
 
 fn resource_name(default_target_name: Option<&String>, target: &str, name: &str) -> String {
-    if default_target_name.is_none() { format!("{target}{DELIMITER}{name}") } else { name.to_string() }
+    if default_target_name.is_none() { format!("{target}{DELIMITER}{name}") } else { name.to_owned() }
 }
 
 #[derive(Debug, Clone)]
@@ -35,18 +34,15 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(
-        default_target_name: Option<String>,
-        http_channels: HashMap<String, (HttpChannel, Uri)>,
-    ) -> Result<Self, orion_error::Error> {
-        Ok(Self { upstreams: Arc::new(UpstreamGroup::new(http_channels)?), default_target_name })
+    pub fn new(default_target_name: Option<String>, http_channels: HashMap<String, (HttpChannel, Uri)>) -> Self {
+        Self { upstreams: Arc::new(UpstreamGroup::new(http_channels)), default_target_name }
     }
 
     pub fn parse_resource_name<'a, 'b: 'a>(&'a self, res: &'b str) -> Result<(&'a str, &'b str), UpstreamError> {
         if let Some(default) = self.default_target_name.as_ref() {
             Ok((default.as_str(), res))
         } else {
-            res.split_once(DELIMITER).ok_or(UpstreamError::InvalidRequest("invalid resource name".to_string()))
+            res.split_once(DELIMITER).ok_or(UpstreamError::InvalidRequest("invalid resource name".to_owned()))
         }
     }
 }
@@ -161,7 +157,7 @@ impl Relay {
         };
         let stream = us.generic_stream(r, &ctx).await?;
 
-        messages_to_response(id, stream)
+        Ok(messages_to_response(id, stream))
     }
     // For some requests, we don't have a sane mapping of incoming requests to a specific
     // downstream service when multiplexing. Only forward when we have only one backend.
@@ -171,7 +167,7 @@ impl Relay {
         ctx: IncomingRequestContext,
     ) -> Result<Response, UpstreamError> {
         let Some(service_name) = &self.default_target_name else {
-            return Err(UpstreamError::InvalidMethod(r.request.method().to_string()));
+            return Err(UpstreamError::InvalidMethod(r.request.method().to_owned()));
         };
         self.send_single(r, ctx, service_name).await
     }
@@ -188,7 +184,7 @@ impl Relay {
         }
 
         let ms = mergestream::MergeStream::new_without_merge(streams);
-        messages_to_response(RequestId::Number(0), ms)
+        Ok(messages_to_response(RequestId::Number(0), ms))
     }
     pub async fn send_fanout(
         &self,
@@ -203,7 +199,7 @@ impl Relay {
         }
 
         let ms = mergestream::MergeStream::new(streams, id.clone(), merge);
-        messages_to_response(id, ms)
+        Ok(messages_to_response(id, ms))
     }
     pub async fn send_notification(
         &self,
@@ -230,7 +226,7 @@ impl Relay {
 			},
 			server_info: Implementation::from_build_env(),
 			instructions: Some(
-				"This server is a gateway to a set of mcp servers. It is responsible for routing requests to the correct server and aggregating the results.".to_string(),
+				"This server is a gateway to a set of mcp servers. It is responsible for routing requests to the correct server and aggregating the results.".to_owned(),
 			),
 		}
     }
@@ -239,7 +235,7 @@ impl Relay {
 fn messages_to_response(
     id: RequestId,
     stream: impl Stream<Item = Result<ServerJsonRpcMessage, ClientError>> + Send + 'static,
-) -> Result<Response, UpstreamError> {
+) -> Response {
     use futures_util::StreamExt;
     use rmcp::model::ServerJsonRpcMessage;
     use rmcp::transport::common::server_side_http::ServerSseMessage;
@@ -251,9 +247,9 @@ fn messages_to_response(
         // TODO: is it ok to have no event_id here?
         ServerSseMessage { event_id: None, message: Arc::new(r) }
     });
-    Ok(crate::mcp::session::sse_stream_response(stream, None))
+    crate::mcp::session::sse_stream_response(stream, None)
 }
 
 fn accepted_response() -> Response {
-    ::http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
+    http::Response::builder().status(StatusCode::ACCEPTED).body(PolyBody::empty()).expect("valid response")
 }
