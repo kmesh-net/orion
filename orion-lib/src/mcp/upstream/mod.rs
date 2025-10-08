@@ -1,27 +1,20 @@
-//mod openapi;
-mod sse;
-mod stdio;
+//mod sse;
+//mod stdio;
 mod streamablehttp;
 
 use ahash::HashMap;
-use indexmap::IndexMap;
-use orion_error::Context;
+
+use http::Uri;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
-use rmcp::transport::{TokioChildProcess, streamable_http_client::StreamableHttpPostResponse};
-use std::collections::BTreeSet;
+use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
+
 use std::io;
 use std::result::Result;
-use std::sync::Arc;
-use thiserror::Error;
-use tokio::process::Command;
-use tracing::{debug, trace, warn};
 
-//use crate::proxy::httpproxy::PolicyClient;
+use thiserror::Error;
+use tracing::debug;
+
 use super::{mergestream, upstream};
-use super::{
-    router::{McpBackendGroup, McpTarget},
-    types::agent::McpTargetSpec,
-};
 use crate::mcp::{ClientError, Request};
 use crate::transport::HttpChannel;
 
@@ -79,22 +72,14 @@ pub enum UpstreamError {
 #[derive(Debug)]
 pub(crate) enum Upstream {
     McpStreamable(streamablehttp::Client),
-    McpSSE(sse::Client),
-    McpStdio(stdio::Process),
     //OpenAPI(Box<openapi::Handler>),
 }
 
 impl Upstream {
     pub(crate) async fn delete(&self, ctx: &IncomingRequestContext) -> Result<(), UpstreamError> {
         match &self {
-            Upstream::McpStdio(c) => {
-                c.stop().await?;
-            },
             Upstream::McpStreamable(c) => {
                 c.send_delete(ctx).await?;
-            },
-            Upstream::McpSSE(c) => {
-                c.stop().await?;
             },
         }
         Ok(())
@@ -104,8 +89,6 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<mergestream::Messages, UpstreamError> {
         match &self {
-            Upstream::McpStdio(c) => Ok(c.get_event_stream().await),
-            Upstream::McpSSE(c) => c.connect_to_event_stream(ctx).await,
             Upstream::McpStreamable(c) => c.get_event_stream(ctx).await?.try_into().map_err(Into::into),
         }
     }
@@ -115,8 +98,6 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<mergestream::Messages, UpstreamError> {
         match &self {
-            Upstream::McpStdio(c) => Ok(mergestream::Messages::from(c.send_message(request, ctx).await?)),
-            Upstream::McpSSE(c) => Ok(mergestream::Messages::from(c.send_message(request, ctx).await?)),
             Upstream::McpStreamable(c) => {
                 let is_init = matches!(&request.request, &ClientRequest::InitializeRequest(_));
                 let res = c.send_request(request, ctx).await?;
@@ -141,12 +122,6 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<(), UpstreamError> {
         match &self {
-            Upstream::McpStdio(c) => {
-                c.send_notification(request, ctx).await?;
-            },
-            Upstream::McpSSE(c) => {
-                c.send_notification(request, ctx).await?;
-            },
             Upstream::McpStreamable(c) => {
                 c.send_notification(request, ctx).await?;
             },
@@ -157,44 +132,35 @@ impl Upstream {
 
 #[derive(Debug)]
 pub(crate) struct UpstreamGroup {
-    http_channels: HashMap<String, HttpChannel>,
-    initialized_channels: BTreeSet<String>,
+    streamable_clients: HashMap<String, upstream::Upstream>,
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(http_channels: HashMap<String, HttpChannel>) -> Result<Self, orion_error::Error> {
-        let mut s = Self { http_channels, initialized_channels: BTreeSet::new() };
+    pub(crate) fn new(http_channels: HashMap<String, (HttpChannel, Uri)>) -> Result<Self, orion_error::Error> {
+        let streamable_clients = http_channels
+            .into_iter()
+            .map(|(k, (channel, uri))| {
+                (k, upstream::Upstream::McpStreamable(streamablehttp::Client::new(channel, uri)))
+            })
+            .collect();
+        let mut s = Self { streamable_clients };
         s.setup_connections()?;
         Ok(s)
     }
 
     pub(crate) fn setup_connections(&mut self) -> Result<(), orion_error::Error> {
-        for (name, channel) in &self.http_channels {
+        for (name, _) in &self.streamable_clients {
             debug!("initializing target: {}", name);
-            if let Ok(()) = self.setup_upstream(name, channel) {
-                self.initialized_channels.insert(name.clone());
-            } else {
-                warn!("Unable to initialize {name}");
-            }
         }
         Ok(())
     }
 
-    // fn setup_upstream(&self, name: &str, http_channel: &HttpChannel) -> Result<upstream::Upstream, orion_error::Error> {
-    //     debug!("connecting to target: {name}");
-
-    //     McpTargetSpec::Mcp(mcp) => {
-    //         debug!("starting streamable http transport for target: {}", target.name);
-    //         let path = match mcp.path.as_str() {
-    //             "" => "/mcp",
-    //             _ => mcp.path.as_str(),
-    //         };
-    //         let be = crate::proxy::resolve_simple_backend(&mcp.backend, &self.pi)?;
-    //         let client =
-    //             streamablehttp::Client::new(be, path.into(), self.client.clone(), target.backend_policies.clone())?;
-
-    //         upstream::Upstream::McpStreamable(client)
-    //     };
-    //     Ok(target)
-    // }
+    pub(crate) fn iter_named(&self) -> impl Iterator<Item = (&str, &upstream::Upstream)> {
+        self.streamable_clients.iter().map(|(k, v)| (k.as_str(), v))
+    }
+    pub(crate) fn get(&self, name: &str) -> Result<&upstream::Upstream, orion_error::Error> {
+        self.streamable_clients
+            .get(name)
+            .ok_or_else(|| orion_error::Error::from(format!("requested target {name} is not initialized")))
+    }
 }

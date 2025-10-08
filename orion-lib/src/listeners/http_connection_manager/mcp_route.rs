@@ -1,7 +1,16 @@
-use crate::mcp;
-use http::{Request, Response, Uri, uri::Parts as UriParts};
+use crate::{
+    body::{body_with_timeout::BodyWithTimeout, response_flags::BodyKind},
+    mcp,
+    transport::HttpChannel,
+};
+use ahash::{HashMap, HashMapExt};
+use http::{Request, Response, Uri, request::Parts, uri::Parts as UriParts};
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
 use opentelemetry::{KeyValue, trace::Span};
-use orion_configuration::config::network_filters::http_connection_manager::mcp_route::MCPRouteAction;
+use orion_configuration::config::network_filters::http_connection_manager::{
+    RetryPolicy, mcp_route::MCPRouteAction, route::RouteMatchResult,
+};
 use orion_error::Context;
 use orion_format::{
     context::{UpstreamContext, UpstreamRequest},
@@ -12,7 +21,7 @@ use orion_tracing::{
     http_tracer::{SpanKind, SpanName},
 };
 use smol_str::ToSmolStr;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::{
     PolyBody, Result,
@@ -39,152 +48,131 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
         let MatchedRequest {
             request: downstream_request,
             route_name,
-            retry_policy,
+            retry_policy: _,
             remote_address,
             route_match,
             websocket_enabled_by_default: _,
         } = request;
 
-        let cluster_id = if let Some(authority) = downstream_request.uri().authority()
-            && let Some(cluster_specifier) = self.cluster_mappings.get(authority.host())
-        {
-            clusters_manager::resolve_cluster(cluster_specifier)
-                .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?
+        let channels = self
+            .cluster_mappings
+            .iter()
+            .map(|(name, cluster_specifier)| {
+                if let Some(authority) = downstream_request.uri().authority()
+                    && cluster_specifier.name() == authority.host()
+                {
+                    if let Some(cluster_id) = clusters_manager::resolve_cluster(cluster_specifier) {
+                        let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
+                        let hash_state = HashState::new(&[], &downstream_request, remote_address);
+                        if let Ok(routing_context) =
+                            RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))
+                        {
+                            (name, clusters_manager::get_http_connection(cluster_id, routing_context))
+                        } else {
+                            (name, Err(orion_error::Error::from("Failed to create routing context".to_owned())))
+                        }
+                    } else {
+                        (name, Err(orion_error::Error::from("Failed to resolve cluster from specifier".to_owned())))
+                    }
+                } else {
+                    (
+                        name,
+                        Err(orion_error::Error::from(format!(
+                            "Failed to find cluster for {:?}",
+                            downstream_request.uri().authority()
+                        ))
+                        .into()),
+                    )
+                }
+            })
+            .collect::<HashMap<_, _>>();
+
+        channels.iter().for_each(|(k, v)| {
+            if v.is_err() {
+                warn!("Problem when processing {k} {v:?} ")
+            }
+        });
+
+        if channels.iter().any(|(_, v)| v.is_err()) {
+            return Err(orion_error::Error::from("Problem when processing channels".to_owned()));
+        }
+
+        let (p, b) = downstream_request.into_parts();
+
+        let data = b.inner.collect().await?.to_bytes();
+
+        let mut channel_request_map = HashMap::new();
+        for (k, v) in channels.into_iter() {
+            let channel = v.unwrap();
+            match process_channel(
+                self,
+                (p.clone(), PolyBody::from(data.clone())),
+                &channel,
+                route_name,
+                &route_match,
+                trans_handler,
+            ) {
+                Ok(new_request) => {
+                    channel_request_map.insert(k.clone(), (channel, new_request.uri().clone()));
+                },
+                Err(e) => return Err(e),
+            }
+        }
+        let original_request = Request::from_parts(p.clone(), PolyBody::from(data.clone()));
+        let app = mcp::App::new();
+        Ok(app.serve(original_request, channel_request_map).await)
+    }
+}
+
+fn process_channel<'a>(
+    mcp_route: &MCPRouteAction,
+    downstream_request: (Parts, PolyBody),
+    svc_channel: &HttpChannel,
+    route_name: &str,
+    route_match: &RouteMatchResult,
+    trans_handler: &TransactionHandler,
+) -> Result<Request<PolyBody>> {
+    if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
+        ctx.lock().loggers.with_context(&UpstreamContext {
+            authority: Some(&svc_channel.upstream_authority),
+            cluster_name: Some(svc_channel.cluster_name),
+            route_name,
+        })
+    }
+
+    let (mut parts, body) = downstream_request;
+    let ver = parts.version;
+
+    let upstream_request: Request<PolyBody> = {
+        let path_and_query_replacement = if let Some(rewrite) = &mcp_route.rewrite {
+            rewrite.apply(parts.uri.path_and_query(), &route_match)?
         } else {
-            return Err(format!("Failed to find cluster for {:?}", downstream_request.uri().authority()).into());
+            None
         };
 
-        let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
-        let hash_state = HashState::new(&[], &downstream_request, remote_address);
-        let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;
+        let authority_replacement = if let Some(authority_rewrite) = &mcp_route.authority_rewrite {
+            authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
+        } else {
+            None
+        };
 
-        let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
-
-        // for MCP we need to get a channel per configured MCP server
-        // then we need to pass those to MCP App
-        //
-        let app = mcp::App::new();
-        app.serve(pi, name, backend, req);
-
-        match maybe_channel {
-            Ok(svc_channel) => {
-                if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-                    ctx.lock().loggers.with_context(&UpstreamContext {
-                        authority: Some(&svc_channel.upstream_authority),
-                        cluster_name: Some(svc_channel.cluster_name),
-                        route_name,
-                    })
-                }
-
-                let ver = downstream_request.version();
-
-                let mut upstream_request: Request<BodyWithMetrics<PolyBody>> = {
-                    let (mut parts, body) = downstream_request.into_parts();
-                    let path_and_query_replacement = if let Some(rewrite) = &self.rewrite {
-                        rewrite
-                            .apply(parts.uri.path_and_query(), &route_match)
-                            .with_context_msg("invalid path after rewrite")?
-                    } else {
-                        None
-                    };
-
-                    let authority_replacement = if let Some(authority_rewrite) = &self.authority_rewrite {
-                        authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
-                    } else {
-                        None
-                    };
-
-                    if path_and_query_replacement.is_some() || authority_replacement.is_some() {
-                        parts.uri = {
-                            let UriParts { scheme, authority, path_and_query, .. } = parts.uri.into_parts();
-                            let mut new_parts = UriParts::default();
-                            new_parts.scheme = scheme;
-                            new_parts.authority = authority_replacement.clone().or(authority);
-                            new_parts.path_and_query = path_and_query_replacement.or(path_and_query);
-                            Uri::from_parts(new_parts).with_context_msg("failed to replace request URI")?
-                        }
-                    }
-
-                    if let Some(new_authority) = &authority_replacement {
-                        let header_value = http::HeaderValue::from_str(new_authority.as_str())
-                            .with_context_msg("failed to create Host header value")?;
-                        parts.headers.insert(http::header::HOST, header_value);
-                    }
-
-                    Request::from_parts(parts, body.map_into())
-                };
-
-                let mut client_span = connection_manager.http_tracer.try_create_span(
-                    trans_handler.trace_ctx.as_ref(),
-                    &connection_manager.get_tracing_key(),
-                    SpanKind::Client,
-                    SpanName::Str::<()>(svc_channel.upstream_authority.as_str()),
-                );
-
-                if let Some(ref mut client_span) = client_span {
-                    // set default attributes to span, using upstream request information...
-                    connection_manager.http_tracer.set_attributes_from_request(client_span, &upstream_request);
-
-                    // set additional attributes for client span...
-                    client_span.set_attributes([
-                        KeyValue::new(UPSTREAM_CLUSTER_NAME, svc_channel.cluster_name),
-                        KeyValue::new(UPSTREAM_ADDRESS, svc_channel.upstream_authority.to_string()),
-                    ]);
-                }
-
-                if let Some(ref span_state) = trans_handler.span_state {
-                    *span_state.client_span.lock() = client_span;
-                }
-
-                if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-                    ctx.lock().loggers.with_context(&UpstreamRequest(&upstream_request));
-                }
-
-                if let Some(direct_response) = http_modifiers::apply_preflight_functions(&mut upstream_request) {
-                    return Ok(direct_response);
-                }
-
-                // send the request to the upstream service channel and wait for the response...
-                let resp = svc_channel
-                    .to_response(
-                        trans_handler,
-                        RequestExt::with_context(
-                            RequestContext { route_timeout: self.timeout, retry_policy },
-                            upstream_request,
-                        ),
-                    )
-                    .await;
-                match resp {
-                    Err(err) => {
-                        let err = err.into_inner();
-                        let event_error = EventError::try_infer_from(&err);
-                        let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                        let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
-                        debug!(
-                            "HttpConnectionManager Error processing response {:?}: {}({})",
-                            err,
-                            ResponseFlagsLong(&flags.0).to_smolstr(),
-                            ResponseFlagsShort(&flags.0).to_smolstr()
-                        );
-                        Ok(SyntheticHttpResponse::bad_gateway(event_kind, flags).into_response(ver))
-                    },
-                    Ok(resp) => Ok(resp),
-                }
-            },
-            // http connection not avaiable from cluster...
-            Err(err) => {
-                let err = err.into_inner();
-                let event_error = EventError::try_infer_from(&err);
-                let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
-                debug!(
-                    "Failed to get an HTTP connection: {:?}: {}({})",
-                    err,
-                    ResponseFlagsLong(&flags.0).to_smolstr(),
-                    ResponseFlagsShort(&flags.0).to_smolstr()
-                );
-                Ok(SyntheticHttpResponse::internal_error(event_kind, flags).into_response(downstream_request.version()))
-            },
+        if path_and_query_replacement.is_some() || authority_replacement.is_some() {
+            parts.uri = {
+                let UriParts { scheme, authority, path_and_query, .. } = parts.uri.into_parts();
+                let mut new_parts = UriParts::default();
+                new_parts.scheme = scheme;
+                new_parts.authority = authority_replacement.clone().or(authority);
+                new_parts.path_and_query = path_and_query_replacement.or(path_and_query);
+                Uri::from_parts(new_parts).with_context_msg("failed to replace request URI")?
+            }
         }
-    }
+
+        if let Some(new_authority) = &authority_replacement {
+            let header_value = http::HeaderValue::from_str(new_authority.as_str())?;
+            parts.headers.insert(http::header::HOST, header_value);
+        }
+
+        Request::from_parts(parts, body)
+    };
+    Ok(upstream_request)
 }

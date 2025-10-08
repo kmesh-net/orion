@@ -2,8 +2,11 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::body::poly_body::PolyBody;
+use crate::mcp::Request;
+use crate::transport::HttpChannel;
+use ahash::HashMap;
 use futures_core::Stream;
-use http::StatusCode;
+use http::{StatusCode, Uri};
 use itertools::Itertools;
 use rmcp::ErrorData;
 use rmcp::model::{
@@ -13,12 +16,10 @@ use rmcp::model::{
     ToolsCapability,
 };
 
-use super::{ClientError, ProxyInputs, Response, mergestream};
+use super::{ClientError, Response, mergestream};
 
 use super::mergestream::MergeFn;
-use crate::proxy::httpproxy::PolicyClient;
 
-use super::router::McpBackendGroup;
 use super::upstream::{IncomingRequestContext, UpstreamError, UpstreamGroup};
 
 const DELIMITER: &str = "_";
@@ -30,17 +31,15 @@ fn resource_name(default_target_name: Option<&String>, target: &str, name: &str)
 #[derive(Debug, Clone)]
 pub struct Relay {
     upstreams: Arc<UpstreamGroup>,
-    //pub policies: McpAuthorizationSet,
-    // If we have 1 target only, we don't prefix everything with 'target_'.
-    // Else this is empty
     default_target_name: Option<String>,
 }
 
 impl Relay {
-    pub fn new(http_channels: HashMap<String, HttpChannel>) -> Result<Self, orion_error::Error> {
-        let default_target_name =
-            if backend.targets.len() != 1 { None } else { Some(backend.targets[0].name.to_string()) };
-        Ok(Self { upstreams: Arc::new(UpstreamGroup::new(pi, client, backend)?), default_target_name })
+    pub fn new(
+        default_target_name: Option<String>,
+        http_channels: HashMap<String, (HttpChannel, Uri)>,
+    ) -> Result<Self, orion_error::Error> {
+        Ok(Self { upstreams: Arc::new(UpstreamGroup::new(http_channels)?), default_target_name })
     }
 
     pub fn parse_resource_name<'a, 'b: 'a>(&'a self, res: &'b str) -> Result<(&'a str, &'b str), UpstreamError> {
@@ -72,17 +71,6 @@ impl Relay {
                     };
                     tools
                         .into_iter()
-                        // Apply authorization policies, filtering tools that are not allowed.
-                        // .filter(|t| {
-                        //     policies.validate(
-                        //         &rbac::ResourceType::Tool(rbac::ResourceId::new(
-                        //             server_name.to_string(),
-                        //             t.name.to_string(),
-                        //         )),
-                        //         &cel,
-                        //     )
-                        // })
-                        // Rename to handle multiplexing
                         .map(|t| Tool {
                             name: Cow::Owned(resource_name(
                                 default_target_name.as_ref(),
@@ -118,15 +106,6 @@ impl Relay {
                     };
                     prompts
                         .into_iter()
-                        // .filter(|p| {
-                        //     policies.validate(
-                        //         &rbac::ResourceType::Prompt(rbac::ResourceId::new(
-                        //             server_name.to_string(),
-                        //             p.name.to_string(),
-                        //         )),
-                        //         &cel,
-                        //     )
-                        // })
                         .map(|p| Prompt {
                             name: resource_name(default_target_name.as_ref(), server_name.as_str(), &p.name),
                             ..p
@@ -146,20 +125,7 @@ impl Relay {
                         ServerResult::ListResourcesResult(lrr) => lrr.resources,
                         _ => vec![],
                     };
-                    resources
-                        .into_iter()
-                        // .filter(|r| {
-                        //     policies.validate(
-                        //         &rbac::ResourceType::Resource(rbac::ResourceId::new(
-                        //             server_name.to_string(),
-                        //             r.uri.to_string(),
-                        //         )),
-                        //         &cel,
-                        //     )
-                        // })
-                        // TODO(https://github.com/agentgateway/agentgateway/issues/404) map this to the service name,
-                        // if we add support for multiple services.
-                        .collect_vec()
+                    resources.into_iter().collect_vec()
                 })
                 .collect_vec();
             Ok(ListResourcesResult { resources, next_cursor: None }.into())
@@ -169,25 +135,12 @@ impl Relay {
         Box::new(move |streams| {
             let resource_templates = streams
                 .into_iter()
-                .flat_map(|(server_name, s)| {
+                .flat_map(|(_server_name, s)| {
                     let resource_templates = match s {
                         ServerResult::ListResourceTemplatesResult(lrr) => lrr.resource_templates,
                         _ => vec![],
                     };
-                    resource_templates
-                        .into_iter()
-                        // .filter(|rt| {
-                        //     policies.validate(
-                        //         &rbac::ResourceType::Resource(rbac::ResourceId::new(
-                        //             server_name.to_string(),
-                        //             rt.uri_template.to_string(),
-                        //         )),
-                        //         &cel,
-                        //     )
-                        // })
-                        // TODO(https://github.com/agentgateway/agentgateway/issues/404) map this to the service name,
-                        // if we add support for multiple services.
-                        .collect_vec()
+                    resource_templates.into_iter().collect_vec()
                 })
                 .collect_vec();
             Ok(ListResourceTemplatesResult { resource_templates, next_cursor: None }.into())

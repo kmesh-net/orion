@@ -1,13 +1,14 @@
-use std::sync::Arc;
-
-use ::http::Uri;
 use ::http::header::CONTENT_TYPE;
+use http::Uri;
+use std::sync::Arc;
 
 use futures::StreamExt;
 use http::header::ACCEPT;
 use rmcp::serde_json;
 
 use crate::body::poly_body::PolyBody;
+use crate::listeners::http_connection_manager::{RequestHandler, TransactionHandler};
+use crate::transport::HttpChannel;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
@@ -16,34 +17,16 @@ use sse_stream::SseStream;
 use super::upstream::IncomingRequestContext;
 use crate::mcp::{AtomicOption, ClientError, Request, json};
 
-use crate::proxy::httpproxy::PolicyClient;
-use crate::store::BackendPolicies;
-use crate::types::agent::SimpleBackend;
-
-#[derive(Clone, Debug)]
+#[derive(Debug,Clone)]
 pub struct Client {
-    backend: Arc<SimpleBackend>,
+    http_channel: HttpChannel,
     uri: Uri,
-    client: PolicyClient,
-    policies: BackendPolicies,
     session_id: AtomicOption<String>,
 }
 
 impl Client {
-    pub fn new(
-        backend: SimpleBackend,
-        path: String,
-        client: PolicyClient,
-        policies: BackendPolicies,
-    ) -> Result<Self, orion_error::Error> {
-        let hp = backend.hostport();
-        Ok(Self {
-            backend: Arc::new(backend),
-            uri: ("http://".to_string() + &hp + path.as_str()).parse()?,
-            client,
-            policies,
-            session_id: Default::default(),
-        })
+    pub fn new(http_channel: HttpChannel, uri: Uri) -> Self {
+        Self { http_channel, uri, session_id: Default::default() }
     }
     pub fn set_session_id(&self, s: String) {
         self.session_id.store(Some(Arc::new(s)));
@@ -73,7 +56,7 @@ impl Client {
 
         ctx: &IncomingRequestContext,
     ) -> Result<StreamableHttpPostResponse, ClientError> {
-        let client = self.client.clone();
+        let client = self.http_channel.client.clone();
 
         let body = serde_json::to_vec(&message).map_err(ClientError::new)?;
 
@@ -88,8 +71,10 @@ impl Client {
         self.maybe_insert_session_id(&mut req)?;
 
         ctx.apply(&mut req);
+        let transaction_handler = TransactionHandler::default();
+        let resp = self.http_channel.to_response(transaction_handler, req).await?;
 
-        let resp = client
+        let resp = client.
             .call_with_default_policies(req, &self.backend, self.policies.clone())
             .await
             .map_err(ClientError::new)?;
