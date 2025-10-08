@@ -2,22 +2,26 @@ use ::http::header::CONTENT_TYPE;
 use http::Uri;
 use std::sync::Arc;
 
+use crate::body::body_with_metrics::BodyWithMetrics;
+use crate::body::poly_body::PolyBody;
+use crate::body::response_flags::BodyKind;
+use crate::listeners::http_connection_manager::{RequestHandler, TransactionHandler};
+use crate::transport::{
+    HttpChannel,
+    policy::{RequestContext, RequestExt},
+};
 use futures::StreamExt;
 use http::header::ACCEPT;
-use rmcp::serde_json;
-
-use crate::body::poly_body::PolyBody;
-use crate::listeners::http_connection_manager::{RequestHandler, TransactionHandler};
-use crate::transport::HttpChannel;
 use rmcp::model::{ClientJsonRpcMessage, ClientNotification, ClientRequest, JsonRpcRequest, ServerJsonRpcMessage};
+use rmcp::serde_json;
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
 use sse_stream::SseStream;
 
 use super::upstream::IncomingRequestContext;
-use crate::mcp::{AtomicOption, ClientError, Request, json};
+use crate::mcp::{AtomicOption, ClientError, json};
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Client {
     http_channel: HttpChannel,
     uri: Uri,
@@ -65,26 +69,25 @@ impl Client {
             .method(http::Method::POST)
             .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, [EVENT_STREAM_MIME_TYPE, JSON_MIME_TYPE].join(", "))
-            .body(PolyBody::from(body.as_slice()))
+            .body(BodyWithMetrics::new(BodyKind::Request, PolyBody::from(body), |a, b, c| {}))
             .map_err(ClientError::new)?;
 
         self.maybe_insert_session_id(&mut req)?;
 
         ctx.apply(&mut req);
         let transaction_handler = TransactionHandler::default();
-        let resp = self.http_channel.to_response(transaction_handler, req).await?;
-
-        let resp = client.
-            .call_with_default_policies(req, &self.backend, self.policies.clone())
+        let resp = self
+            .http_channel
+            .to_response(&transaction_handler, RequestExt::new(req))
             .await
-            .map_err(ClientError::new)?;
+            .map_err(|e| ClientError::General(e))?;
 
         if resp.status() == http::StatusCode::ACCEPTED {
             return Ok(StreamableHttpPostResponse::Accepted);
         }
 
         if !resp.status().is_success() {
-            return Err(ClientError::Status(Box::new(resp)));
+            return Err(ClientError::Status(resp.status()));
         }
 
         let content_type = resp.headers().get(CONTENT_TYPE);
@@ -163,7 +166,7 @@ impl Client {
         }
     }
 
-    fn maybe_insert_session_id(&self, req: &mut Request) -> Result<(), ClientError> {
+    fn maybe_insert_session_id(&self, req: &mut http::Request<BodyWithMetrics<PolyBody>>) -> Result<(), ClientError> {
         if let Some(session_id) = self.session_id.load().clone() {
             req.headers_mut().insert(HEADER_SESSION_ID, session_id.as_ref().parse().map_err(ClientError::new)?);
         }

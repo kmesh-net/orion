@@ -606,10 +606,7 @@ fn maybe_rewrite_version(
     request
 }
 
-fn maybe_update_host(
-    mut request: Request<BodyWithMetrics<PolyBody>>,
-    version: Codec,
-) -> Result<Request<BodyWithMetrics<PolyBody>>> {
+fn maybe_update_host<B>(mut request: Request<B>, version: Codec) -> Result<Request<B>> {
     let request_version = request.version();
     match (request_version, version) {
         (Version::HTTP_11, Codec::Http2) => {
@@ -630,10 +627,7 @@ fn maybe_update_host(
     Ok(request)
 }
 
-fn maybe_normalize_uri(
-    mut request: Request<BodyWithMetrics<PolyBody>>,
-    is_tls: bool,
-) -> crate::Result<Request<BodyWithMetrics<PolyBody>>> {
+fn maybe_normalize_uri<T>(mut request: Request<T>, is_tls: bool) -> crate::Result<Request<BodyWithMetrics<PolyBody>>> {
     let uri = request.uri();
     if !is_absolute(uri) {
         if let Some(host_header) = request.headers().get("host") {

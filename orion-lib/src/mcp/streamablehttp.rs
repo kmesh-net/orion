@@ -77,7 +77,7 @@ impl StreamableHttpService {
         }
 
         let (part, body) = request.into_parts();
-        let message = match json::from_body::<ClientJsonRpcMessage>(body).await {
+        let message = match json::from_body::<ClientJsonRpcMessage>(body.inner).await {
             Ok(b) => b,
             Err(e) => {
                 return http_error(

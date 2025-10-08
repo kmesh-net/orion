@@ -184,7 +184,7 @@ impl Relay {
     pub async fn send_fanout_get(&self, ctx: IncomingRequestContext) -> Result<Response, UpstreamError> {
         let mut streams = Vec::new();
         for (name, con) in self.upstreams.iter_named() {
-            streams.push((name, con.get_event_stream(&ctx).await?));
+            streams.push((name.to_owned(), con.get_event_stream(&ctx).await?));
         }
 
         let ms = mergestream::MergeStream::new_without_merge(streams);
@@ -199,7 +199,7 @@ impl Relay {
         let id = r.id.clone();
         let mut streams = Vec::new();
         for (name, con) in self.upstreams.iter_named() {
-            streams.push((name, con.generic_stream(r.clone(), &ctx).await?));
+            streams.push((name.to_owned(), con.generic_stream(r.clone(), &ctx).await?));
         }
 
         let ms = mergestream::MergeStream::new(streams, id.clone(), merge);

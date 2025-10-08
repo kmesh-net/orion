@@ -18,24 +18,24 @@ use thiserror::Error;
 
 use arc_swap::{ArcSwap, ArcSwapOption};
 
-use crate::PolyBody;
+use crate::{PolyBody, body::body_with_metrics::BodyWithMetrics};
 
 type AtomicOption<T> = Arc<ArcSwapOption<T>>;
 type Atomic<T> = Arc<ArcSwap<T>>;
 pub(crate) type Response = http::Response<PolyBody>;
-pub(crate) type Request = http::Request<PolyBody>;
+pub(crate) type Request = http::Request<BodyWithMetrics<PolyBody>>;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
-    #[error("http request failed with code: {}", .0.status())]
-    Status(Box<Response>),
+    #[error("http request failed with code: {}", .0)]
+    Status(http::StatusCode),
     #[error("http request failed: {0}")]
-    General(Arc<orion_error::Error>),
+    General(orion_error::Error),
 }
 
 impl ClientError {
     pub fn new(error: impl Into<BoxError>) -> Self {
-        Self::General(Arc::new(orion_error::Error::from(error.into())))
+        Self::General(orion_error::Error::from(error.into()))
     }
 }
 

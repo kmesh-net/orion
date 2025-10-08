@@ -106,7 +106,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
             let channel = v.unwrap();
             match process_channel(
                 self,
-                (p.clone(), PolyBody::from(data.clone())),
+                (p.clone(), BodyWithMetrics::new(BodyKind::Request, PolyBody::from(data.clone()), |_, _, _| {})),
                 &channel,
                 route_name,
                 &route_match,
@@ -118,20 +118,23 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &MCPRo
                 Err(e) => return Err(e),
             }
         }
-        let original_request = Request::from_parts(p.clone(), PolyBody::from(data.clone()));
+        let original_request = Request::from_parts(
+            p.clone(),
+            BodyWithMetrics::new(BodyKind::Request, PolyBody::from(data.clone()), |_, _, _| {}),
+        );
         let app = mcp::App::new();
         Ok(app.serve(original_request, channel_request_map).await)
     }
 }
 
-fn process_channel<'a>(
+fn process_channel<'a, B>(
     mcp_route: &MCPRouteAction,
-    downstream_request: (Parts, PolyBody),
+    downstream_request: (Parts, B),
     svc_channel: &HttpChannel,
     route_name: &str,
     route_match: &RouteMatchResult,
     trans_handler: &TransactionHandler,
-) -> Result<Request<PolyBody>> {
+) -> Result<Request<B>> {
     if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
         ctx.lock().loggers.with_context(&UpstreamContext {
             authority: Some(&svc_channel.upstream_authority),
@@ -143,7 +146,7 @@ fn process_channel<'a>(
     let (mut parts, body) = downstream_request;
     let ver = parts.version;
 
-    let upstream_request: Request<PolyBody> = {
+    let upstream_request = {
         let path_and_query_replacement = if let Some(rewrite) = &mcp_route.rewrite {
             rewrite.apply(parts.uri.path_and_query(), &route_match)?
         } else {
