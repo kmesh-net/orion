@@ -69,6 +69,15 @@ pub struct HttpConnectionManager {
     pub tracing: Option<TracingConfig>,
 }
 
+impl HttpConnectionManager {
+    pub fn get_dynamic_route_name(&self) -> Option<&CompactString> {
+        match &self.route_specifier {
+            RouteSpecifier::Rds(rds) => Some(&rds.route_config_name),
+            RouteSpecifier::RouteConfig(_) => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub enum CodecType {
     #[serde(rename = "auto")]

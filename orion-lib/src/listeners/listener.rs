@@ -128,6 +128,10 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
 }
 
 impl ListenerFactory {
+    pub fn get_name(&self) -> &'static str {
+        self.listener.name
+    }
+
     pub fn make_listener(
         self,
         route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
