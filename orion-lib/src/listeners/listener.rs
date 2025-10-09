@@ -16,7 +16,9 @@
 //
 
 use super::{
+    drain_signaling::DefaultConnectionHandler,
     filterchain::{ConnectionHandler, FilterchainBuilder, FilterchainType},
+    http_connection_manager::HttpConnectionManager,
     listeners_manager::TlsContextChange,
 };
 use crate::{
@@ -43,7 +45,7 @@ use std::{
     fmt::Debug,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::Instant,
@@ -53,6 +55,8 @@ use tokio::{
     sync::broadcast::{self},
 };
 use tracing::{debug, info, warn};
+
+static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 struct PartialListener {
@@ -158,6 +162,7 @@ impl ListenerFactory {
             with_tlv_listener_filter,
             route_updates_receiver,
             secret_updates_receiver,
+            drain_handler: Some(Arc::new(DefaultConnectionHandler::new())),
         })
     }
 }
@@ -181,6 +186,7 @@ pub struct Listener {
     with_tlv_listener_filter: bool,
     route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
     secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
+    drain_handler: Option<Arc<DefaultConnectionHandler>>,
 }
 
 impl Listener {
@@ -201,6 +207,7 @@ impl Listener {
             with_tlv_listener_filter: false,
             route_updates_receiver: route_rx,
             secret_updates_receiver: secret_rx,
+            drain_handler: None,
         }
     }
 
@@ -229,6 +236,7 @@ impl Listener {
             with_tlv_listener_filter,
             route_updates_receiver,
             secret_updates_receiver,
+            drain_handler,
         } = self;
         match address {
             ListenerAddress::Socket(local_address) => {
@@ -246,6 +254,7 @@ impl Listener {
                     with_tlv_listener_filter,
                     route_updates_receiver,
                     secret_updates_receiver,
+                    drain_handler,
                 )
                 .await
             },
@@ -274,6 +283,7 @@ impl Listener {
         with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
+        drain_handler: Option<Arc<DefaultConnectionHandler>>,
     ) -> Error {
         let mut filter_chains = Arc::new(filter_chains);
         let listener_name = name;
@@ -294,6 +304,7 @@ impl Listener {
 
                             let filter_chains = Arc::clone(&filter_chains);
                             let proxy_protocol_config = proxy_protocol_config.clone();
+                            let drain_handler_clone = drain_handler.clone();
                             // spawn a separate task for handling this client<->proxy connection
                             // we spawn before we know if we want to process this route because we might need to run the tls_inspector which could
                             // stall if the client is slow to send the ClientHello and end up blocking the acceptance of new connections
@@ -303,7 +314,7 @@ impl Listener {
                             // or pick a specific filter_chain to run, or we could simply if-else on the with_tls_inspector variable.
                             let local_address = listener.local_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().expect("Failed to parse fallback address"));
                             let start = Instant::now();
-                            tokio::spawn(Self::process_listener_update(listener_name, filter_chains, with_tls_inspector, proxy_protocol_config, with_tlv_listener_filter, local_address, peer_addr, Box::new(stream), start));
+                            tokio::spawn(Self::process_listener_update(name, filter_chains, with_tls_inspector, proxy_protocol_config, with_tlv_listener_filter, local_address, peer_addr, Box::new(stream), start, drain_handler_clone));
                         },
                         Err(e) => {warn!("failed to accept tcp connection: {e}");}
                     }
@@ -467,19 +478,28 @@ impl Listener {
         peer_addr: SocketAddr,
         mut stream: AsyncStream,
         start_instant: std::time::Instant,
+        drain_handler: Option<Arc<DefaultConnectionHandler>>,
     ) -> Result<()> {
         let shard_id = std::thread::current().id();
+        let connection_id =
+            format!("{}:{}:{}", local_address, peer_addr, CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed));
+
+        debug!("New connection {} established on listener {}", connection_id, listener_name);
 
         let ssl = AtomicBool::new(false);
+        let connection_id_for_cleanup = connection_id.clone();
+        let listener_name_for_cleanup = listener_name;
+
         defer! {
-                            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
-            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
+            debug!("Connection {} closed on listener {}", connection_id_for_cleanup, listener_name_for_cleanup);
+            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name_for_cleanup)]);
+            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name_for_cleanup)]);
             if ssl.load(Ordering::Relaxed) {
-                with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
+                with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name_for_cleanup)]);
             }
             let ms = u64::try_from(start_instant.elapsed().as_millis())
                 .unwrap_or(u64::MAX);
-            with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name)]);
+            with_histogram!(listeners::DOWNSTREAM_CX_LENGTH_MS, record, ms, &[KeyValue::new("listener", listener_name_for_cleanup)]);
         }
 
         let server_name = if with_tls_inspector {
@@ -554,6 +574,10 @@ impl Listener {
         let selected_filterchain =
             Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref())?;
 
+        if let Some(_drain_handler) = &drain_handler {
+            let protocol = HttpConnectionManager::extract_connection_protocol(&downstream_metadata);
+            DefaultConnectionHandler::register_connection(connection_id.clone(), protocol, peer_addr);
+        }
         if let Some(filterchain) = selected_filterchain {
             debug!(
                 "{listener_name} : mapping connection from {peer_addr} to filter chain {}",
