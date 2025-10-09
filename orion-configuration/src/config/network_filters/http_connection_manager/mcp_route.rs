@@ -17,7 +17,7 @@
 
 //todo: impl serialize, deserialize on DirectResponsebody to prepare the bytes at deserialization
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use serde::{Deserialize, Serialize};
 

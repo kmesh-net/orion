@@ -13,10 +13,10 @@ use std::sync::Arc;
 
 use orion_error::Error as BoxError;
 
-pub use router::App;
-use thiserror::Error;
-
 use arc_swap::{ArcSwap, ArcSwapOption};
+pub use router::App;
+pub use session::SessionManager;
+use thiserror::Error;
 
 use crate::{PolyBody, body::body_with_metrics::BodyWithMetrics};
 

@@ -1,6 +1,7 @@
 use ::http::header::CONTENT_TYPE;
 use http::Uri;
 use http_body_util::BodyExt;
+use itertools::Itertools;
 use std::sync::Arc;
 
 use crate::body::body_with_metrics::BodyWithMetrics;
@@ -91,6 +92,10 @@ impl Client {
             resp.headers().get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok()).map(std::string::ToString::to_string);
 
         match content_type {
+            Some(ct) if ct.as_bytes().starts_with(EVENT_STREAM_MIME_TYPE.as_bytes()) => {
+                let event_stream = SseStream::from_byte_stream(resp.into_body().into_data_stream()).boxed();
+                Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
+            },
             Some(ct) if ct.as_bytes().starts_with(JSON_MIME_TYPE.as_bytes()) => {
                 let message =
                     json::from_body::<ServerJsonRpcMessage>(resp.into_body()).await.map_err(ClientError::new)?;

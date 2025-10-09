@@ -43,6 +43,7 @@ use orion_configuration::config::GenericError;
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
+use rmcp::transport::streamable_http_server::SessionManager;
 use std::sync::atomic::AtomicUsize;
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::{
@@ -79,6 +80,7 @@ use tracing::debug;
 use upgrades as upgrade_utils;
 
 use crate::event_error::{EventKind, UpstreamTransportEventError};
+
 use crate::{
     access_log::{AccessLogMessage, Target, is_access_log_enabled, log_access, log_access_reserve_balanced},
     body::{
@@ -143,6 +145,7 @@ impl HttpConnectionManagerBuilder {
                 Some(tracing) => HttpTracer::new().with_config(tracing),
                 None => HttpTracer::new(),
             },
+            mcp_session_manager: Arc::new(crate::mcp::SessionManager::default()),
         })
     }
 
@@ -336,6 +339,8 @@ pub struct HttpConnectionManager {
     xff_settings: XffSettings,
     request_id_handler: RequestIdManager,
     pub http_tracer: HttpTracer,
+
+    pub mcp_session_manager: Arc<crate::mcp::SessionManager>,
 }
 
 impl fmt::Display for HttpConnectionManager {
@@ -811,7 +816,7 @@ impl
                         )
                         .await
                 },
-                Action::McpRoute(route) => {
+                Action::McpRoute(route) => {                    
                     route
                         .to_response(
                             trans_handler,

@@ -1,0 +1,72 @@
+runtime:
+  num_cpus: 2
+  num_runtimes: 2
+  event_interval: 31 # estimated optimal value
+  global_queue_interval: null # default
+  max_io_events_per_tick: null # default
+
+logging:
+  log_level: "debug"
+#  log_directory: "."
+#  log_file: "orion.log"
+
+envoy_bootstrap:
+  static_resources:
+    listeners:
+      - name: listener_http
+        address:
+          socket_address: { address: 0.0.0.0, port_value: 9000 }
+        filterChains:
+          - name: filter_chain_http
+            filter_chain_match:
+              destination_port: 9000
+            filters:
+              - name: http_gateway
+                typedConfig:
+                  "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                  statPrefix: ingress_http
+                  codecType: HTTP1
+                  httpFilters:
+                    - name: envoy.filters.http.router
+                      typedConfig:
+                        "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                        start_child_span: false
+                  routeConfig:
+                    name: basic_http_route
+                    virtual_hosts:
+                      - name: backend
+                        domains: ["*"]
+                        routes:
+                          - match:
+                              prefix: "/mcp"
+                            mcp_route:
+                              cluster_mappings:
+                                my-local-agent1.dn: cluster_http_1
+                                my-local-agent2.dn: cluster_http_2
+
+    clusters:
+      - name: cluster_http_1
+        connect_timeout: 0.25s
+        type: STATIC
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: 127.0.0.1
+                        port_value: 8000
+
+      - name: cluster_http_2
+        connect_timeout: 0.25s
+        type: STATIC
+        lb_policy: ROUND_ROBIN
+        load_assignment:
+          endpoints:
+            - lb_endpoints:
+                - endpoint:
+                    address:
+                      socket_address:
+                        address: 127.0.0.1
+                        port_value: 8000

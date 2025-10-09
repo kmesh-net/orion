@@ -1,6 +1,10 @@
-use crate::{body::response_flags::BodyKind, mcp, transport::HttpChannel};
+use crate::{body::response_flags::BodyKind, listeners::http_connection_manager, mcp, transport::HttpChannel};
 use ahash::{HashMap, HashMapExt};
-use http::{Request, Response, Uri, request::Parts, uri::Parts as UriParts};
+use http::{
+    Request, Response, Uri,
+    request::Parts,
+    uri::{Authority, Parts as UriParts},
+};
 use http_body_util::BodyExt;
 use orion_configuration::config::network_filters::http_connection_manager::{
     mcp_route::McpRouteAction, route::RouteMatchResult,
@@ -25,7 +29,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
     async fn to_response(
         self,
         trans_handler: &TransactionHandler,
-        (request, _connection_manager): (MatchedRequest<'a>, &HttpConnectionManager),
+        (request, connection_manager): (MatchedRequest<'a>, &HttpConnectionManager),
     ) -> Result<Response<PolyBody>> {
         let MatchedRequest {
             request: downstream_request,
@@ -36,35 +40,39 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
             websocket_enabled_by_default: _,
         } = request;
 
+        let downstream_authority = if let Some(authority) = downstream_request.uri().authority() {
+            authority.clone()
+        } else if let Some(host_header) = downstream_request.headers().get(http::header::HOST)
+            && let Ok(host) = host_header.to_str()
+        {
+            host.parse::<Authority>()?
+        } else {
+            return Err(orion_error::Error::from(
+                "Problem when processing channels can't find authority from uri nor headers".to_owned(),
+            ));
+        };
+
         let channels = self
             .cluster_mappings
             .iter()
             .map(|(name, cluster_specifier)| {
-                if let Some(authority) = downstream_request.uri().authority()
-                    && cluster_specifier.name() == authority.host()
-                {
-                    if let Some(cluster_id) = clusters_manager::resolve_cluster(cluster_specifier) {
-                        let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
-                        let hash_state = HashState::new(&[], &downstream_request, remote_address);
-                        if let Ok(routing_context) =
-                            RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))
-                        {
-                            (name, clusters_manager::get_http_connection(cluster_id, routing_context))
-                        } else {
-                            (name, Err(orion_error::Error::from("Failed to create routing context".to_owned())))
-                        }
+                //if downstream_authority.host() == cluster_specifier.name() {
+                if let Some(cluster_id) = clusters_manager::resolve_cluster(cluster_specifier) {
+                    let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
+                    let hash_state = HashState::new(&[], &downstream_request, remote_address);
+                    if let Ok(routing_context) =
+                        RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))
+                    {
+                        (name, clusters_manager::get_http_connection(cluster_id, routing_context))
                     } else {
-                        (name, Err(orion_error::Error::from("Failed to resolve cluster from specifier".to_owned())))
+                        (name, Err(orion_error::Error::from("Failed to create routing context".to_owned())))
                     }
                 } else {
-                    (
-                        name,
-                        Err(orion_error::Error::from(format!(
-                            "Failed to find cluster for {:?}",
-                            downstream_request.uri().authority()
-                        ))),
-                    )
+                    (name, Err(orion_error::Error::from("Failed to resolve cluster from specifier".to_owned())))
                 }
+                // } else {
+                //     (name, Err(orion_error::Error::from(format!("Failed to find cluster for {downstream_authority}"))))
+                // }
             })
             .collect::<HashMap<_, _>>();
 
@@ -106,7 +114,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
             p.clone(),
             BodyWithMetrics::new(BodyKind::Request, PolyBody::from(data.clone()), |_, _, _| {}),
         );
-        let app = mcp::App::new();
+        let app = mcp::App::new_with_session_manager(connection_manager.mcp_session_manager.clone());
         Ok(app.serve(original_request, channel_request_map).await)
     }
 }

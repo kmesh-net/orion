@@ -27,7 +27,11 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
-        let session_manager: Arc<SessionManager> = Arc::new(Default::default());
+        let session_manager: Arc<SessionManager> = Arc::new(SessionManager::default());
+        Self { session_manager }
+    }
+
+    pub fn new_with_session_manager(session_manager: Arc<SessionManager>) -> Self {
         Self { session_manager }
     }
 
