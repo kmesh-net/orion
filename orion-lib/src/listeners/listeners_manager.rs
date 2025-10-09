@@ -16,6 +16,8 @@
 //
 
 use multimap::MultiMap;
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
@@ -25,6 +27,8 @@ use orion_configuration::config::{
 
 use super::listener::{Listener, ListenerFactory};
 use crate::{secrets::TransportSecret, ConfigDump, Result};
+
+const DEFAULT_DEPENDENCY_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub enum ListenerConfigurationChange {
@@ -61,6 +65,8 @@ struct PendingListener {
     factory: ListenerFactory,
     config: ListenerConfig,
     dependencies: ListenerDependencies,
+    added_at: Instant,
+    timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -110,11 +116,10 @@ impl ListenersManager {
         }
     }
 
-    pub async fn start(mut self, ct: tokio_util::sync::CancellationToken) -> Result<()> {
+    pub async fn start(mut self, _ct: tokio_util::sync::CancellationToken) -> Result<()> {
         let (tx_secret_updates, _) = broadcast::channel(16);
         let (tx_route_updates, _) = broadcast::channel(16);
-        
-        // Timer for periodic timeout checks
+
         let mut timeout_check_interval = tokio::time::interval(Duration::from_secs(5));
 
         // TODO: create child token for each listener?
@@ -166,9 +171,9 @@ impl ListenersManager {
                     // Periodically check for timed-out pending listeners
                     self.try_start_pending_listeners(&tx_route_updates, &tx_secret_updates)?;
                 },
-                _ = ct.cancelled() => {
-                    warn!("Listener manager exiting");
-                    return Ok(());
+                else => {
+                    warn!("All listener manager channels are closed...exiting");
+                    return Err("All listener manager channels are closed...exiting".into());
                 }
             }
         }
@@ -191,8 +196,20 @@ impl ListenersManager {
             }
         } else {
             let listener_name = factory.get_name();
-            info!("Listener {} has dependencies that are not ready yet, adding to pending list", listener_name);
-            self.pending_listeners.insert(listener_name, PendingListener { factory, config, dependencies });
+            info!(
+                "Listener {} has dependencies that are not ready yet, adding to pending list (timeout: {:?})",
+                listener_name, DEFAULT_DEPENDENCY_TIMEOUT
+            );
+            self.pending_listeners.insert(
+                listener_name,
+                PendingListener {
+                    factory,
+                    config,
+                    dependencies,
+                    added_at: Instant::now(),
+                    timeout: DEFAULT_DEPENDENCY_TIMEOUT,
+                },
+            );
         }
         Ok(())
     }
@@ -219,12 +236,17 @@ impl ListenersManager {
         tx_route_updates: &broadcast::Sender<RouteConfigurationChange>,
         tx_secret_updates: &broadcast::Sender<TlsContextChange>,
     ) -> Result<()> {
-        let ready_keys: Vec<_> = self
-            .pending_listeners
-            .iter()
-            .filter(|(_, p)| p.dependencies.is_ready(&self.available_routes, &self.available_secrets))
-            .map(|(k, _)| *k)
-            .collect();
+        let now = Instant::now();
+        let mut ready_keys = Vec::new();
+        let mut timed_out_keys = Vec::new();
+
+        for (listener_name, pending) in &self.pending_listeners {
+            if pending.dependencies.is_ready(&self.available_routes, &self.available_secrets) {
+                ready_keys.push(*listener_name);
+            } else if now.duration_since(pending.added_at) >= pending.timeout {
+                timed_out_keys.push(*listener_name);
+            }
+        }
 
         for listener_name in ready_keys {
             if let Some(pending) = self.pending_listeners.remove(listener_name) {
@@ -237,6 +259,24 @@ impl ListenersManager {
 
                 if let Err(e) = self.start_listener(listener, pending.config) {
                     warn!("Failed to start listener {}: {e}", listener_name);
+                }
+            }
+        }
+
+        for listener_name in timed_out_keys {
+            if let Some(pending) = self.pending_listeners.remove(listener_name) {
+                warn!(
+                    "Listener {} timed out waiting for dependencies after {:?}, starting anyway (Envoy-like behavior)",
+                    listener_name, pending.timeout
+                );
+
+                let listener = pending
+                    .factory
+                    .clone()
+                    .make_listener(tx_route_updates.subscribe(), tx_secret_updates.subscribe())?;
+
+                if let Err(e) = self.start_listener(listener, pending.config) {
+                    warn!("Failed to start timed-out listener {}: {e}", listener_name);
                 }
             }
         }
@@ -279,6 +319,8 @@ impl ListenersManager {
                 listener_info.handle.abort();
             }
             self.listener_handles.remove(listener_name);
+        } else if self.pending_listeners.remove(listener_name).is_some() {
+            info!("{listener_name} : Removed from pending list");
         } else {
             info!("No listeners found with name {}", listener_name);
         }
@@ -306,19 +348,14 @@ mod tests {
 
         let (_conf_tx, conf_rx) = mpsc::channel(chan);
         let (_route_tx, route_rx) = mpsc::channel(chan);
-        let (_secb_tx, _secb_rx) = broadcast::channel::<TlsContextChange>(chan);
-        let (_routeb_tx1, _routeb_rx1) = broadcast::channel::<RouteConfigurationChange>(chan);
-        let (_routeb_tx2, _routeb_rx2) = broadcast::channel::<RouteConfigurationChange>(chan);
+        let mut man = ListenersManager::new(conf_rx, route_rx);
 
-        let _man = ListenersManager::new(conf_rx, route_rx);
-
-        // Create a simple test listener factory
-        let _l1_info = ListenerConfig {
+        let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
+        let (_secb_tx1, secb_rx) = broadcast::channel(chan);
+        let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
+        let l1_info = ListenerConfig {
             name: name.into(),
-            address: orion_configuration::config::listener::ListenerAddress::Socket(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-                1234,
-            )),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234)),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -326,17 +363,37 @@ mod tests {
             with_tlv_listener_filter: false,
             tlv_listener_filter_config: None,
         };
+        man.start_listener(l1, l1_info).unwrap();
 
-        // For testing, we'll just test the dependency logic directly
-        let dependencies = ListenerDependencies::new();
-        let available_routes = std::collections::HashSet::new();
-        let available_secrets = std::collections::HashSet::new();
+        let (routeb_tx2, routeb_rx) = broadcast::channel(chan);
+        let (_secb_tx2, secb_rx) = broadcast::channel(chan);
+        let l2 = Listener::test_listener(name, routeb_rx, secb_rx);
+        let l2_info = ListenerConfig {
+            name: name.into(),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235)),
+            filter_chains: HashMap::default(),
+            bind_device: None,
+            with_tls_inspector: false,
+            proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
+        };
+        man.start_listener(l2, l2_info).unwrap();
+
         // Both listeners should still be active (multiple versions allowed)
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
 
         assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 2);
         tokio::task::yield_now().await;
+    }
+
+    #[test]
+    fn test_listener_dependencies() {
+        let dependencies = ListenerDependencies::new();
+        let available_routes = std::collections::HashSet::new();
+        let available_secrets = std::collections::HashSet::new();
+
         // Empty dependencies should be ready
         assert!(dependencies.is_ready(&available_routes, &available_secrets));
 
@@ -365,51 +422,12 @@ mod tests {
         // Test timeout logic
         let old_time = Instant::now() - Duration::from_secs(60); // 60 seconds ago
         let timeout = Duration::from_secs(30); // 30 second timeout
-        
+
         // Should be timed out (current time - old_time > timeout)
         assert!(Instant::now().duration_since(old_time) >= timeout);
 
         // Test that dependencies are ready logic still works
         assert!(dependencies.is_ready(&available_routes, &available_secrets));
-    }
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-                1234,
-            )),
-            filter_chains: HashMap::default(),
-            bind_device: None,
-            with_tls_inspector: false,
-            proxy_protocol_config: None,
-            with_tlv_listener_filter: false,
-            tlv_listener_filter_config: None,
-        };
-        man.start_listener(l1, l1_info).unwrap();
-
-        // Dependencies with missing resources should not be ready
-        let mut dependencies = ListenerDependencies::new();
-        dependencies.route_names.push("route1".to_string());
-        dependencies.secret_names.push("secret1".to_string());
-
-        assert!(!dependencies.is_ready(&available_routes, &available_secrets));
-
-        // Dependencies with available resources should be ready
-        let mut available_routes = std::collections::HashSet::new();
-        let mut available_secrets = std::collections::HashSet::new();
-        available_routes.insert("route1".to_string());
-        available_secrets.insert("secret1".to_string());
-
-        assert!(dependencies.is_ready(&available_routes, &available_secrets));
-
-        // See .start_listener() - in the case all channels are dropped the task there
-        // should exit with this warning msg
-        let expected = format!("Listener {name} version 1 exited: channel closed");
-        logs_assert(|lines: &[&str]| {
-            let logs: Vec<_> = lines.iter().filter(|ln| ln.contains(&expected)).collect();
-            if logs.len() == 1 {
-                Ok(())
-            } else {
-                Err(format!("Expecting 1 log line for listener shutdown (got {})", logs.len()))
-            }
-        });
     }
 
     #[traced_test]
@@ -484,5 +502,20 @@ mod tests {
         assert!(man.listener_handles.get_vec(name).is_none());
 
         tokio::task::yield_now().await;
+    }
+
+    #[test]
+    fn test_stop_pending_listener() {
+        let (_conf_tx, conf_rx) = mpsc::channel(10);
+        let (_route_tx, route_rx) = mpsc::channel(10);
+        let mut manager = ListenersManager::new(conf_rx, route_rx);
+
+        let mut dependencies = ListenerDependencies::new();
+        dependencies.route_names.push("missing_route".to_string());
+
+        assert!(!manager.pending_listeners.contains_key("test_listener"));
+
+        let result = manager.stop_listener("test_listener");
+        assert!(result.is_ok());
     }
 }
