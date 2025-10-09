@@ -23,6 +23,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::listeners::listener::Listener;
+use orion_configuration::config::listener::ListenerAddress;
 use orion_configuration::config::Listener as ListenerConfig;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -191,7 +192,7 @@ mod tests {
 
         let config = ListenerConfig {
             name: "test-listener".to_string().into(),
-            address: "127.0.0.1:8080".parse().unwrap(),
+            address: ListenerAddress::Socket("127.0.0.1:8080".parse().unwrap()),
             filter_chains: Default::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -216,7 +217,7 @@ mod tests {
         let listener2 = Listener::test_listener("test-listener", route_rx2, sec_rx2);
 
         let mut config2 = config;
-        config2.address = "127.0.0.1:8081".parse().unwrap();
+        config2.address = ListenerAddress::Socket("127.0.0.1:8081".parse().unwrap());
 
         manager.handle_lds_update(listener2, config2).await.unwrap();
 

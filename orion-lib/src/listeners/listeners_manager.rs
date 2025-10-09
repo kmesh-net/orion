@@ -29,7 +29,7 @@ use tokio::time::interval;
 use tracing::{debug, info, warn};
 
 use orion_configuration::config::{
-    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::{
@@ -1077,11 +1077,11 @@ impl ListenersManager {
 
             let existing_versions_to_stop: Vec<_> = Self::find_active_versions(&existing_versions)
                 .into_iter()
-                .map(|info| (info.version, info.listener_conf.address))
+                .map(|info| (info.version, info.listener_conf.address.clone()))
                 .collect();
 
             for (old_version, old_addr) in existing_versions_to_stop {
-                info!("Stopping listener {} version {} (config update) at {}", listener_name, old_version, old_addr);
+                info!("Stopping listener {} version {} (config update) at {:?}", listener_name, old_version, old_addr);
                 if let Err(e) = self.stop_listener_version(&listener_name, old_version) {
                     warn!(
                         "Failed to stop listener {} version {} during config update: {}",
@@ -1144,7 +1144,7 @@ impl ListenersManager {
             for existing_info in existing_versions.iter_mut() {
                 if existing_info.listener_conf.address == new_config.address && !existing_info.is_draining() {
                     warn!(
-                        "Address conflict: listener {} version {} at {} conflicts with new configuration",
+                        "Address conflict: listener {} version {} at {:?} conflicts with new configuration",
                         listener_name, existing_info.version, new_config.address
                     );
 
@@ -1389,7 +1389,8 @@ mod tests {
     };
 
     use super::*;
-    use orion_configuration::config::{Listener as ListenerConfig, ListenerAddress};
+    use orion_configuration::config::listener::ListenerAddress;
+    use orion_configuration::config::Listener as ListenerConfig;
     use tokio::sync::Mutex;
     use tracing_test::traced_test;
 
@@ -1455,7 +1456,7 @@ mod tests {
         let (_secb_tx3, secb_rx) = broadcast::channel(chan);
         let l3 = Listener::test_listener(name, routeb_rx, secb_rx);
         let mut l3_info = l1_info;
-        l3_info.address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5678); // Different port
+        l3_info.address = ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 5678)); // Different port
         man.start_listener(l3, l3_info).unwrap();
         tokio::task::yield_now().await;
 
@@ -1492,7 +1493,7 @@ mod tests {
         let (_sec_tx2, sec_rx2) = broadcast::channel(chan);
         let listener2 = Listener::test_listener(name, route_rx2, sec_rx2);
         let mut config2 = config1.clone();
-        config2.address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20000);
+        config2.address = ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 20000));
 
         man.start_listener(listener2, config2).unwrap();
         assert!(route_tx2.send(RouteConfigurationChange::Removed("cluster_two".into())).is_ok());
@@ -1761,7 +1762,7 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx1, secb_rx1);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: shared_address,
+            address: ListenerAddress::Socket(shared_address),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: false,
@@ -1784,7 +1785,7 @@ mod tests {
         let l2 = Listener::test_listener(name, routeb_rx2, secb_rx2);
         let l2_info = ListenerConfig {
             name: name.into(),
-            address: shared_address,
+            address: ListenerAddress::Socket(shared_address),
             filter_chains: HashMap::default(),
             bind_device: None,
             with_tls_inspector: true,

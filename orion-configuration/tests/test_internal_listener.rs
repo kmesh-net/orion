@@ -52,6 +52,8 @@ fn test_internal_listener_serialization() {
         proxy_protocol_config: None,
         with_tlv_listener_filter: false,
         tlv_listener_filter_config: None,
+        drain_type: orion_configuration::config::listener::DrainType::Default,
+        version_info: None,
     };
 
     let yaml = serde_yaml::to_string(&listener).unwrap();
@@ -146,6 +148,8 @@ fn test_complete_internal_listener_config() {
         proxy_protocol_config: None,
         with_tlv_listener_filter: false,
         tlv_listener_filter_config: None,
+        drain_type: orion_configuration::config::listener::DrainType::Default,
+        version_info: None,
     };
 
     let internal_addr = InternalEndpointAddress {

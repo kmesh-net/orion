@@ -234,8 +234,8 @@ impl Listener {
             with_tls_inspector,
             proxy_protocol_config,
             with_tlv_listener_filter,
-            mut route_updates_receiver,
-            mut secret_updates_receiver,
+            route_updates_receiver,
+            secret_updates_receiver,
             drain_handler,
         } = self;
         match address {
@@ -254,6 +254,7 @@ impl Listener {
                     with_tlv_listener_filter,
                     route_updates_receiver,
                     secret_updates_receiver,
+                    drain_handler,
                 )
                 .await
             },
@@ -282,6 +283,7 @@ impl Listener {
         with_tlv_listener_filter: bool,
         mut route_updates_receiver: broadcast::Receiver<RouteConfigurationChange>,
         mut secret_updates_receiver: broadcast::Receiver<TlsContextChange>,
+        drain_handler: Option<Arc<DefaultConnectionHandler>>,
     ) -> Error {
         let mut filter_chains = Arc::new(filter_chains);
         let listener_name = name;
@@ -568,9 +570,6 @@ impl Listener {
         } else {
             downstream_metadata
         };
-
-        let selected_filterchain =
-            Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref())?;
 
         let selected_filterchain =
             Self::select_filterchain(&filter_chains, &downstream_metadata, server_name.as_deref())?;
