@@ -19,10 +19,10 @@
 
 use orion_configuration::config::{Config, Runtime};
 use orion_configuration::options::Options;
-use orion_lib::RUNTIME_CONFIG;
 use orion_lib::configuration::get_listeners_and_clusters;
+use orion_lib::{RUNTIME_CONFIG, SessionManager};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tracing_test::traced_test;
 
 /// we cannot run the tests concurrently because some of them rely on
@@ -45,10 +45,11 @@ where
 fn check_config_file(file_path: &str) -> Result<(), orion_error::Error> {
     // file_path is relative to crate root
     let bootstrap = Config::new(&Options::from_path_to_envoy(file_path))?.bootstrap;
+    let session_manager = Arc::new(SessionManager::default());
     // but anciliary files are stored in workspace root - adjust PWD
     let d =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").canonicalize().expect("Failed to get cargo crate root");
-    with_current_dir(&d, || get_listeners_and_clusters(bootstrap).map(|_| ()))
+    with_current_dir(&d, || get_listeners_and_clusters(bootstrap, &session_manager).map(|_| ()))
 }
 
 #[traced_test]

@@ -15,6 +15,8 @@
 //
 //
 
+use std::sync::Arc;
+
 use orion_configuration::{config::Config, options::Options};
 use orion_lib::{RUNTIME_CONFIG, Result};
 
@@ -28,7 +30,7 @@ mod xds_configurator;
 
 pub fn run() -> Result<()> {
     let mut tracing_manager = proxy_tracing::TracingManager::new();
-
+    let mcp_session_manager = Arc::new(orion_lib::SessionManager::default());
     let options = Options::parse_options();
     let Config { runtime, logging, access_logging, bootstrap } = Config::new(&options)?;
 
@@ -41,7 +43,7 @@ pub fn run() -> Result<()> {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
     }
 
-    proxy::run_orion(bootstrap, access_logging);
+    proxy::run_orion(bootstrap, access_logging, mcp_session_manager);
     Ok(())
 }
 

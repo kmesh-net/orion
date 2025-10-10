@@ -30,7 +30,7 @@ mod secrets;
 pub(crate) mod thread_local;
 mod transport;
 mod utils;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use listeners::listeners_manager;
 use orion_configuration::config::Runtime;
@@ -38,6 +38,7 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 
 pub use crate::configuration::get_listeners_and_clusters;
+pub use crate::mcp::SessionManager;
 
 pub use clusters::{
     ClusterLoadAssignmentBuilder,
@@ -72,10 +73,11 @@ pub fn runtime_config() -> &'static Runtime {
 pub struct ConversionContext<'a, T> {
     envoy_object: T,
     secret_manager: &'a SecretManager,
+    mcp_session_manager: Arc<SessionManager>,
 }
 impl<'a, T> ConversionContext<'a, T> {
-    pub fn new(ctx: (T, &'a SecretManager)) -> Self {
-        Self { envoy_object: ctx.0, secret_manager: ctx.1 }
+    pub fn new(ctx: (T, &'a SecretManager, Arc<SessionManager>)) -> Self {
+        Self { envoy_object: ctx.0, secret_manager: ctx.1, mcp_session_manager: ctx.2 }
     }
 }
 

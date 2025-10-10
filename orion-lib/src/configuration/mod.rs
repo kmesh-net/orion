@@ -15,15 +15,18 @@
 //
 //
 
+use std::sync::Arc;
+
 use orion_configuration::config::bootstrap::Bootstrap;
 
 use crate::{
     ConversionContext, Error, Result, SecretManager, clusters::cluster::PartialClusterType,
-    listeners::listener::ListenerFactory,
+    listeners::listener::ListenerFactory, mcp::SessionManager,
 };
 
 pub fn get_listeners_and_clusters(
     bootstrap: Bootstrap,
+    mcp_session_manager: &Arc<SessionManager>,
 ) -> Result<(SecretManager, Vec<ListenerFactory>, Vec<PartialClusterType>)> {
     let static_resources = bootstrap.static_resources;
     let secrets = static_resources.secrets;
@@ -33,7 +36,9 @@ pub fn get_listeners_and_clusters(
     let listeners = static_resources
         .listeners
         .into_iter()
-        .map(|l| ListenerFactory::try_from(ConversionContext::new((l, &secret_manager))))
+        .map(|l| {
+            ListenerFactory::try_from(ConversionContext::new((l, &secret_manager, Arc::clone(mcp_session_manager))))
+        })
         .collect::<Result<Vec<_>>>()?;
     let clusters = static_resources
         .clusters

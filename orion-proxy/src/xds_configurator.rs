@@ -22,6 +22,7 @@ use orion_configuration::config::{Listener, bootstrap::Node, cluster::ClusterSpe
 use orion_lib::{
     ConfigurationSenders, ConversionContext, EndpointHealthUpdate, HealthCheckManager, ListenerConfigurationChange,
     ListenerFactory, PartialClusterLoadAssignment, PartialClusterType, Result, RouteConfigurationChange, SecretManager,
+    SessionManager,
     access_log::{Target, update_configuration},
     clusters::cluster::ClusterType,
 };
@@ -51,10 +52,15 @@ pub struct XdsConfigurationHandler {
     listeners_senders: Vec<Sender<ListenerConfigurationChange>>,
     route_senders: Vec<Sender<RouteConfigurationChange>>,
     health_updates_receiver: Receiver<EndpointHealthUpdate>,
+    mcp_session_manager: Arc<SessionManager>,
 }
 
 impl XdsConfigurationHandler {
-    pub fn new(secret_manager: Arc<RwLock<SecretManager>>, configuration_senders: Vec<ConfigurationSenders>) -> Self {
+    pub fn new(
+        secret_manager: Arc<RwLock<SecretManager>>,
+        configuration_senders: Vec<ConfigurationSenders>,
+        mcp_session_manager: Arc<SessionManager>,
+    ) -> Self {
         let mut listeners_senders = Vec::with_capacity(configuration_senders.len());
         let mut route_senders = Vec::with_capacity(configuration_senders.len());
         for ConfigurationSenders { listener_configuration_sender, route_configuration_sender } in configuration_senders
@@ -64,7 +70,14 @@ impl XdsConfigurationHandler {
         }
         let (health_updates_sender, health_updates_receiver) = mpsc::channel(1000);
         let health_manager = HealthCheckManager::new(health_updates_sender);
-        Self { secret_manager, health_manager, listeners_senders, route_senders, health_updates_receiver }
+        Self {
+            secret_manager,
+            health_manager,
+            listeners_senders,
+            route_senders,
+            health_updates_receiver,
+            mcp_session_manager,
+        }
     }
 
     // Resolve cluster name into working endpoint(s), return working client
@@ -219,8 +232,11 @@ impl XdsConfigurationHandler {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
                 debug!("Got update for listener {id} {:?}", listener);
-                let factory =
-                    ListenerFactory::try_from(ConversionContext::new((listener.clone(), &*self.secret_manager.read())));
+                let factory = ListenerFactory::try_from(ConversionContext::new((
+                    listener.clone(),
+                    &*self.secret_manager.read(),
+                    Arc::clone(&self.mcp_session_manager),
+                )));
 
                 match factory {
                     Ok(factory) => {

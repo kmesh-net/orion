@@ -83,7 +83,7 @@ pub struct ListenerFactory {
 impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
     type Error = Error;
     fn try_from(ctx: ConversionContext<'_, ListenerConfig>) -> std::result::Result<Self, Self::Error> {
-        let ConversionContext { envoy_object: listener, secret_manager } = ctx;
+        let ConversionContext { envoy_object: listener, secret_manager, mcp_session_manager } = ctx;
         let name = listener.name.to_static_str();
         let address = match listener.address {
             orion_configuration::config::listener::ListenerAddress::Socket(socket_addr) => {
@@ -102,7 +102,14 @@ impl TryFrom<ConversionContext<'_, ListenerConfig>> for PartialListener {
         let filter_chains: HashMap<FilterChainMatch, _> = listener
             .filter_chains
             .into_iter()
-            .map(|f| FilterchainBuilder::try_from(ConversionContext::new((f.1, secret_manager))).map(|x| (f.0, x)))
+            .map(|f| {
+                FilterchainBuilder::try_from(ConversionContext::new((
+                    f.1,
+                    secret_manager,
+                    Arc::clone(&mcp_session_manager),
+                )))
+                .map(|x| (f.0, x))
+            })
             .collect::<Result<_>>()?;
         let bind_device = listener.bind_device;
 
@@ -676,7 +683,7 @@ mod tests {
         decode::from_yaml, envoy_data_plane_api::envoy::config::listener::v3::FilterChainMatch as EnvoyFilterChainMatch,
     };
 
-    use crate::SecretManager;
+    use crate::{SecretManager, mcp::SessionManager};
 
     use super::*;
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::listener::v3::Listener as EnvoyListener;
@@ -719,7 +726,8 @@ socket_options:
         let envoy_listener: EnvoyListener = from_yaml(LISTENER).unwrap();
         let listener = envoy_listener.try_into().unwrap();
         let secrets_manager = SecretManager::new();
-        let ctx = ConversionContext::new((listener, &secrets_manager));
+        let mcp_session_manager = SessionManager::default();
+        let ctx = ConversionContext::new((listener, &secrets_manager, Arc::new(mcp_session_manager)));
         let l = PartialListener::try_from(ctx).unwrap();
         let expected_bind_device = Some(BindDevice::from_str("virt1").unwrap());
 
@@ -785,8 +793,9 @@ filter_chains:
         let envoy_listener: EnvoyListener = from_yaml(LISTENER).unwrap();
         let listener = envoy_listener.try_into().unwrap();
         let secrets_man = SecretManager::new();
+        let mcp_session_manager = Arc::new(SessionManager::default());
 
-        let conv = ConversionContext { envoy_object: listener, secret_manager: &secrets_man };
+        let conv = ConversionContext { envoy_object: listener, secret_manager: &secrets_man, mcp_session_manager };
         let r = PartialListener::try_from(conv);
         let err = r.unwrap_err();
         assert!(

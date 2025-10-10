@@ -1,23 +1,13 @@
 use std::sync::Arc;
 
-use ahash::HashMap;
-use bytes::Bytes;
-use http::Method;
-use http::StatusCode;
-use http::Uri;
-use itertools::Itertools;
-use rmcp::serde_json;
-
-use crate::body::poly_body::PolyBody;
 use crate::mcp::Request;
 use crate::mcp::Response;
-use crate::mcp::filters;
 use crate::mcp::handler::Relay;
-use crate::mcp::json;
-use crate::mcp::json::from_body;
 use crate::mcp::session::SessionManager;
 use crate::mcp::streamablehttp::StreamableHttpService;
 use crate::transport::HttpChannel;
+use ahash::HashMap;
+use http::Uri;
 use rmcp::transport::StreamableHttpServerConfig;
 
 #[derive(Debug, Clone)]
@@ -26,11 +16,6 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
-        let session_manager: Arc<SessionManager> = Arc::new(SessionManager::default());
-        Self { session_manager }
-    }
-
     pub fn new_with_session_manager(session_manager: Arc<SessionManager>) -> Self {
         Self { session_manager }
     }

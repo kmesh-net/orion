@@ -145,7 +145,7 @@ impl HttpConnectionManagerBuilder {
                 Some(tracing) => HttpTracer::new().with_config(tracing),
                 None => HttpTracer::new(),
             },
-            mcp_session_manager: Arc::new(crate::mcp::SessionManager::default()),
+            mcp_session_manager: partial.mcp_session_manager,
         })
     }
 
@@ -173,6 +173,7 @@ pub struct PartialHttpConnectionManager {
     preserve_external_request_id: bool,
     always_set_request_id_in_response: bool,
     tracing: Option<TracingConfig>,
+    mcp_session_manager: Arc<crate::mcp::SessionManager>,
 }
 
 #[derive(Debug, Clone)]
@@ -252,7 +253,7 @@ fn per_route_http_filters(
 impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttpConnectionManager {
     type Error = crate::Error;
     fn try_from(ctx: ConversionContext<HttpConnectionManagerConfig>) -> Result<Self> {
-        let ConversionContext { envoy_object: configuration, secret_manager: _ } = ctx;
+        let ConversionContext { envoy_object: configuration, secret_manager: _, mcp_session_manager } = ctx;
         let codec_type = configuration.codec_type;
         let enabled_upgrades = configuration.enabled_upgrades;
         let http_filters_hcm = configuration
@@ -295,6 +296,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
             preserve_external_request_id,
             always_set_request_id_in_response,
             tracing: configuration.tracing,
+            mcp_session_manager,
         })
     }
 }
@@ -816,7 +818,7 @@ impl
                         )
                         .await
                 },
-                Action::McpRoute(route) => {                    
+                Action::McpRoute(route) => {
                     route
                         .to_response(
                             trans_handler,

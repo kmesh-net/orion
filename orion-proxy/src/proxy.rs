@@ -34,7 +34,7 @@ use orion_configuration::config::{
 use orion_error::Context;
 use orion_lib::{
     ConfigurationReceivers, ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result,
-    SecretManager,
+    SecretManager, SessionManager,
     access_log::{Target, start_access_loggers, update_configuration},
     clusters::cluster::ClusterType,
     get_listeners_and_clusters, new_configuration_channel, runtime_config,
@@ -49,7 +49,11 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
+pub fn run_orion(
+    bootstrap: Bootstrap,
+    access_log_config: Option<AccessLogConfig>,
+    mcp_session_manager: Arc<SessionManager>,
+) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 
     let ct = tokio_util::sync::CancellationToken::new();
@@ -62,7 +66,8 @@ pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig
     });
 
     // launch the runtimes...
-    let res = launch_runtimes(bootstrap, access_log_config, ct).with_context_msg("failed to launch runtimes");
+    let res = launch_runtimes(bootstrap, access_log_config, ct, mcp_session_manager)
+        .with_context_msg("failed to launch runtimes");
     if let Err(err) = res {
         warn!("Error running orion: {err}");
     }
@@ -105,12 +110,14 @@ struct ProxyConfiguration {
     access_log_config: Option<AccessLogConfig>,
     tracing: HashMap<TracingKey, TracingConfig>,
     metrics: Vec<Metrics>,
+    mcp_session_manager: Arc<SessionManager>,
 }
 
 fn launch_runtimes(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
     ct: tokio_util::sync::CancellationToken,
+    mcp_session_manager: Arc<SessionManager>,
 ) -> Result<()> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
@@ -149,7 +156,8 @@ fn launch_runtimes(
     let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into() });
 
     let (secret_manager, listener_factories, clusters) =
-        get_listeners_and_clusters(bootstrap.clone()).with_context_msg("Failed to get listeners and clusters")?;
+        get_listeners_and_clusters(bootstrap.clone(), &mcp_session_manager)
+            .with_context_msg("Failed to get listeners and clusters")?;
     let secret_manager = Arc::new(RwLock::new(secret_manager));
 
     if listener_factories.is_empty() && ads_cluster_names.is_empty() {
@@ -167,6 +175,7 @@ fn launch_runtimes(
         tracing,
         metrics: metrics.clone(),
         bootstrap,
+        mcp_session_manager,
     };
 
     let services_handle = spawn_services_runtime_from_thread(
@@ -294,6 +303,7 @@ async fn run_services(config: ProxyConfiguration) -> Result<()> {
         metrics,
         #[allow(unused_variables)]
         tracing,
+        mcp_session_manager,
     } = config;
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
@@ -307,6 +317,7 @@ async fn run_services(config: ProxyConfiguration) -> Result<()> {
         listener_factories,
         clusters,
         ads_cluster_names,
+        mcp_session_manager,
     );
 
     // spawn access loggers service...
@@ -348,12 +359,14 @@ fn spawn_xds_client(
     listener_factories: Vec<orion_lib::ListenerFactory>,
     clusters: Vec<orion_lib::PartialClusterType>,
     ads_cluster_names: Vec<String>,
+    mcp_session_manager: Arc<SessionManager>,
 ) {
     set.spawn(async move {
         let initial_clusters =
             configure_initial_resources(bootstrap, listener_factories, clusters, configuration_senders.clone()).await?;
         if !ads_cluster_names.is_empty() {
-            let mut xds_handler = XdsConfigurationHandler::new(secret_manager, configuration_senders);
+            let mut xds_handler =
+                XdsConfigurationHandler::new(secret_manager, configuration_senders, mcp_session_manager);
             _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
         }
         Ok(())

@@ -78,11 +78,11 @@ pub enum MainFilterBuilder {
 impl TryFrom<ConversionContext<'_, MainFilter>> for MainFilterBuilder {
     type Error = crate::Error;
     fn try_from(ctx: ConversionContext<MainFilter>) -> Result<Self> {
-        let ConversionContext { envoy_object: main_filter, secret_manager } = ctx;
+        let ConversionContext { envoy_object: main_filter, secret_manager, mcp_session_manager } = ctx;
         match main_filter {
-            MainFilter::Http(http) => {
-                Ok(Self::Http(HttpConnectionManagerBuilder::try_from(ConversionContext::new((http, secret_manager)))?))
-            },
+            MainFilter::Http(http) => Ok(Self::Http(HttpConnectionManagerBuilder::try_from(ConversionContext::new(
+                (http, secret_manager, mcp_session_manager),
+            ))?)),
             MainFilter::Tcp(tcp) => Ok(Self::Tcp(tcp.into())),
         }
     }
@@ -128,8 +128,9 @@ impl FilterchainBuilder {
 impl TryFrom<ConversionContext<'_, FilterChainConfig>> for FilterchainBuilder {
     type Error = Error;
     fn try_from(ctx: ConversionContext<FilterChainConfig>) -> std::result::Result<Self, Self::Error> {
-        let ConversionContext { envoy_object: filter_chain, secret_manager } = ctx;
-        let main_filter = ConversionContext::new((filter_chain.terminal_filter, secret_manager)).try_into()?;
+        let ConversionContext { envoy_object: filter_chain, secret_manager, mcp_session_manager } = ctx;
+        let main_filter =
+            ConversionContext::new((filter_chain.terminal_filter, secret_manager, mcp_session_manager)).try_into()?;
         let tls_config = filter_chain.tls_config;
         let rbac_filters = filter_chain.rbac;
         let tls_configurator =
