@@ -50,8 +50,10 @@ impl App {
         http_channels: HashMap<String, (HttpChannel, Uri)>,
     ) -> Response {
         let sm = self.session_manager.clone();
+        let default_target_name =
+            if http_channels.keys().len() == 1 { http_channels.keys().last().cloned() } else { None };
         let streamable = StreamableHttpService::new(
-            move || Relay::new(None, http_channels.clone()),
+            move || Relay::new(default_target_name.clone(), http_channels.clone()),
             sm,
             StreamableHttpServerConfig { stateful_mode: true, ..Default::default() },
         );
