@@ -15,11 +15,12 @@ use tracing::{error, warn};
 
 use crate::mcp::AtomicOption;
 use crate::mcp::mergestream::Messages;
+use crate::mcp::upstream::response_channel::Sender as ResonseChannelSender;
 use crate::mcp::upstream::{IncomingRequestContext, UpstreamError};
 
 pub struct Process {
     sender: mpsc::Sender<(ClientJsonRpcMessage, IncomingRequestContext)>,
-    shutdown_tx: agent_core::responsechannel::Sender<(), Option<UpstreamError>>,
+    shutdown_tx: ResonseChannelSender<(), Option<UpstreamError>>,
     event_stream: AtomicOption<mpsc::Sender<ServerJsonRpcMessage>>,
     pending_requests: Arc<Mutex<HashMap<RequestId, oneshot::Sender<ServerJsonRpcMessage>>>>,
 }
@@ -37,7 +38,7 @@ impl Process {
         let req_id = req.id.clone();
         let (sender, receiver) = oneshot::channel();
 
-        self.pending_requests.lock().unwrap().insert(req_id, sender);
+        self.pending_requests.lock().expect("We expect lock to work").insert(req_id, sender);
 
         self.sender.send((JsonRpcMessage::Request(req), ctx.clone())).await.map_err(|_| UpstreamError::Send)?;
 
@@ -62,10 +63,10 @@ impl Process {
 impl Process {
     pub fn new(mut proc: impl MCPTransport) -> Self {
         let (sender_tx, mut sender_rx) = mpsc::channel::<(ClientJsonRpcMessage, IncomingRequestContext)>(10);
-        let (shutdown_tx, mut shutdown_rx) = agent_core::responsechannel::new::<(), Option<UpstreamError>>(10);
+        let (shutdown_tx, mut shutdown_rx) = super::response_channel::new::<(), Option<UpstreamError>>(10);
         let pending_requests = Arc::new(Mutex::new(HashMap::<RequestId, oneshot::Sender<ServerJsonRpcMessage>>::new()));
         let pending_requests_clone = pending_requests.clone();
-        let event_stream: AtomicOption<Sender<ServerJsonRpcMessage>> = Default::default();
+        let event_stream: AtomicOption<Sender<ServerJsonRpcMessage>> = AtomicOption::default();
         let event_stream_send: AtomicOption<Sender<ServerJsonRpcMessage>> = event_stream.clone();
 
         tokio::spawn(async move {
@@ -81,7 +82,7 @@ impl Process {
                         match msg {
                             JsonRpcMessage::Response(res) => {
                                 let req_id = res.id.clone();
-                                if let Some(sender) = pending_requests_clone.lock().unwrap().remove(&req_id) {
+                                if let Some(sender) = pending_requests_clone.lock().expect("We expect the lock to work").remove(&req_id) {
                                     let _ = sender.send(ServerJsonRpcMessage::Response(res));
                                 }
                             },

@@ -1406,7 +1406,32 @@ message RouteAction {
 message McpRouteAction {
   option (udpa.annotations.versioning).previous_message_type = "envoy.api.v2.route.McpRouteAction";
 
-  map<string, string> cluster_mappings = 1;
+  message McpStreamableHttpParams{
+      repeated string cluster_specifiers = 1;
+  }
+
+  message McpStdioParams{
+      string command = 2;
+      repeated string args = 3;
+      repeated string env = 4;
+  }
+
+  message McpStdioBackends {
+      repeated McpRouteAction.McpStdioParams mcp_stdio_params = 5;
+  }
+  message McpStreamableHttpBackends {
+      repeated McpRouteAction.McpStreamableHttpParams mcp_streamable_http_params= 6;
+  }
+
+
+  message McpBackendType {
+      oneof mcp_backend_type {
+          McpRouteAction.McpStdioBackends stdio_backends = 7;
+          McpRouteAction.McpStreamableHttpBackends streamable_http_backends = 8;
+      }
+  }
+
+  map<string, McpRouteAction.McpBackendType> backend_mappings = 9;
 
   oneof path_rewrite_specifier {
     // The path portion of the URL will be swapped with this value.
@@ -1425,7 +1450,7 @@ message McpRouteAction {
     // 1. if request uri is "/old-path-1?bar=1", users will be redirected to "/new-path-1?bar=1"
     // 2. if request uri is "/old-path-2?bar=1", users will be redirected to "/new-path-2"
     // 3. if request uri is "/old-path-3?bar=1", users will be redirected to "/new-path-3?foo=1"
-    string path_redirect = 2
+    string path_redirect = 20
         [(validate.rules).string = {well_known_regex: HTTP_HEADER_VALUE strict: false}];
 
     // Indicates that during redirection, the matched prefix (or path)
@@ -1436,7 +1461,7 @@ message McpRouteAction {
     //
     //   Pay attention to the use of trailing slashes as mentioned in
     //   :ref:`RouteAction's prefix_rewrite <envoy_v3_api_field_config.route.v3.RouteAction.prefix_rewrite>`.
-    string prefix_rewrite = 3
+    string prefix_rewrite = 21
         [(validate.rules).string = {well_known_regex: HTTP_HEADER_VALUE strict: false}];
 
     // Indicates that during redirect, portions of the path that match the
@@ -1462,13 +1487,13 @@ message McpRouteAction {
     // * The pattern ``(?i)/xxx/`` paired with a substitution string of ``/yyy/``
     //   would do a case-insensitive match and transform path ``/aaa/XxX/bbb`` to
     //   ``/aaa/yyy/bbb``.
-    type.matcher.v3.RegexMatchAndSubstitute regex_rewrite = 4;
+    type.matcher.v3.RegexMatchAndSubstitute regex_rewrite = 22;
   }
 
   oneof host_rewrite_specifier {
     // Indicates that during forwarding, the host header will be swapped with
     // this value.
-    string host_rewrite_literal = 5
+    string host_rewrite_literal = 30
         [(validate.rules).string = {well_known_regex: HTTP_HEADER_VALUE strict: false}];
 
     // Indicates that during forwarding, the host header will be swapped with
@@ -1478,7 +1503,7 @@ message McpRouteAction {
     // or when :ref:`hostname <envoy_v3_api_field_config.endpoint.v3.Endpoint.hostname>`
     // field is not empty. Setting this to true with other cluster types
     // has no effect.
-    google.protobuf.BoolValue auto_host_rewrite = 6;
+    google.protobuf.BoolValue auto_host_rewrite = 31;
 
     // Indicates that during forwarding, the host header will be swapped with the content of given
     // downstream or :ref:`custom <config_http_conn_man_headers_custom_request_headers>` header.
@@ -1492,7 +1517,7 @@ message McpRouteAction {
     // .. note::
     //
     //   If the header appears multiple times only the first value is used.
-    string host_rewrite_header = 7
+    string host_rewrite_header = 32
         [(validate.rules).string = {well_known_regex: HTTP_HEADER_NAME strict: false}];
 
     // Indicates that during forwarding, the host header will be swapped with
@@ -1510,11 +1535,11 @@ message McpRouteAction {
     //       substitution: \1
     //
     // Would rewrite the host header to ``envoyproxy.io`` given the path ``/envoyproxy.io/some/path``.
-    type.matcher.v3.RegexMatchAndSubstitute host_rewrite_path_regex = 8;
+    type.matcher.v3.RegexMatchAndSubstitute host_rewrite_path_regex = 33;
   }
-  RetryPolicy retry_policy = 9;
+  RetryPolicy retry_policy = 44;
 
-  google.protobuf.Duration timeout = 10;
+  google.protobuf.Duration timeout = 45;
 
 }
 

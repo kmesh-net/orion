@@ -52,10 +52,11 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
             ));
         };
 
+        // split into streamablehttp and stdio backends
         let channels = self
-            .cluster_mappings
+            .backend_mappings
             .iter()
-            .map(|(name, cluster_specifier)| {
+            .map(|(name, backend_type)| {
                 //if downstream_authority.host() == cluster_specifier.name() {
                 if let Some(cluster_id) = clusters_manager::resolve_cluster(cluster_specifier) {
                     let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
@@ -70,9 +71,6 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
                 } else {
                     (name, Err(orion_error::Error::from("Failed to resolve cluster from specifier".to_owned())))
                 }
-                // } else {
-                //     (name, Err(orion_error::Error::from(format!("Failed to find cluster for {downstream_authority}"))))
-                // }
             })
             .collect::<HashMap<_, _>>();
 
@@ -118,6 +116,8 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
         Ok(app.serve(original_request, channel_request_map).await)
     }
 }
+
+fn process_streamable_http_channel() {}
 
 fn process_channel<'a, B>(
     mcp_route: &McpRouteAction,

@@ -17,7 +17,7 @@
 
 //todo: impl serialize, deserialize on DirectResponsebody to prepare the bytes at deserialization
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use serde::{Deserialize, Serialize};
 
@@ -26,8 +26,26 @@ use crate::config::cluster::ClusterSpecifier;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct McpStdioParams {
+    pub cmd: String,
+    pub env: Vec<String>,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct McpStreamableHttpParams {
+    pub cluster_specifiers: Vec<ClusterSpecifier>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum McpBackendType {
+    StdioBackends(Vec<McpStdioParams>),
+    StreamableHttpBackends(Vec<McpStreamableHttpParams>),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct McpRouteAction {
-    pub cluster_mappings: HashMap<String, ClusterSpecifier>,
+    pub backend_mappings: HashMap<String, McpBackendType>,
 
     #[serde(with = "humantime_serde")]
     #[serde(skip_serializing_if = "is_default_timeout", default = "default_timeout_deser")]
@@ -56,7 +74,10 @@ mod envoy_conversions {
     use crate::config::{
         cluster::ClusterSpecifier,
         common::*,
-        network_filters::http_connection_manager::{RetryPolicy, mcp_route::McpRouteAction},
+        network_filters::http_connection_manager::{
+            RetryPolicy,
+            mcp_route::{McpBackendType, McpRouteAction, McpStdioParams, McpStreamableHttpParams},
+        },
         util::duration_from_envoy,
     };
     use http::{
@@ -64,17 +85,64 @@ mod envoy_conversions {
         uri::{Authority, PathAndQuery},
     };
     use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::{
-        McpRouteAction as EnvoyMcpRouteAction, mcp_route_action::HostRewriteSpecifier as EnvoyHostRewriteSpecifier,
-        mcp_route_action::PathRewriteSpecifier as EnvoyPathRewriteSpecifier,
+        McpRouteAction as EnvoyMcpRouteAction,
+        mcp_route_action::{
+            HostRewriteSpecifier as EnvoyHostRewriteSpecifier, McpBackendType as EnvoyMcpBackendType,
+            McpStdioParams as EnvoyMcpStdioParams, McpStreamableHttpParams as EnvoyMcpStreamableHttpParams,
+            PathRewriteSpecifier as EnvoyPathRewriteSpecifier, mcp_backend_type,
+        },
     };
+    use tracing::warn;
 
     use std::{collections::HashMap, str::FromStr};
+
+    impl TryFrom<EnvoyMcpStdioParams> for McpStdioParams {
+        type Error = GenericError;
+
+        fn try_from(value: EnvoyMcpStdioParams) -> Result<Self, Self::Error> {
+            let EnvoyMcpStdioParams { command, args, env } = value;
+            Ok(McpStdioParams { cmd: command, env, args })
+        }
+    }
+
+    impl TryFrom<EnvoyMcpBackendType> for McpBackendType {
+        type Error = GenericError;
+
+        fn try_from(value: EnvoyMcpBackendType) -> Result<Self, Self::Error> {
+            let EnvoyMcpBackendType { mcp_backend_type } = value;
+            match mcp_backend_type {
+                Some(mcp_backend_type::McpBackendType::StdioBackends(stdio_backends)) => {
+                    let iter = stdio_backends.mcp_stdio_params.into_iter();
+                    Ok(McpBackendType::StdioBackends(convert_vec!(iter)?))
+                },
+                Some(mcp_backend_type::McpBackendType::StreamableHttpBackends(streamable_http_backends)) => {
+                    let iter = streamable_http_backends.mcp_streamable_http_params.into_iter();
+                    Ok(McpBackendType::StreamableHttpBackends(convert_vec!(iter)?))
+                },
+                None => Err(GenericError::Message("Problem with parsing mcp route configuration file".into())),
+            }
+        }
+    }
+
+    impl TryFrom<EnvoyMcpStreamableHttpParams> for McpStreamableHttpParams {
+        type Error = GenericError;
+
+        fn try_from(value: EnvoyMcpStreamableHttpParams) -> Result<Self, Self::Error> {
+            let EnvoyMcpStreamableHttpParams { cluster_specifiers } = value;
+            Ok(McpStreamableHttpParams {
+                cluster_specifiers: cluster_specifiers
+                    .into_iter()
+                    .map(|s| ClusterSpecifier::Cluster(s.into()))
+                    .collect(),
+            })
+        }
+    }
 
     impl TryFrom<EnvoyMcpRouteAction> for McpRouteAction {
         type Error = GenericError;
         fn try_from(value: EnvoyMcpRouteAction) -> Result<Self, Self::Error> {
             let EnvoyMcpRouteAction {
-                cluster_mappings,
+                backend_mappings,
                 retry_policy,
                 timeout,
                 path_rewrite_specifier,
@@ -87,10 +155,23 @@ mod envoy_conversions {
 
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
 
-            let cluster_mappings = cluster_mappings
+            let mut has_error = false;
+            let backend_mappings = backend_mappings
                 .into_iter()
-                .map(|(k, v)| (k, ClusterSpecifier::Cluster(v.into())))
+                .filter_map(|(k, v)| {
+                    if let Ok(backend_type) = McpBackendType::try_from(v) {
+                        Some((k, backend_type))
+                    } else {
+                        has_error = true;
+                        None
+                    }
+                })
                 .collect::<HashMap<_, _>>();
+
+            if has_error {
+                warn!("Problem with parsing mcp route configuration file");
+                return Err(GenericError::Message("Problem with parsing mcp route configuration file".into()));
+            }
 
             let path_rewrite_specifier = path_rewrite_specifier
                 .map(|path_rewrite_specifier| match path_rewrite_specifier {
@@ -135,7 +216,7 @@ mod envoy_conversions {
                 None => Ok(None),
             }
             .with_node("host_rewrite_specifier")?;
-            Ok(Self { timeout, cluster_mappings, rewrite: path_rewrite_specifier, authority_rewrite, retry_policy })
+            Ok(Self { timeout, backend_mappings, rewrite: path_rewrite_specifier, authority_rewrite, retry_policy })
         }
     }
 }

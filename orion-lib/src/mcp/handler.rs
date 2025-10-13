@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::body::poly_body::PolyBody;
+use crate::mcp::router::McpBackend;
 use crate::transport::HttpChannel;
 use ahash::HashMap;
 use futures_core::Stream;
@@ -34,8 +35,8 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(default_target_name: Option<String>, http_channels: HashMap<String, (HttpChannel, Uri)>) -> Self {
-        Self { upstreams: Arc::new(UpstreamGroup::new(http_channels)), default_target_name }
+    pub fn new(default_target_name: Option<String>, mcp_backends: HashMap<String, (McpBackend, Uri)>) -> Self {
+        Self { upstreams: Arc::new(UpstreamGroup::new(mcp_backends)), default_target_name }
     }
 
     pub fn parse_resource_name<'a, 'b: 'a>(&'a self, res: &'b str) -> Result<(&'a str, &'b str), UpstreamError> {

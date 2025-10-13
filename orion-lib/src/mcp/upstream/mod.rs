@@ -1,9 +1,8 @@
 //mod sse;
-//mod stdio;
+pub mod response_channel;
+mod stdio;
 mod streamablehttp;
-
 use ahash::HashMap;
-
 use http::Uri;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
@@ -15,6 +14,7 @@ use thiserror::Error;
 use tracing::debug;
 
 use super::{mergestream, upstream};
+use crate::mcp::router::McpBackend;
 use crate::mcp::{ClientError, Request};
 use crate::transport::HttpChannel;
 
@@ -72,6 +72,7 @@ pub enum UpstreamError {
 #[derive(Debug)]
 pub(crate) enum Upstream {
     McpStreamable(streamablehttp::Client),
+    McpStdio(stdio::Process),
     //OpenAPI(Box<openapi::Handler>),
 }
 
@@ -81,6 +82,9 @@ impl Upstream {
             Upstream::McpStreamable(c) => {
                 c.send_delete(ctx).await?;
             },
+            Upstream::McpStdio(c) => {
+                c.stop().await?;
+            },
         }
         Ok(())
     }
@@ -89,6 +93,7 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<mergestream::Messages, UpstreamError> {
         match &self {
+            Upstream::McpStdio(c) => Ok(c.get_event_stream().await),
             Upstream::McpStreamable(c) => c.get_event_stream(ctx).await?.try_into().map_err(Into::into),
         }
     }
@@ -98,6 +103,7 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<mergestream::Messages, UpstreamError> {
         match &self {
+            Upstream::McpStdio(c) => Ok(mergestream::Messages::from(c.send_message(request, ctx).await?)),
             Upstream::McpStreamable(c) => {
                 let is_init = matches!(&request.request, &ClientRequest::InitializeRequest(_));
                 let res = c.send_request(request, ctx).await?;
@@ -123,6 +129,9 @@ impl Upstream {
         ctx: &IncomingRequestContext,
     ) -> Result<(), UpstreamError> {
         match &self {
+            Upstream::McpStdio(c) => {
+                c.send_notification(request, ctx).await?;
+            },
             Upstream::McpStreamable(c) => {
                 c.send_notification(request, ctx).await?;
             },
@@ -137,11 +146,14 @@ pub(crate) struct UpstreamGroup {
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(http_channels: HashMap<String, (HttpChannel, Uri)>) -> Self {
-        let streamable_clients = http_channels
+    pub(crate) fn new(mcp_backends: HashMap<String, (McpBackend, Uri)>) -> Self {
+        let streamable_clients = mcp_backends
             .into_iter()
-            .map(|(k, (channel, uri))| {
-                (k, upstream::Upstream::McpStreamable(streamablehttp::Client::new(channel, uri)))
+            .filter_map(|(k, (mcp_backend, uri))| match mcp_backend {
+                McpBackend::Stdio { cmd, vars, args } => None,
+                McpBackend::StreamableHttp { http_channel, uri } => {
+                    Some((k, upstream::Upstream::McpStreamable(streamablehttp::Client::new(http_channel, uri))))
+                },
             })
             .collect();
         let mut s = Self { streamable_clients };
