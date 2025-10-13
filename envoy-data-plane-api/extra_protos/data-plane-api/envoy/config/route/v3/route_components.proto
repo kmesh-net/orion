@@ -1407,7 +1407,7 @@ message McpRouteAction {
   option (udpa.annotations.versioning).previous_message_type = "envoy.api.v2.route.McpRouteAction";
 
   message McpStreamableHttpParams{
-      repeated string cluster_specifiers = 1;
+      string cluster_specifier = 1;
   }
 
   message McpStdioParams{
@@ -1416,18 +1416,18 @@ message McpRouteAction {
       repeated string env = 4;
   }
 
-  message McpStdioBackends {
-      repeated McpRouteAction.McpStdioParams mcp_stdio_params = 5;
+  message McpStdioBackend {
+      McpRouteAction.McpStdioParams mcp_stdio_params = 5;
   }
-  message McpStreamableHttpBackends {
-      repeated McpRouteAction.McpStreamableHttpParams mcp_streamable_http_params= 6;
+  message McpStreamableHttpBackend {
+      McpRouteAction.McpStreamableHttpParams mcp_streamable_http_params= 6;
   }
 
 
   message McpBackendType {
       oneof mcp_backend_type {
-          McpRouteAction.McpStdioBackends stdio_backends = 7;
-          McpRouteAction.McpStreamableHttpBackends streamable_http_backends = 8;
+          McpRouteAction.McpStdioBackend stdio_backend = 7;
+          McpRouteAction.McpStreamableHttpBackend streamable_http_backend = 8;
       }
   }
 

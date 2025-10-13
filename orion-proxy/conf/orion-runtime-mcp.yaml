@@ -25,7 +25,7 @@ envoy_bootstrap:
                 typedConfig:
                   "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
                   statPrefix: ingress_http
-                  codecType: HTTP1
+                  codecType: HTTP2
                   httpFilters:
                     - name: envoy.filters.http.router
                       typedConfig:
@@ -42,7 +42,7 @@ envoy_bootstrap:
                             mcp_route:
                               cluster_mappings:
                                 my-local-agent1.dn: cluster_http_1
-#                                my-local-agent2.dn: cluster_http_2
+                                my-local-agent2.dn: cluster_http_2
 
     clusters:
       - name: cluster_http_1
