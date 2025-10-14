@@ -17,23 +17,21 @@
 
 use std::{hash::Hasher, net::SocketAddr, ops::ControlFlow};
 
-use http::Request;
+use http::{Request, request::Parts};
 use hyper::body::Incoming;
 use orion_configuration::config::network_filters::http_connection_manager::route::{HashPolicy, HashPolicyResult};
 use twox_hash::XxHash64;
 
-use crate::body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout};
-
 #[derive(Clone, Debug)]
-pub struct HashState<'a, B = BodyWithMetrics<BodyWithTimeout<Incoming>>> {
+pub struct HashState<'a> {
     policies: &'a [HashPolicy],
-    req: &'a Request<B>,
+    req_parts: &'a Parts,
     src_addr: SocketAddr,
 }
 
-impl<'a, B> HashState<'a, B> {
-    pub fn new(policies: &'a [HashPolicy], req: &'a Request<B>, src_addr: SocketAddr) -> Self {
-        Self { policies, req, src_addr }
+impl<'a> HashState<'a> {
+    pub fn new(policies: &'a [HashPolicy], req_parts: &'a Parts, src_addr: SocketAddr) -> Self {
+        Self { policies, req_parts, src_addr }
     }
     pub fn compute(self) -> Option<u64> {
         if self.policies.is_empty() {
@@ -41,7 +39,7 @@ impl<'a, B> HashState<'a, B> {
         }
         let mut hasher = DeterministicBuildHasher::build_hasher();
         match self.policies.iter().try_fold(false, |prev, policy| {
-            match policy.apply(&mut hasher, self.req, self.src_addr) {
+            match policy.apply(&mut hasher, self.req_parts, self.src_addr) {
                 HashPolicyResult::Applied => ControlFlow::Continue(true),
                 HashPolicyResult::Skipped => ControlFlow::Continue(prev),
                 HashPolicyResult::Terminal => ControlFlow::Break(()),
@@ -78,7 +76,10 @@ impl DeterministicBuildHasher {
 #[cfg(test)]
 mod test {
     use super::{DeterministicBuildHasher, HashPolicy, HashState};
-    use http::{HeaderName, HeaderValue, Request, request::Builder};
+    use http::{
+        HeaderName, HeaderValue, Request,
+        request::{Builder, Parts},
+    };
     use orion_configuration::config::network_filters::http_connection_manager::route::PolicySpecifier;
     use std::{
         hash::{Hash, Hasher},
@@ -111,6 +112,15 @@ mod test {
         builder.body(()).unwrap()
     }
 
+    fn build_request_parts<'a>(uri: &str, headers: impl IntoIterator<Item = (&'a str, &'a str)>) -> Parts {
+        let mut builder = Builder::new().uri(uri);
+
+        builder = headers.into_iter().fold(builder, |builder, (key, value)| builder.header(key, value));
+
+        let (parts, _) = builder.body(()).unwrap().into_parts();
+        parts
+    }
+
     fn hasher_from_policies<'a>(policies: impl IntoIterator<Item = (&'a PolicySpecifier, bool)>) -> Vec<HashPolicy> {
         policies
             .into_iter()
@@ -131,7 +141,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false)]),
-                &build_request("https://example.com", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -143,7 +153,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false)]),
-                &build_request("https://example.com", [("lb-header", "foo")]),
+                &build_request_parts("https://example.com", [("lb-header", "foo")]),
                 source_ip
             )
             .compute()
@@ -154,7 +164,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false)]),
-                &build_request(
+                &build_request_parts(
                     "https://example.com",
                     [("First-Header", "bar"), ("Lb-Header", "foo"), ("Last-Header", "zarp")]
                 ),
@@ -168,7 +178,7 @@ mod test {
         assert!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false)]),
-                &build_request("https://example.com", [("Different-Header", "foo")]),
+                &build_request_parts("https://example.com", [("Different-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -178,7 +188,7 @@ mod test {
         assert!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false)]),
-                &build_request("https://example.com", None),
+                &build_request_parts("https://example.com", None),
                 source_ip
             )
             .compute()
@@ -189,7 +199,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_query, false)]),
-                &build_request("https://example.com/?lb-param=bar", None),
+                &build_request_parts("https://example.com/?lb-param=bar", None),
                 source_ip
             )
             .compute()
@@ -200,7 +210,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_query, false)]),
-                &build_request("https://example.com/?first=foo&lb-param=bar&last=zarp", None),
+                &build_request_parts("https://example.com/?first=foo&lb-param=bar&last=zarp", None),
                 source_ip
             )
             .compute()
@@ -212,7 +222,7 @@ mod test {
         assert!(
             HashState::new(
                 &hasher_from_policies([(&policy_query, false)]),
-                &build_request("https://example.com/?Lb-Param=bar", None),
+                &build_request_parts("https://example.com/?Lb-Param=bar", None),
                 source_ip
             )
             .compute()
@@ -222,7 +232,7 @@ mod test {
         assert!(
             HashState::new(
                 &hasher_from_policies([(&policy_query, false)]),
-                &build_request("https://example.com/?different-param=bar", None),
+                &build_request_parts("https://example.com/?different-param=bar", None),
                 source_ip
             )
             .compute()
@@ -233,7 +243,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_addr, false)]),
-                &build_request("https://example.com/", None),
+                &build_request_parts("https://example.com/", None),
                 source_ip
             )
             .compute()
@@ -244,7 +254,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_addr, false)]),
-                &build_request("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -256,7 +266,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, false), (&policy_addr, false)]),
-                &build_request("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -267,7 +277,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, false), (&policy_addr, false)]),
-                &build_request("https://example.com/", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -278,7 +288,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, false), (&policy_addr, false)]),
-                &build_request("https://example.com/?lb-param=bar", None),
+                &build_request_parts("https://example.com/?lb-param=bar", None),
                 source_ip
             )
             .compute()
@@ -289,7 +299,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, false)]),
-                &build_request("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -300,7 +310,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, true), (&policy_addr, false)]),
-                &build_request("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/?lb-param=bar", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()
@@ -311,7 +321,7 @@ mod test {
         assert_eq!(
             HashState::new(
                 &hasher_from_policies([(&policy_header, false), (&policy_query, true), (&policy_addr, false)]),
-                &build_request("https://example.com/", [("Lb-Header", "foo")]),
+                &build_request_parts("https://example.com/", [("Lb-Header", "foo")]),
                 source_ip
             )
             .compute()

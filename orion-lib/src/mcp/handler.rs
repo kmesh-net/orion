@@ -35,7 +35,7 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(default_target_name: Option<String>, mcp_backends: HashMap<String, (McpBackend, Uri)>) -> Self {
+    pub fn new(default_target_name: Option<String>, mcp_backends: HashMap<String, McpBackend>) -> Self {
         Self { upstreams: Arc::new(UpstreamGroup::new(mcp_backends)), default_target_name }
     }
 

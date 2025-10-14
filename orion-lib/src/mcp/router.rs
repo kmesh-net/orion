@@ -17,7 +17,7 @@ pub struct App {
 
 #[derive(Debug, Clone)]
 pub enum McpBackend {
-    Stdio { cmd: String, vars: Vec<String>, args: Vec<String> },
+    Stdio { cmd: String, envs: Vec<String>, args: Vec<String> },
     StreamableHttp { http_channel: HttpChannel, uri: Uri },
 }
 impl App {
@@ -25,7 +25,7 @@ impl App {
         Self { session_manager }
     }
 
-    pub async fn serve(&self, original_request: Request, mcp_backends: HashMap<String, (McpBackend, Uri)>) -> Response {
+    pub async fn serve(&self, original_request: Request, mcp_backends: HashMap<String, McpBackend>) -> Response {
         let sm = self.session_manager.clone();
         let default_target_name =
             if mcp_backends.keys().len() == 1 { mcp_backends.keys().last().cloned() } else { None };

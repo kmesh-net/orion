@@ -29,7 +29,7 @@ use crate::{
     secrets::TransportSecret,
     transport::{GrpcService, HttpChannel, TcpChannelConnector},
 };
-use http::{HeaderName, HeaderValue, Request, uri::Authority};
+use http::{HeaderName, HeaderValue, Request, request::Parts, uri::Authority};
 use hyper::body::Incoming;
 use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
 use orion_interner::StringInterner;
@@ -58,19 +58,15 @@ pub enum RoutingContext<'a> {
     Hash(HashState<'a>),
 }
 
-impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>)>
-    for RoutingContext<'a>
-{
+impl<'a> TryFrom<(&'a RoutingRequirement, &'a Parts, HashState<'a>)> for RoutingContext<'a> {
     type Error = String;
 
-    fn try_from(
-        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>),
-    ) -> std::result::Result<Self, Self::Error> {
-        let (routing_requirement, request, hash_state) = value;
+    fn try_from(value: (&'a RoutingRequirement, &'a Parts, HashState<'a>)) -> std::result::Result<Self, Self::Error> {
+        let (routing_requirement, parts, hash_state) = value;
         match routing_requirement {
             RoutingRequirement::Header(header_name) => {
-                let header_value = request
-                    .headers()
+                let header_value = parts
+                    .headers
                     .get(header_name)
                     .ok_or_else(|| format!("Missing required header '{header_name}' for ORIGINAL_DST cluster"))?;
                 Ok(RoutingContext::Header(header_value))
@@ -85,6 +81,30 @@ impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTi
         }
     }
 }
+
+// impl<'a> TryFrom<(&'a RoutingRequirement, &'a Parts, HashState<'a>)> for RoutingContext<'a> {
+//     type Error = String;
+
+//     fn try_from(value: (&'a RoutingRequirement, &'a Parts, HashState<'a>)) -> std::result::Result<Self, Self::Error> {
+//         let (routing_requirement, parts, hash_state) = value;
+//         match routing_requirement {
+//             RoutingRequirement::Header(header_name) => {
+//                 let header_value = parts
+//                     .headers
+//                     .get(header_name)
+//                     .ok_or_else(|| format!("Missing required header '{header_name}' for ORIGINAL_DST cluster"))?;
+//                 Ok(RoutingContext::Header(header_value))
+//             },
+//             RoutingRequirement::Authority => {
+//                 let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
+//                 warn!(msg);
+//                 Err(msg)
+//             },
+//             RoutingRequirement::Hash => Ok(RoutingContext::Hash(hash_state)),
+//             RoutingRequirement::None => Ok(RoutingContext::None),
+//         }
+//     }
+// }
 
 static CLUSTERS_MAP: CachedWatch<ClustersMap> = CachedWatch::new(ClustersMap::new());
 

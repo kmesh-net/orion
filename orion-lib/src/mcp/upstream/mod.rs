@@ -3,7 +3,6 @@ pub mod response_channel;
 mod stdio;
 mod streamablehttp;
 use ahash::HashMap;
-use http::Uri;
 use rmcp::model::{ClientNotification, ClientRequest, JsonRpcRequest};
 use rmcp::transport::streamable_http_client::StreamableHttpPostResponse;
 
@@ -16,7 +15,6 @@ use tracing::debug;
 use super::{mergestream, upstream};
 use crate::mcp::router::McpBackend;
 use crate::mcp::{ClientError, Request};
-use crate::transport::HttpChannel;
 
 #[derive(Debug, Clone)]
 pub struct IncomingRequestContext {
@@ -146,13 +144,13 @@ pub(crate) struct UpstreamGroup {
 }
 
 impl UpstreamGroup {
-    pub(crate) fn new(mcp_backends: HashMap<String, (McpBackend, Uri)>) -> Self {
+    pub(crate) fn new(mcp_backends: HashMap<String, McpBackend>) -> Self {
         let streamable_clients = mcp_backends
             .into_iter()
-            .filter_map(|(k, (mcp_backend, uri))| match mcp_backend {
-                McpBackend::Stdio { cmd, vars, args } => None,
+            .filter_map(|(name, mcp_backend)| match mcp_backend {
+                McpBackend::Stdio { cmd, envs, args } => None,
                 McpBackend::StreamableHttp { http_channel, uri } => {
-                    Some((k, upstream::Upstream::McpStreamable(streamablehttp::Client::new(http_channel, uri))))
+                    Some((name, upstream::Upstream::McpStreamable(streamablehttp::Client::new(http_channel, uri))))
                 },
             })
             .collect();

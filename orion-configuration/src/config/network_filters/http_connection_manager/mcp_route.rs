@@ -34,13 +34,13 @@ pub struct McpStdioParams {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct McpStreamableHttpParams {
-    pub cluster_specifiers: Vec<ClusterSpecifier>,
+    pub cluster_specifier: ClusterSpecifier,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum McpBackendType {
-    StdioBackends(Vec<McpStdioParams>),
-    StreamableHttpBackends(Vec<McpStreamableHttpParams>),
+    StdioBackend(McpStdioParams),
+    StreamableHttpBackend(McpStreamableHttpParams),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -111,13 +111,19 @@ mod envoy_conversions {
         fn try_from(value: EnvoyMcpBackendType) -> Result<Self, Self::Error> {
             let EnvoyMcpBackendType { mcp_backend_type } = value;
             match mcp_backend_type {
-                Some(mcp_backend_type::McpBackendType::StdioBackends(stdio_backends)) => {
-                    let iter = stdio_backends.mcp_stdio_params.into_iter();
-                    Ok(McpBackendType::StdioBackends(convert_vec!(iter)?))
+                Some(mcp_backend_type::McpBackendType::StdioBackend(mcp_stdio_backend)) => {
+                    match mcp_stdio_backend.mcp_stdio_params {
+                        Some(backend) => Ok(McpBackendType::StdioBackend(McpStdioParams::try_from(backend)?)),
+                        None => Err(GenericError::Message("Problem with parsing mcp route configuration file".into())),
+                    }
                 },
-                Some(mcp_backend_type::McpBackendType::StreamableHttpBackends(streamable_http_backends)) => {
-                    let iter = streamable_http_backends.mcp_streamable_http_params.into_iter();
-                    Ok(McpBackendType::StreamableHttpBackends(convert_vec!(iter)?))
+                Some(mcp_backend_type::McpBackendType::StreamableHttpBackend(streamable_http_backend)) => {
+                    match streamable_http_backend.mcp_streamable_http_params {
+                        Some(backend) => {
+                            Ok(McpBackendType::StreamableHttpBackend(McpStreamableHttpParams::try_from(backend)?))
+                        },
+                        None => Err(GenericError::Message("Problem with parsing mcp route configuration file".into())),
+                    }
                 },
                 None => Err(GenericError::Message("Problem with parsing mcp route configuration file".into())),
             }
@@ -128,13 +134,8 @@ mod envoy_conversions {
         type Error = GenericError;
 
         fn try_from(value: EnvoyMcpStreamableHttpParams) -> Result<Self, Self::Error> {
-            let EnvoyMcpStreamableHttpParams { cluster_specifiers } = value;
-            Ok(McpStreamableHttpParams {
-                cluster_specifiers: cluster_specifiers
-                    .into_iter()
-                    .map(|s| ClusterSpecifier::Cluster(s.into()))
-                    .collect(),
-            })
+            let EnvoyMcpStreamableHttpParams { cluster_specifier } = value;
+            Ok(McpStreamableHttpParams { cluster_specifier: ClusterSpecifier::Cluster(cluster_specifier.into()) })
         }
     }
 

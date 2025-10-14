@@ -73,11 +73,12 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             route_match,
             websocket_enabled_by_default,
         } = request;
+        let (mut parts, body) = downstream_request.into_parts();
         let cluster_id = clusters_manager::resolve_cluster(&self.cluster_specifier)
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
-        let hash_state = HashState::new(self.hash_policy.as_slice(), &downstream_request, remote_address);
-        let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state))?;
+        let hash_state = HashState::new(self.hash_policy.as_slice(), &parts, remote_address);
+        let routing_context = RoutingContext::try_from((&routing_requirement, &parts, hash_state))?;
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
 
         match maybe_channel {
@@ -90,10 +91,9 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     })
                 }
 
-                let ver = downstream_request.version();
+                let ver = parts.version;
 
                 let mut upstream_request: Request<BodyWithMetrics<PolyBody>> = {
-                    let (mut parts, body) = downstream_request.into_parts();
                     let path_and_query_replacement = if let Some(rewrite) = &self.rewrite {
                         rewrite
                             .apply(parts.uri.path_and_query(), &route_match)
@@ -218,7 +218,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     ResponseFlagsLong(&flags.0).to_smolstr(),
                     ResponseFlagsShort(&flags.0).to_smolstr()
                 );
-                Ok(SyntheticHttpResponse::internal_error(event_kind, flags).into_response(downstream_request.version()))
+                Ok(SyntheticHttpResponse::internal_error(event_kind, flags).into_response(parts.version))
             },
         }
     }

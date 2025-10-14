@@ -26,6 +26,7 @@ use bytes::Bytes;
 use compact_str::CompactString;
 use http::{
     HeaderName, Request, StatusCode,
+    request::Parts,
     uri::{Authority, InvalidUri, PathAndQuery, Scheme},
 };
 use regex::Regex;
@@ -355,16 +356,16 @@ pub enum HashPolicyResult {
 }
 
 impl HashPolicy {
-    pub fn apply<B>(&self, hasher: &mut impl Hasher, req: &Request<B>, src_addr: SocketAddr) -> HashPolicyResult {
+    pub fn apply(&self, hasher: &mut impl Hasher, req_parts: &Parts, src_addr: SocketAddr) -> HashPolicyResult {
         let applied = match &self.policy_specifier {
             PolicySpecifier::SourceIp(true) => {
                 src_addr.hash(hasher);
                 true
             },
             PolicySpecifier::SourceIp(false) => false,
-            PolicySpecifier::Header(name) => req.headers().get(name).inspect(|value| value.hash(hasher)).is_some(),
-            PolicySpecifier::QueryParameter(name) => req
-                .uri()
+            PolicySpecifier::Header(name) => req_parts.headers.get(name).inspect(|value| value.hash(hasher)).is_some(),
+            PolicySpecifier::QueryParameter(name) => req_parts
+                .uri
                 .query()
                 .and_then(|query| {
                     // Hash the value of the first query key that matches (case-sensitive)
