@@ -40,9 +40,30 @@ envoy_bootstrap:
                           - match:
                               prefix: "/mcp"
                             mcp_route:
-                              cluster_mappings:
-                                my-local-agent1.dn: cluster_http_1
-                                my-local-agent2.dn: cluster_http_2
+                              backend_mappings:
+                                # my-local-agent1.dn:
+                                #   streamable_http_backend:
+                                #     mcp_streamable_http_params:
+                                #       cluster_specifier: cluster_http_1
+                                # my-local-agent2.dn:
+                                #   streamable_http_backend:
+                                #     mcp_streamable_http_params:
+                                #       cluster_specifier: cluster_http_2
+                                my-local-agent3.dn:
+                                  stdio_backend:
+                                    mcp_stdio_params:
+                                      command: "docker"
+                                      args:
+                                        [
+                                          "run",
+                                          "-i",
+                                          "--rm",
+                                          "-e",
+                                          "GITHUB_PERSONAL_ACCESS_TOKEN",
+                                          "ghcr.io/github/github-mcp-server",
+                                        ]
+                                      envs:
+                                        "GITHUB_PERSONAL_ACCESS_TOKEN": "${input:github_token}"
 
     clusters:
       - name: cluster_http_1

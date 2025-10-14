@@ -1413,7 +1413,7 @@ message McpRouteAction {
   message McpStdioParams{
       string command = 2;
       repeated string args = 3;
-      repeated string env = 4;
+      map<string, string> envs = 4;
   }
 
   message McpStdioBackend {

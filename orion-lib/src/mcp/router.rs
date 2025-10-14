@@ -9,6 +9,7 @@ use crate::transport::HttpChannel;
 use ahash::HashMap;
 use http::Uri;
 use rmcp::transport::StreamableHttpServerConfig;
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct App {
@@ -17,7 +18,7 @@ pub struct App {
 
 #[derive(Debug, Clone)]
 pub enum McpBackend {
-    Stdio { cmd: String, envs: Vec<String>, args: Vec<String> },
+    Stdio { cmd: String, args: Vec<String>, envs: HashMap<String, String> },
     StreamableHttp { http_channel: HttpChannel, uri: Uri },
 }
 impl App {
@@ -27,8 +28,12 @@ impl App {
 
     pub async fn serve(&self, original_request: Request, mcp_backends: HashMap<String, McpBackend>) -> Response {
         let sm = self.session_manager.clone();
+
         let default_target_name =
-            if mcp_backends.keys().len() == 1 { mcp_backends.keys().last().cloned() } else { None };
+            { if mcp_backends.keys().len() == 1 { mcp_backends.keys().last().cloned().clone() } else { None } };
+
+        debug!("Configured backends {}", mcp_backends.keys().len());
+
         let streamable = StreamableHttpService::new(
             move || Relay::new(default_target_name.clone(), mcp_backends.clone()),
             sm,

@@ -28,8 +28,8 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct McpStdioParams {
     pub cmd: String,
-    pub env: Vec<String>,
     pub args: Vec<String>,
+    pub envs: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -92,7 +92,7 @@ mod envoy_conversions {
             PathRewriteSpecifier as EnvoyPathRewriteSpecifier, mcp_backend_type,
         },
     };
-    use tracing::warn;
+    use tracing::{info, warn};
 
     use std::{collections::HashMap, str::FromStr};
 
@@ -100,8 +100,8 @@ mod envoy_conversions {
         type Error = GenericError;
 
         fn try_from(value: EnvoyMcpStdioParams) -> Result<Self, Self::Error> {
-            let EnvoyMcpStdioParams { command, args, env } = value;
-            Ok(McpStdioParams { cmd: command, env, args })
+            let EnvoyMcpStdioParams { command, args, envs } = value;
+            Ok(McpStdioParams { cmd: command, args, envs })
         }
     }
 
@@ -168,6 +168,7 @@ mod envoy_conversions {
                     }
                 })
                 .collect::<HashMap<_, _>>();
+            info!("Parsing MCP Route Action with configured backends {}", backend_mappings.keys().len());
 
             if has_error {
                 warn!("Problem with parsing mcp route configuration file");

@@ -28,6 +28,8 @@ use orion_data_plane_api::envoy_data_plane_api::envoy::{
 use orion_error::Context;
 use orion_format::context::UpstreamContext;
 
+use rmcp::transport::{TokioChildProcess, child_process::TokioChildProcessBuilder};
+use tokio::process::Command;
 use tracing::{debug, warn};
 
 use crate::{
@@ -70,33 +72,39 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &McpRo
 
         let (parts, b) = downstream_request.into_parts();
         let data = b.inner.collect().await?.to_bytes();
-        let mut backends = self.backend_mappings.iter().map(|(name, backend_type)| {
-            (
-                name,
-                match backend_type {
-                    McpBackendType::StdioBackend(params) => Ok(McpBackend::Stdio {
-                        cmd: params.cmd.clone(),
-                        envs: params.env.clone(),
-                        args: params.args.clone(),
-                    }),
-                    McpBackendType::StreamableHttpBackend(item) => process_streamable_http_channel(
-                        item,
-                        &parts,
-                        route_name,
-                        &route_match,
-                        remote_address,
-                        &self,
-                        trans_handler,
-                    ),
-                },
-            )
-        });
+        let backends = self
+            .backend_mappings
+            .iter()
+            .map(|(name, backend_type)| {
+                (
+                    name,
+                    match backend_type {
+                        McpBackendType::StdioBackend(params) => Ok(McpBackend::Stdio {
+                            cmd: params.cmd.clone(),
+                            args: params.args.clone(),
+                            envs: HashMap::from_iter(params.envs.clone().into_iter()),
+                        }),
 
-        if backends.find(|(_, backend_type)| backend_type.is_err()).is_some() {
+                        McpBackendType::StreamableHttpBackend(item) => process_streamable_http_channel(
+                            item,
+                            &parts,
+                            route_name,
+                            &route_match,
+                            remote_address,
+                            &self,
+                            trans_handler,
+                        ),
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        if backends.values().any(|backend_type| backend_type.is_err()) {
             return Err(orion_error::Error::from(
                 "Problem when processing channels can't find authority from uri nor headers".to_owned(),
             ));
         }
+
         let backends = backends
             .into_iter()
             .filter_map(

@@ -35,8 +35,11 @@ pub struct Relay {
 }
 
 impl Relay {
-    pub fn new(default_target_name: Option<String>, mcp_backends: HashMap<String, McpBackend>) -> Self {
-        Self { upstreams: Arc::new(UpstreamGroup::new(mcp_backends)), default_target_name }
+    pub fn new(
+        default_target_name: Option<String>,
+        mcp_backends: HashMap<String, McpBackend>,
+    ) -> Result<Self, orion_error::Error> {
+        Ok(Self { upstreams: Arc::new(UpstreamGroup::new(mcp_backends)?), default_target_name })
     }
 
     pub fn parse_resource_name<'a, 'b: 'a>(&'a self, res: &'b str) -> Result<(&'a str, &'b str), UpstreamError> {

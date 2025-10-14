@@ -7,18 +7,19 @@ use ::http::StatusCode;
 use rmcp::model::{ClientJsonRpcMessage, ClientRequest};
 use rmcp::transport::StreamableHttpServerConfig;
 use rmcp::transport::common::http_header::{EVENT_STREAM_MIME_TYPE, HEADER_SESSION_ID, JSON_MIME_TYPE};
+use tracing::debug;
 
 use crate::mcp::session::SessionManager;
 
 pub struct StreamableHttpService {
     config: StreamableHttpServerConfig,
     session_manager: Arc<SessionManager>,
-    service_factory: Arc<dyn Fn() -> Relay + Send + Sync>,
+    service_factory: Arc<dyn Fn() -> Result<Relay, orion_error::Error> + Send + Sync>,
 }
 
 impl StreamableHttpService {
     pub fn new(
-        service_factory: impl Fn() -> Relay + Send + Sync + 'static,
+        service_factory: impl Fn() -> Result<Relay, orion_error::Error> + Send + Sync + 'static,
         session_manager: Arc<SessionManager>,
         config: StreamableHttpServerConfig,
     ) -> Self {
@@ -85,11 +86,19 @@ impl StreamableHttpService {
         };
 
         if !self.config.stateful_mode {
-            let relay = (self.service_factory)();
-            let session = self.session_manager.create_session(relay);
-            return session.stateless_send_and_initialize(part, message).await;
+            let maybe_relay = (self.service_factory)();
+            if let Ok(relay) = maybe_relay {
+                let session = self.session_manager.create_session(relay);
+                return session.stateless_send_and_initialize(part, message).await;
+            } else {
+                return http_error(
+                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                    PolyBody::from(format!("Couldn't create a relay Session not found {:?}", maybe_relay.err())),
+                );
+            }
         }
 
+        debug!("Handling post");
         let session_id = part.headers.get(HEADER_SESSION_ID).and_then(|v| v.to_str().ok());
         let (session, set_session_id) = if let Some(session_id) = session_id {
             let Some(session) = self.session_manager.get_session(session_id) else {
@@ -106,9 +115,17 @@ impl StreamableHttpService {
                     PolyBody::from("session header is required for non-initialize requests"),
                 );
             }
-            let relay = (self.service_factory)();
-            let session = self.session_manager.create_session(relay);
-            (session, true)
+
+            let maybe_relay = (self.service_factory)();
+            if let Ok(relay) = maybe_relay {
+                let session = self.session_manager.create_session(relay);
+                (session, true)
+            } else {
+                return http_error(
+                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                    PolyBody::from(format!("Couldn't create a relay Session not found {:?}", maybe_relay.err())),
+                );
+            }
         };
         let mut resp = session.send(part, message).await;
         if set_session_id {
