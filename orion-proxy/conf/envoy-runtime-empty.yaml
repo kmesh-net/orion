@@ -1,0 +1,12 @@
+
+
+static_resources:
+  listeners:
+    - name: listener_http
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 11100 }
+      filterChains:
+        - name: filter_chain_http
+          filter_chain_match:
+            destination_port: 11100
+          filters:
