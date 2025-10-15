@@ -249,4 +249,87 @@ mod tests {
             handle.join().unwrap();
         }
     }
+
+    #[test]
+    fn token_bucket_multi_token_consume() {
+        let tb = TokenBucket::new(10, 1, Duration::from_millis(10));
+
+        // consume multiple tokens at once
+        assert!(tb.consume(5));
+        assert_eq!(tb.size(), 5);
+
+        // should be able to consume remaining tokens
+        assert!(tb.consume(5));
+        assert_eq!(tb.size(), 0);
+
+        // should fail to consume when empty
+        assert!(!tb.consume(1));
+    }
+
+    #[test]
+    fn token_bucket_partial_refill() {
+        let tb = TokenBucket::new(10, 1, Duration::from_millis(10));
+
+        // consume all tokens
+        assert!(tb.consume(10));
+        assert_eq!(tb.size(), 0);
+
+        // wait for partial refill (2 tokens)
+        sleep(Duration::from_millis(20));
+
+        // should have approximately 2 tokens
+        let size = tb.size();
+        assert!(size >= 2 && size <= 3, "Expected 2-3 tokens, got {}", size);
+
+        // should be able to consume 2 tokens
+        assert!(tb.consume(2));
+    }
+
+    #[test]
+    fn token_bucket_over_consume() {
+        let tb = TokenBucket::new(5, 1, Duration::from_millis(10));
+
+        // try to consume more tokens than available
+        assert!(!tb.consume(10));
+
+        // bucket should still be full
+        assert_eq!(tb.size(), 5);
+    }
+
+    #[test]
+    fn token_bucket_zero_tokens() {
+        let tb = TokenBucket::new(5, 1, Duration::from_millis(10));
+
+        // consuming zero tokens should succeed
+        assert!(tb.consume(0));
+        assert_eq!(tb.size(), 5);
+    }
+
+    #[test]
+    fn token_bucket_clone() {
+        let tb1 = TokenBucket::new(5, 1, Duration::from_millis(10));
+
+        // consume some tokens
+        assert!(tb1.consume(3));
+
+        // clone the bucket
+        let tb2 = tb1.clone();
+
+        // both should have same configuration
+        assert_eq!(tb1.capacity(), tb2.capacity());
+        assert_eq!(tb1, tb2);
+    }
+
+    #[test]
+    fn token_bucket_debug() {
+        let tb = TokenBucket::new(10, 2, Duration::from_millis(5));
+        let debug_str = format!("{:?}", tb);
+
+        // verify debug output contains expected fields
+        assert!(debug_str.contains("TokenBucket"));
+        assert!(debug_str.contains("time"));
+        assert!(debug_str.contains("time_per_token"));
+        assert!(debug_str.contains("time_per_bucket"));
+        assert!(debug_str.contains("max_tokens"));
+    }
 }
