@@ -80,7 +80,7 @@ impl EndpointAddressType {
                 if let Ok(socket_addr) = addr_str.parse::<std::net::SocketAddr>() {
                     EndpointAddress::Socket(socket_addr)
                 } else {
-                    panic!("Cannot convert authority back to socket address: {}", addr_str);
+                    panic!("Cannot convert authority back to socket address: {addr_str}");
                 }
             },
             EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),

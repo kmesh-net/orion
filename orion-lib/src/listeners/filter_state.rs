@@ -17,6 +17,7 @@
 
 use compact_str::CompactString;
 use orion_configuration::config::common::TlvType;
+use orion_internal::{is_internal_address, INTERNAL_LOCAL_ADDR, INTERNAL_PEER_ADDR};
 use std::{collections::HashMap, net::SocketAddr};
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,13 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
+    /// Internal connections from in-process communication (e.g., waypoint proxy)
+    /// - `listener_name`: identifies which internal listener accepted this connection
+    /// - `endpoint_id`: optional identifier for the specific endpoint (used for load balancing)
+    FromInternal {
+        listener_name: String,
+        endpoint_id: Option<String>,
+    },
 }
 
 impl DownstreamConnectionMetadata {
@@ -47,14 +55,25 @@ impl DownstreamConnectionMetadata {
             Self::FromSocket { peer_address, .. } => *peer_address,
             Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
             Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
+            Self::FromInternal { .. } => INTERNAL_PEER_ADDR,
         }
     }
+
     pub fn local_address(&self) -> SocketAddr {
         match self {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
             Self::FromTlv { original_destination_address, .. } => *original_destination_address,
+            Self::FromInternal { .. } => INTERNAL_LOCAL_ADDR,
         }
+    }
+
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Self::FromInternal { .. })
+    }
+
+    pub fn is_internal_address(addr: SocketAddr) -> bool {
+        is_internal_address(&addr)
     }
 }
 

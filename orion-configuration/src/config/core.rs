@@ -305,7 +305,7 @@ pub mod envoy_conversions {
     impl std::fmt::Display for Address {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Socket(addr) => write!(f, "{}", addr),
+                Self::Socket(addr) => write!(f, "{addr}"),
                 Self::Internal(internal) => write!(f, "internal:{}", internal.server_listener_name),
                 Self::Pipe(path, _) => f.write_str(path),
             }

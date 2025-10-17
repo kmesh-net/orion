@@ -20,8 +20,11 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 use orion_configuration::config::{
-    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
+
+#[cfg(test)]
+use orion_configuration::config::listener::ListenerAddress;
 
 use super::listener::{Listener, ListenerFactory};
 use crate::{secrets::TransportSecret, ConfigDump, Result};
@@ -116,7 +119,7 @@ impl ListenersManager {
                         warn!("Internal problem when updating a route: {e}");
                     }
                 },
-                _ = ct.cancelled() => {
+                () = ct.cancelled() => {
                     warn!("Listener manager exiting");
                     return Ok(());
                 }
@@ -125,7 +128,7 @@ impl ListenersManager {
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name().to_string();
+        let listener_name = listener.get_name().to_owned();
         if let Some((addr, dev)) = listener.get_socket() {
             info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
         } else {
@@ -145,7 +148,7 @@ impl ListenersManager {
         let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
         self.listener_handles.insert(listener_name.clone(), listener_info);
 
-        let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
+        let version_count = self.listener_handles.get_vec(&listener_name).map(std::vec::Vec::len).unwrap_or(0);
         info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
         Ok(())

@@ -155,7 +155,7 @@ impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
                     Address::Internal(internal_addr) => Some(LbEndpoint {
                         address: EndpointAddress::Internal(InternalEndpointAddress {
                             server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
                         }),
                         health_status: HealthStatus::default(),
                         load_balancing_weight: NonZeroU32::MIN,
@@ -193,7 +193,7 @@ impl EndpointAddress {
     pub fn into_addr(self) -> Result<SocketAddr, String> {
         match self {
             EndpointAddress::Socket(addr) => Ok(addr),
-            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_string()),
+            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_owned()),
         }
     }
 }
@@ -785,7 +785,7 @@ mod envoy_conversions {
                         Address::Socket(socket_addr) => Ok(EndpointAddress::Socket(socket_addr)),
                         Address::Internal(internal_addr) => Ok(EndpointAddress::Internal(InternalEndpointAddress {
                             server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
                         })),
                         Address::Pipe(_, _) => {
                             Err(GenericError::unsupported_variant("Pipe addresses are not supported for endpoints"))
