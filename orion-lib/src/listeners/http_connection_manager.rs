@@ -42,7 +42,8 @@ use orion_configuration::config::GenericError;
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
-use std::sync::atomic::AtomicUsize;
+use std::collections::HashMap;
+use tracing::{debug, info};
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::{
     FilterConfigOverride, FilterOverride,
@@ -59,6 +60,7 @@ use orion_configuration::config::network_filters::{
         RdsSpecifier, RouteSpecifier, UpgradeType,
     },
 };
+use orion_configuration::config::TlvType;
 use orion_format::context::{
     DownstreamResponse, FinishContext, HttpRequestDuration, HttpResponseDuration, InitHttpContext,
 };
@@ -68,13 +70,18 @@ use orion_metrics::{metrics::http, with_metric};
 use parking_lot::Mutex;
 use route::MatchedRequest;
 use scopeguard::defer;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::sync::atomic::AtomicUsize;
 use std::thread::ThreadId;
 use std::time::Instant;
-use std::{fmt, future::Future, result::Result as StdResult, sync::Arc};
+use std::{
+    fmt,
+    future::Future,
+    result::Result as StdResult,
+    sync::{Arc, LazyLock},
+};
 use tokio::sync::mpsc::Permit;
 use tokio::sync::watch;
-use tracing::debug;
 use upgrades as upgrade_utils;
 
 use crate::event_error::{EventKind, UpstreamTransportEventError};
@@ -89,7 +96,11 @@ use crate::{
 use crate::{
     body::body_with_timeout::BodyWithTimeout,
     listeners::{
-        access_log::AccessLogContext, filter_state::DownstreamMetadata, rate_limiter::LocalRateLimit,
+        access_log::AccessLogContext,
+        drain_signaling::DrainSignalingManager,
+        filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
+        listeners_manager::ConnectionManager,
+        rate_limiter::LocalRateLimit,
         synthetic_http_response::SyntheticHttpResponse,
     },
     utils::http::{request_head_size, response_head_size},
@@ -98,6 +109,9 @@ use crate::{
 use orion_tracing::http_tracer::{HttpTracer, SpanKind, SpanName};
 use orion_tracing::request_id::{RequestId, RequestIdManager};
 use orion_tracing::trace_context::TraceContext;
+
+static EMPTY_HASHMAP: LazyLock<Arc<HashMap<RouteMatch, Vec<Arc<HttpFilter>>>>> =
+    LazyLock::new(|| Arc::new(HashMap::new()));
 
 #[derive(Debug, Clone)]
 pub struct HttpConnectionManagerBuilder {
@@ -131,6 +145,7 @@ impl HttpConnectionManagerBuilder {
             http_filters_per_route: ArcSwap::new(Arc::new(partial.http_filters_per_route)),
             enabled_upgrades: partial.enabled_upgrades,
             request_timeout: partial.request_timeout,
+            drain_timeout: partial.drain_timeout,
             access_log: partial.access_log,
             xff_settings: partial.xff_settings,
             request_id_handler: RequestIdManager::new(
@@ -142,6 +157,8 @@ impl HttpConnectionManagerBuilder {
                 Some(tracing) => HttpTracer::new().with_config(tracing),
                 None => HttpTracer::new(),
             },
+            drain_signaling: Arc::new(DrainSignalingManager::new()),
+            connection_manager: None, // Will be set during listener startup
         })
     }
 
@@ -163,6 +180,7 @@ pub struct PartialHttpConnectionManager {
     http_filters_per_route: HashMap<RouteMatch, Vec<Arc<HttpFilter>>>,
     enabled_upgrades: Vec<UpgradeType>,
     request_timeout: Option<Duration>,
+    drain_timeout: Option<Duration>,
     access_log: Vec<AccessLog>,
     xff_settings: XffSettings,
     generate_request_id: bool,
@@ -257,6 +275,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
             .map(|f| Arc::new(HttpFilter::from(f)))
             .collect::<Vec<Arc<HttpFilter>>>();
         let request_timeout = configuration.request_timeout;
+        let drain_timeout = configuration.drain_timeout;
         let access_log = configuration.access_log;
         let xff_settings = configuration.xff_settings;
         let generate_request_id = configuration.generate_request_id;
@@ -285,6 +304,7 @@ impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttp
             http_filters_per_route,
             enabled_upgrades,
             request_timeout,
+            drain_timeout,
             access_log,
             xff_settings,
             generate_request_id,
@@ -320,7 +340,6 @@ impl AlpnCodecs {
     }
 }
 
-#[derive(Debug)]
 pub struct HttpConnectionManager {
     pub listener_name: &'static str,
     pub filter_chain_match_hash: u64,
@@ -331,10 +350,47 @@ pub struct HttpConnectionManager {
     http_filters_per_route: ArcSwap<HashMap<RouteMatch, Vec<Arc<HttpFilter>>>>,
     enabled_upgrades: Vec<UpgradeType>,
     request_timeout: Option<Duration>,
+    drain_timeout: Option<Duration>,
     access_log: Vec<AccessLog>,
     xff_settings: XffSettings,
     request_id_handler: RequestIdManager,
     pub http_tracer: HttpTracer,
+    drain_signaling: Arc<DrainSignalingManager>,
+    connection_manager: Option<Arc<dyn ConnectionManager>>,
+}
+
+impl Clone for HttpConnectionManager {
+    fn clone(&self) -> Self {
+        Self {
+            listener_name: self.listener_name,
+            filter_chain_match_hash: self.filter_chain_match_hash,
+            router_sender: self.router_sender.clone(),
+            codec_type: self.codec_type,
+            dynamic_route_name: self.dynamic_route_name.clone(),
+            http_filters_hcm: self.http_filters_hcm.clone(),
+            http_filters_per_route: ArcSwap::new(self.http_filters_per_route.load_full()),
+            enabled_upgrades: self.enabled_upgrades.clone(),
+            request_timeout: self.request_timeout,
+            drain_timeout: self.drain_timeout,
+            access_log: self.access_log.clone(),
+            xff_settings: self.xff_settings.clone(),
+            request_id_handler: self.request_id_handler.clone(),
+            http_tracer: self.http_tracer.clone(),
+            drain_signaling: self.drain_signaling.clone(),
+            connection_manager: self.connection_manager.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for HttpConnectionManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpConnectionManager")
+            .field("listener_name", &self.listener_name)
+            .field("filter_chain_match_hash", &self.filter_chain_match_hash)
+            .field("codec_type", &self.codec_type)
+            .field("connection_manager", &"<ConnectionManager>")
+            .finish()
+    }
 }
 
 impl fmt::Display for HttpConnectionManager {
@@ -360,7 +416,182 @@ impl HttpConnectionManager {
     }
 
     pub fn remove_route(&self) {
+        self.http_filters_per_route.swap(EMPTY_HASHMAP.clone());
         let _ = self.router_sender.send_replace(None);
+    }
+
+    pub fn get_drain_signaling(&self) -> Arc<DrainSignalingManager> {
+        Arc::clone(&self.drain_signaling)
+    }
+
+    pub fn get_drain_timeout(&self) -> Option<Duration> {
+        self.drain_timeout
+    }
+
+    pub async fn start_draining(&self, drain_state: crate::listeners::drain_signaling::ListenerDrainState) {
+        let listener_id = format!("{}-{}", self.listener_name, self.filter_chain_match_hash);
+        let protocol_config =
+            crate::listeners::drain_signaling::ListenerProtocolConfig::Http { drain_timeout: self.drain_timeout };
+        let _ = self.drain_signaling.initiate_listener_drain(listener_id, protocol_config, 0).await;
+
+        self.drain_signaling.start_listener_draining(drain_state).await;
+    }
+
+    pub async fn stop_draining(&self) {
+        self.drain_signaling.stop_listener_draining().await;
+    }
+
+    pub fn set_connection_manager(&mut self, connection_manager: Arc<dyn ConnectionManager>) {
+        self.connection_manager = Some(connection_manager);
+    }
+
+    pub fn on_connection_established(
+        &self,
+        connection_id: String,
+        protocol: crate::listeners::listeners_manager::ConnectionProtocol,
+    ) {
+        use crate::listeners::listeners_manager::{ConnectionInfo, ConnectionState};
+        use std::time::Instant;
+
+        let conn_info = ConnectionInfo {
+            id: connection_id.clone(),
+            protocol: protocol.clone(),
+            established_at: Instant::now(),
+            last_activity: Instant::now(),
+            state: ConnectionState::Active,
+        };
+
+        info!("HTTP connection {} established with protocol {:?}", connection_id, protocol);
+
+        if let Some(ref connection_manager) = self.connection_manager {
+            connection_manager.on_connection_established(self.listener_name, conn_info);
+        }
+    }
+
+    pub fn on_connection_closed(&self, connection_id: &str) {
+        info!("HTTP connection {} closed", connection_id);
+
+        if let Some(ref connection_manager) = self.connection_manager {
+            connection_manager.on_connection_closed(self.listener_name, connection_id);
+        }
+    }
+
+    pub async fn apply_response_drain_signaling<B>(&self, response: &mut hyper::Response<B>) {
+        if self.drain_signaling.is_listener_draining().await {
+            self.drain_signaling.apply_http1_drain_signal(response).await;
+        }
+    }
+
+    pub fn apply_response_drain_signaling_sync<B>(response: &mut hyper::Response<B>) -> bool {
+        DrainSignalingManager::apply_http1_drain_signal_sync(response)
+    }
+
+    pub fn extract_connection_id(downstream_metadata: &DownstreamConnectionMetadata) -> String {
+        format!("{}:{}", downstream_metadata.local_address(), downstream_metadata.peer_address())
+    }
+
+    pub fn extract_connection_protocol(
+        downstream_metadata: &DownstreamConnectionMetadata,
+    ) -> crate::listeners::listeners_manager::ConnectionProtocol {
+        match downstream_metadata {
+            DownstreamConnectionMetadata::FromProxyProtocol { protocol, tlv_data, .. } => {
+                Self::detect_from_proxy_protocol(protocol, tlv_data)
+            },
+            DownstreamConnectionMetadata::FromTlv { tlv_data, .. } => Self::detect_from_tlv_data(tlv_data),
+            DownstreamConnectionMetadata::FromSocket { local_address, .. } => {
+                Self::detect_from_port(local_address.port())
+            },
+        }
+    }
+
+    fn detect_from_proxy_protocol(
+        protocol: &ppp::v2::Protocol,
+        tlv_data: &HashMap<TlvType, Vec<u8>>,
+    ) -> crate::listeners::listeners_manager::ConnectionProtocol {
+        use crate::listeners::listeners_manager::ConnectionProtocol;
+
+        if let Some(alpn_data) = tlv_data.get(&TlvType::Custom(0x01)) {
+            return Self::parse_alpn_protocol(alpn_data);
+        }
+
+        if tlv_data.contains_key(&TlvType::Custom(0x20)) {
+            return ConnectionProtocol::Http2;
+        }
+
+        match protocol {
+            ppp::v2::Protocol::Stream => ConnectionProtocol::Http1,
+            _ => ConnectionProtocol::Unknown,
+        }
+    }
+
+    fn detect_from_tlv_data(
+        tlv_data: &HashMap<u8, Vec<u8>>,
+    ) -> crate::listeners::listeners_manager::ConnectionProtocol {
+        use crate::listeners::listeners_manager::ConnectionProtocol;
+
+        if let Some(alpn_data) = tlv_data.get(&0x01) {
+            return Self::parse_alpn_protocol(alpn_data);
+        }
+
+        if tlv_data.contains_key(&0x20) {
+            return ConnectionProtocol::Http2;
+        }
+
+        ConnectionProtocol::Http1
+    }
+
+    fn parse_alpn_protocol(alpn_data: &[u8]) -> crate::listeners::listeners_manager::ConnectionProtocol {
+        use crate::listeners::listeners_manager::ConnectionProtocol;
+
+        if alpn_data.is_empty() {
+            return ConnectionProtocol::Http1;
+        }
+
+        let mut offset = 0;
+        while offset < alpn_data.len() {
+            if offset + 1 > alpn_data.len() {
+                break;
+            }
+
+            let proto_len = alpn_data[offset] as usize;
+            offset += 1;
+
+            if offset + proto_len > alpn_data.len() {
+                break;
+            }
+
+            let protocol = &alpn_data[offset..offset + proto_len];
+            match protocol {
+                b"h2" => return ConnectionProtocol::Http2,
+                b"http/1.1" => return ConnectionProtocol::Http1,
+                b"http/1.0" => return ConnectionProtocol::Http1,
+                _ => {
+                    debug!("Unknown ALPN protocol: {:?}", String::from_utf8_lossy(protocol));
+                },
+            }
+
+            offset += proto_len;
+        }
+
+        ConnectionProtocol::Http1
+    }
+
+    fn detect_from_port(port: u16) -> crate::listeners::listeners_manager::ConnectionProtocol {
+        use crate::listeners::listeners_manager::ConnectionProtocol;
+
+        match port {
+            443 | 8443 => ConnectionProtocol::Http2,
+            80 | 8080 | 8000 => ConnectionProtocol::Http1,
+            _ => ConnectionProtocol::Http1,
+        }
+    }
+
+    pub async fn should_apply_drain_signaling<B>(&self, _request: &hyper::Request<B>) -> bool {
+        self.drain_signaling.is_listener_draining().await
+    }
+
+    pub async fn is_draining(&self) -> bool {
+        self.drain_signaling.is_listener_draining().await
     }
 
     pub(crate) fn request_handler(
@@ -408,7 +639,7 @@ pub(crate) struct HttpRequestHandler {
 
 pub struct ExtendedRequest<B> {
     pub request: Request<B>,
-    pub downstream_metadata: Arc<DownstreamMetadata>,
+    pub downstream_metadata: Arc<DownstreamConnectionMetadata>,
 }
 
 #[derive(Debug)]
@@ -837,6 +1068,16 @@ impl
                 self.response_header_modifier.modify(resp_headers);
             }
 
+            match connection_manager.codec_type {
+                CodecType::Http1 => {
+                    connection_manager.drain_signaling.apply_http1_drain_signal(&mut response).await;
+                },
+                CodecType::Http2 => {},
+                CodecType::Auto => {
+                    connection_manager.drain_signaling.apply_http1_drain_signal(&mut response).await;
+                },
+            }
+
             Ok(response)
         } else {
             // We should not be here
@@ -926,6 +1167,12 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
         let listener_name_for_trace = listener_name;
         Box::pin(async move {
             let ExtendedRequest { request, downstream_metadata } = req;
+
+            let connection_id = HttpConnectionManager::extract_connection_id(&downstream_metadata);
+            let protocol = HttpConnectionManager::extract_connection_protocol(&downstream_metadata);
+
+            manager.on_connection_established(connection_id.clone(), protocol);
+
             let (parts, body) = request.into_parts();
             let request = Request::from_parts(parts, BodyWithTimeout::new(req_timeout, body));
             let permit = log_access_reserve_balanced().await;
@@ -940,7 +1187,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
 
             //
             // 1. evaluate InitHttpContext, if logging is enabled
-            eval_http_init_context(&request, &trans_handler, downstream_metadata.server_name.as_deref());
+            eval_http_init_context(&request, &trans_handler, None);
 
             //
             // 2. create the MetricsBody, which will track the size of the request body
@@ -1098,9 +1345,12 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                 return Ok(response);
             };
 
+            let downstream_metadata_with_server_name =
+                Arc::new(DownstreamMetadata::new(downstream_metadata.as_ref().clone(), None::<String>));
+
             let response = trans_handler
                 .clone()
-                .handle_transaction(route_conf, manager, permit, request, downstream_metadata)
+                .handle_transaction(route_conf, manager, permit, request, downstream_metadata_with_server_name)
                 .await;
 
             trans_handler.trace_status_code(response, listener_name_for_trace)
@@ -1175,7 +1425,13 @@ fn apply_authorization_rules<B>(rbac: &HttpRbac, req: &Request<B>) -> FilterDeci
 
 #[cfg(test)]
 mod tests {
+    use crate::listeners::{
+        drain_signaling::{DrainScenario, DrainSignalingManager, ListenerDrainState},
+        listeners_manager::{DrainStrategy, ProtocolDrainBehavior},
+    };
     use orion_configuration::config::network_filters::http_connection_manager::MatchHost;
+    use std::time::Instant;
+    use tracing_test::traced_test;
 
     use super::*;
 
@@ -1213,5 +1469,99 @@ mod tests {
         let vh2 = VirtualHost { domains: domains2, ..Default::default() };
         let request = Request::builder().header("host", "domain2.com").body(()).unwrap();
         assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), None);
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_drain_signaling_integration() {
+        let drain_signaling = Arc::new(DrainSignalingManager::new());
+
+        assert!(!drain_signaling.is_listener_draining().await);
+
+        let drain_state = ListenerDrainState {
+            started_at: Instant::now(),
+            strategy: DrainStrategy::Immediate,
+            protocol_behavior: ProtocolDrainBehavior::Http1 { connection_close: true },
+            drain_scenario: DrainScenario::ListenerUpdate,
+            drain_type: orion_configuration::config::listener::DrainType::Default,
+        };
+        drain_signaling.start_listener_draining(drain_state).await;
+        assert!(drain_signaling.is_listener_draining().await);
+
+        let mut response = Response::builder().status(200).body("response body").unwrap();
+
+        drain_signaling.apply_http1_drain_signal(&mut response).await;
+        assert_eq!(response.headers().get("connection").unwrap(), "close");
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_http1_drain_signal_application() {
+        let drain_signaling = Arc::new(DrainSignalingManager::new());
+
+        let drain_state = ListenerDrainState {
+            started_at: Instant::now(),
+            strategy: DrainStrategy::Gradual,
+            protocol_behavior: ProtocolDrainBehavior::Http1 { connection_close: true },
+            drain_scenario: DrainScenario::ListenerUpdate,
+            drain_type: orion_configuration::config::listener::DrainType::Default,
+        };
+        drain_signaling.start_listener_draining(drain_state).await;
+
+        let mut response = Response::builder().status(200).body("response body").unwrap();
+
+        drain_signaling.apply_http1_drain_signal(&mut response).await;
+        assert_eq!(response.headers().get("connection").unwrap(), "close");
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_auto_drain_behavior() {
+        let drain_signaling = Arc::new(DrainSignalingManager::new());
+
+        let drain_state = ListenerDrainState {
+            started_at: Instant::now(),
+            strategy: DrainStrategy::Gradual,
+            protocol_behavior: ProtocolDrainBehavior::Auto,
+            drain_scenario: DrainScenario::ListenerUpdate,
+            drain_type: orion_configuration::config::listener::DrainType::Default,
+        };
+        drain_signaling.start_listener_draining(drain_state).await;
+
+        let mut response = Response::builder().status(200).body("response body").unwrap();
+
+        drain_signaling.apply_http1_drain_signal(&mut response).await;
+        assert_eq!(response.headers().get("connection").unwrap(), "close");
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_no_drain_signal_when_not_draining() {
+        let drain_signaling = Arc::new(DrainSignalingManager::new());
+
+        let mut response = Response::builder().status(200).body("response body").unwrap();
+
+        drain_signaling.apply_http1_drain_signal(&mut response).await;
+        assert!(!response.headers().contains_key("connection"));
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn test_http2_drain_behavior() {
+        let drain_signaling = Arc::new(DrainSignalingManager::new());
+
+        let drain_state = ListenerDrainState {
+            started_at: Instant::now(),
+            strategy: DrainStrategy::Gradual,
+            protocol_behavior: ProtocolDrainBehavior::Http2 { send_goaway: true },
+            drain_scenario: DrainScenario::ListenerUpdate,
+            drain_type: orion_configuration::config::listener::DrainType::Default,
+        };
+        drain_signaling.start_listener_draining(drain_state).await;
+
+        let mut response = Response::builder().status(200).body("response body").unwrap();
+
+        drain_signaling.apply_http1_drain_signal(&mut response).await;
+        assert!(!response.headers().contains_key("connection"));
     }
 }

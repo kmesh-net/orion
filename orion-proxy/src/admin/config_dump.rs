@@ -247,6 +247,8 @@ mod config_dump_tests {
         let listener = Listener {
             name: CompactString::from("listener1"),
             address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080)),
+            drain_type: orion_configuration::config::listener::DrainType::Default,
+            version_info: None,
             filter_chains: {
                 let mut map = HashMap::new();
                 map.insert(
@@ -259,6 +261,7 @@ mod config_dump_tests {
                         terminal_filter: MainFilter::Http(HttpConnectionManager {
                             codec_type: CodecType::Http1,
                             request_timeout: Some(Duration::from_secs(10)),
+                            drain_timeout: Some(Duration::from_secs(5)),
                             http_filters: vec![],
                             enabled_upgrades: vec![],
                             route_specifier: RouteSpecifier::RouteConfig(RouteConfiguration {
