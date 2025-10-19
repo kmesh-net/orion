@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -242,14 +239,21 @@ mod tests {
         let mut fmt = formatter.local_clone();
 
         fmt.with_context(&InitContext { start_time: std::time::SystemTime::now() });
-        fmt.with_context(&DownstreamContext { request: &req, trace_id: None, request_head_size: 0 });
-        fmt.with_context(&UpstreamContext { authority: req.uri().authority().unwrap(), cluster_name: "test_cluster" });
+        fmt.with_context(&DownstreamContext { request: &req, trace_id: None, request_head_size: 0, server_name: None });
+        fmt.with_context(&UpstreamContext {
+            authority: Some(req.uri().authority().unwrap()),
+            cluster_name: Some("test_cluster"),
+            route_name: "test_route",
+        });
         fmt.with_context(&DownstreamResponse { response: &resp, response_head_size: 0 });
         fmt.with_context(&FinishContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
+            upstream_failure: None,
+            response_code_details: None,
+            connection_termination_details: None,
         });
 
         let message = fmt.into_message();

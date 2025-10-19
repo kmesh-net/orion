@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,7 +63,7 @@ impl GrpcService {
 
         let http_req = Request::from_parts(
             parts,
-            BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _flags| {
+            BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _event_error, _flags| {
                 println!("gRPC request body finalized")
             }),
         );

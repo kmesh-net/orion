@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -111,7 +108,9 @@ impl Clone for LogFormatter {
     }
 }
 
-#[derive(PartialEq, Eq, Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Debug, Clone, Serialize)]
+#[allow(clippy::unsafe_derive_deserialize)]
+#[derive(Deserialize)]
 pub struct LogFormatterLocal {
     local: Arc<LogFormatterConf>,
     format: Vec<StringType>,
@@ -291,7 +290,12 @@ mod tests {
         let mut formatter = source.local_clone();
         let expected = "/";
 
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -305,7 +309,12 @@ mod tests {
         let mut formatter = source.local_clone();
         let expected = "/original";
 
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -317,7 +326,12 @@ mod tests {
         let mut formatter = source.local_clone();
         println!("FORMATTER: {formatter:?}");
         let expected = "GET";
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -329,7 +343,12 @@ mod tests {
         let mut formatter = source.local_clone();
         println!("FORMATTER: {formatter:?}");
         let expected = "HTTP/1.1";
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -352,7 +371,12 @@ mod tests {
         let source = LogFormatter::try_new("%REQ(:SCHEME)%", false).unwrap();
         let mut formatter = source.local_clone();
         let expected = "https";
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -363,7 +387,12 @@ mod tests {
         let source = LogFormatter::try_new("%REQ(:AUTHORITY)%", false).unwrap();
         let mut formatter = source.local_clone();
         let expected = "www.rust-lang.org";
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -374,7 +403,12 @@ mod tests {
         let source = LogFormatter::try_new("%REQ(USER-AGENT)%", false).unwrap();
         let mut formatter = source.local_clone();
         let expected = "awesome/1.0";
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
         let actual = format!("{}", &formatter.into_message());
         assert_eq!(actual, expected);
     }
@@ -394,15 +428,57 @@ mod tests {
         let source = LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false).unwrap();
         let mut formatter = source.local_clone();
         formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
-        formatter.with_context(&DownstreamContext { request: &req, request_head_size: 0, trace_id: None });
-        formatter
-            .with_context(&UpstreamContext { authority: req.uri().authority().unwrap(), cluster_name: "test_cluster" });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
+        formatter.with_context(&UpstreamContext {
+            authority: Some(req.uri().authority().unwrap()),
+            cluster_name: Some("test_cluster"),
+            route_name: "test_route",
+        });
         formatter.with_context(&DownstreamResponse { response: &resp, response_head_size: 0 });
         formatter.with_context(&FinishContext {
             duration: Duration::from_millis(100),
             bytes_received: 128,
             bytes_sent: 256,
             response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
+            upstream_failure: None,
+            response_code_details: None,
+            connection_termination_details: None,
+        });
+        println!("{}", &formatter.into_message());
+    }
+
+    #[test]
+    fn default_istio_format_string() {
+        let req = build_request();
+        let resp = build_response();
+        let source = LogFormatter::try_new(DEFAULT_ISTIO_ACCESS_LOG_FORMAT, false).unwrap();
+        let mut formatter = source.local_clone();
+        formatter.with_context(&InitContext { start_time: std::time::SystemTime::now() });
+        formatter.with_context(&DownstreamContext {
+            request: &req,
+            request_head_size: 0,
+            trace_id: None,
+            server_name: None,
+        });
+        formatter.with_context(&UpstreamContext {
+            authority: Some(req.uri().authority().unwrap()),
+            cluster_name: Some("test_cluster"),
+            route_name: "test_route",
+        });
+        formatter.with_context(&DownstreamResponse { response: &resp, response_head_size: 0 });
+        formatter.with_context(&FinishContext {
+            duration: Duration::from_millis(100),
+            bytes_received: 128,
+            bytes_sent: 256,
+            response_flags: ResponseFlags::NO_HEALTHY_UPSTREAM,
+            upstream_failure: None,
+            response_code_details: None,
+            connection_termination_details: None,
         });
         println!("{}", &formatter.into_message());
     }

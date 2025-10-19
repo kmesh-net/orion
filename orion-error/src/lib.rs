@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -195,6 +192,10 @@ impl Error {
         self.0
     }
 
+    pub fn inner(&self) -> &(impl ErrorTrait + Send + Sync + 'static) {
+        &self.0
+    }
+
     pub fn get_context_data<T: 'static>(&self) -> Option<&T> {
         if let ErrorImpl::Context(ErrorInfo { message: _, any: Some(val) }, _) = &self.0 {
             val.downcast_ref::<T>()
@@ -226,7 +227,7 @@ impl Context for Error {
     }
 }
 
-impl AsRef<(dyn ErrorTrait + Send + Sync + 'static)> for Error {
+impl AsRef<dyn ErrorTrait + Send + Sync + 'static> for Error {
     fn as_ref(&self) -> &(dyn ErrorTrait + Send + Sync + 'static) {
         &self.0
     }
@@ -277,8 +278,7 @@ enum ErrorImpl {
 impl ErrorTrait for ErrorImpl {
     fn source(&self) -> Option<&(dyn ErrorTrait + 'static)> {
         match self {
-            Self::Error(err) => err.source(),
-            Self::Context(_, err) => Some(err.as_ref()),
+            Self::Error(err) | Self::Context(_, err) => Some(err.as_ref()),
         }
     }
 }

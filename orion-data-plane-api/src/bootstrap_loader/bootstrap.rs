@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -238,6 +235,7 @@ impl BootstrapResolver for BootstrapLoader {
             .ok_or(BootstrapResolveErr::InvalidListener)
     }
 
+    #[allow(clippy::unwrap_used)]
     fn get_static_route_configs(&self) -> Result<Vec<RouteConfiguration>, BootstrapResolveErr> {
         let mut res = Vec::new();
         for listener in self

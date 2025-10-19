@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -127,7 +124,7 @@ pub fn otel_update_tracers(tracers: HashMap<TracingKey, TracingConfig>) -> Resul
     let mut cur_map = (*map_arc).clone();
 
     let listeners = tracers.keys().cloned().map(|TracingKey(name, _)| name).collect::<Vec<_>>();
-    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(name));
+    cur_map.retain(|TracingKey(name, _), _| !listeners.contains(&name));
 
     // insert new tracers...
     for (key, ref config) in tracers {

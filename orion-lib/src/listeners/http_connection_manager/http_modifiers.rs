@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +16,7 @@
 //
 
 use super::upgrade_utils;
-use crate::{listeners::synthetic_http_response::SyntheticHttpResponse, PolyBody};
+use crate::{event_error::EventKind, listeners::synthetic_http_response::SyntheticHttpResponse, PolyBody};
 use http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::XffSettings;
 use orion_http_header::{X_ENVOY_EXTERNAL_ADDRESS, X_ENVOY_INTERNAL, X_FORWARDED_FOR};
@@ -48,11 +45,17 @@ pub fn apply_preflight_functions<T>(request: &mut Request<T>) -> Option<Response
 
 fn filter_disallowed_requests<T>(request: &Request<T>) -> Option<Response<PolyBody>> {
     if request.method() == Method::CONNECT {
-        return Some(SyntheticHttpResponse::forbidden("CONNECT not permitted").into_response(request.version()));
+        return Some(
+            SyntheticHttpResponse::forbidden(EventKind::UpgradeFailed, "CONNECT not permitted")
+                .into_response(request.version()),
+        );
     }
     if let Some(connection_header) = request.headers().get(header::CONNECTION) {
         if upgrade_utils::is_upgrade_connection(connection_header.to_str().ok()?) {
-            return Some(SyntheticHttpResponse::forbidden("upgrade not permitted").into_response(request.version()));
+            return Some(
+                SyntheticHttpResponse::forbidden(EventKind::UpgradeFailed, "upgrade not permitted")
+                    .into_response(request.version()),
+            );
         }
     }
     None

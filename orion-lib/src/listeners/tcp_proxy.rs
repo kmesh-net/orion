@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,8 +17,11 @@
 
 use crate::{
     access_log::{log_access, log_access_reserve_balanced, Target},
-    clusters::{clusters_manager::{self, RoutingContext}},
-    listeners::{access_log::AccessLogContext, filter_state::DownstreamConnectionMetadata},
+    clusters::clusters_manager::{self, RoutingContext},
+    event_error::{
+        find_error_in_chain, ConnectionTerminationDetails, ResponseCodeDetails, UpstreamTransportEventError,
+    },
+    listeners::{access_log::AccessLogContext, filter_state::DownstreamMetadata},
     transport::connector::TcpErrorContext,
     AsyncStream, Result,
 };
@@ -76,26 +76,26 @@ impl fmt::Display for TcpProxy {
 }
 
 impl TcpProxy {
+    #[allow(clippy::too_many_lines)]
     pub async fn serve_connection(
         &self,
         mut stream: AsyncStream,
-        downstream_metadata: Arc<DownstreamConnectionMetadata>,
+        downstream_metadata: Arc<DownstreamMetadata>,
     ) -> Result<()> {
         let start_instant = Instant::now();
         let mut access_loggers = self.access_log.iter().map(|al| al.logger.local_clone()).collect::<Vec<_>>();
 
         access_loggers.with_context_fn(|| InitContext { start_time: std::time::SystemTime::now() });
 
-        
-
-
         let cluster_selector = &self.cluster;
-        info!("Handling request TCP for {} {:?} {:?}", self.listener_name,  cluster_selector, downstream_metadata);
+        info!("Handling request TCP for {} {:?} {:?}", self.listener_name, cluster_selector, downstream_metadata);
         let cluster_id = clusters_manager::resolve_cluster(cluster_selector)
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
-                
-        
-        let routing_context = RoutingContext::Authority(Authority::try_from(downstream_metadata.local_address().to_string())?, downstream_metadata.original_destination_address());
+
+        let routing_context = RoutingContext::Authority(
+            Authority::try_from(downstream_metadata.connection.local_address().to_string())?,
+            downstream_metadata.connection.original_destination_address(),
+        );
 
         let maybe_connector = clusters_manager::get_tcp_connection(cluster_id, routing_context);
         info!("Handling request TCP connector {maybe_connector:?}");
@@ -103,6 +103,9 @@ impl TcpProxy {
         let mut bytes_received = 0;
         let mut bytes_sent = 0;
         let mut response_flags = ResponseFlags::empty();
+        let mut maybe_upstream_transport_error: Option<UpstreamTransportEventError> = None;
+        let mut maybe_response_code_details: Option<ResponseCodeDetails> = None;
+        let mut maybe_connection_termination_details: Option<ConnectionTerminationDetails> = None;
 
         let cluster_name: &str;
         let maybe_upstream_local_addr: Option<SocketAddr>;
@@ -110,28 +113,30 @@ impl TcpProxy {
 
         let res = match maybe_connector {
             Ok(connector) => {
-                let channel_result = connector.connect(Some(&downstream_metadata)).await;
+                let channel_result = connector.connect(Some(&downstream_metadata.connection)).await;
                 match channel_result {
                     Ok(mut channel) => {
                         maybe_upstream_local_addr = channel.upstream_local_addr;
                         maybe_upstream_peer_addr = channel.upstream_peer_addr;
 
                         let res = tokio::io::copy_bidirectional(&mut stream, &mut channel.stream).await;
-
-                        match &res {
+                        match res {
                             Ok((received, sent)) => {
-                                bytes_received = *received;
-                                bytes_sent = *sent;
+                                bytes_received = received;
+                                bytes_sent = sent;
                             },
-                            Err(e) => {
-                                response_flags.insert(ResponseFlags::UPSTREAM_CONNECTION_FAILURE);
+                            Err(ref e) => {
                                 debug!("Error with TCP stream: {}", e);
+                                maybe_upstream_transport_error = Some(e.into());
+                                maybe_response_code_details = Some(ResponseCodeDetails::from(e));
+                                maybe_connection_termination_details = Some(ConnectionTerminationDetails::from(e));
+                                response_flags.insert(ResponseFlags::UPSTREAM_CONNECTION_FAILURE);
                             },
                         }
 
                         access_loggers.with_context(&TcpContext {
-                            downstream_local_addr: Some(downstream_metadata.local_address()),
-                            downstream_peer_addr: Some(downstream_metadata.peer_address()),
+                            downstream_local_addr: Some(downstream_metadata.connection.local_address()),
+                            downstream_peer_addr: Some(downstream_metadata.connection.peer_address()),
                             upstream_local_addr: maybe_upstream_local_addr,
                             upstream_peer_addr: maybe_upstream_peer_addr,
                             cluster_name: channel.cluster_name,
@@ -152,9 +157,14 @@ impl TcpProxy {
                             cluster_name = "impossible";
                         }
 
+                        let io_err = find_error_in_chain::<std::io::Error>(e.inner());
+                        maybe_upstream_transport_error = io_err.map(UpstreamTransportEventError::from);
+                        maybe_response_code_details = io_err.map(ResponseCodeDetails::from);
+                        maybe_connection_termination_details = io_err.map(ConnectionTerminationDetails::from);
+
                         access_loggers.with_context(&TcpContext {
-                            downstream_local_addr: Some(downstream_metadata.local_address()),
-                            downstream_peer_addr: Some(downstream_metadata.peer_address()),
+                            downstream_local_addr: Some(downstream_metadata.connection.local_address()),
+                            downstream_peer_addr: Some(downstream_metadata.connection.peer_address()),
                             upstream_local_addr: None,
                             upstream_peer_addr: maybe_upstream_peer_addr,
                             cluster_name,
@@ -168,9 +178,14 @@ impl TcpProxy {
                 error!("Failed to get TCP connection for cluster {:?}: {}", cluster_selector, e);
                 response_flags.insert(ResponseFlags::NO_ROUTE_FOUND);
 
+                let io_err = find_error_in_chain::<std::io::Error>(e.inner());
+                maybe_upstream_transport_error = io_err.map(UpstreamTransportEventError::from);
+                maybe_response_code_details = io_err.map(ResponseCodeDetails::from);
+                maybe_connection_termination_details = io_err.map(ConnectionTerminationDetails::from);
+
                 access_loggers.with_context(&TcpContext {
-                    downstream_local_addr: Some(downstream_metadata.local_address()),
-                    downstream_peer_addr: Some(downstream_metadata.peer_address()),
+                    downstream_local_addr: Some(downstream_metadata.connection.local_address()),
+                    downstream_peer_addr: Some(downstream_metadata.connection.peer_address()),
                     upstream_local_addr: None,
                     upstream_peer_addr: None,
                     cluster_name: &cluster_selector.name(),
@@ -185,7 +200,11 @@ impl TcpProxy {
             bytes_received,
             bytes_sent,
             response_flags,
+            upstream_failure: maybe_upstream_transport_error.map(|x| x.0),
+            response_code_details: maybe_response_code_details.map(|x| x.0),
+            connection_termination_details: maybe_connection_termination_details.map(|x| x.0),
         });
+
         let permit = log_access_reserve_balanced().await;
         let messages = access_loggers.into_iter().map(LogFormatterLocal::into_message).collect::<Vec<_>>();
         log_access(permit, Target::Listener(self.listener_name.to_compact_string()), messages);

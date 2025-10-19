@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,6 +46,7 @@ const TOTAL: u64 = 100_000_000;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 #[allow(clippy::cast_precision_loss)]
+#[allow(clippy::print_stdout)]
 fn main() -> Result<(), BoxError> {
     let request = Request::builder()
         .uri("https://www.rust-lang.org/hello")
@@ -62,6 +60,9 @@ fn main() -> Result<(), BoxError> {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let fmt = LogFormatter::try_new(DEF_FMT, false)?;
@@ -74,7 +75,7 @@ fn main() -> Result<(), BoxError> {
     for _ in 0..TOTAL {
         let mut fmt = black_box(fmt.local_clone());
         black_box(eval_format(
-            &DownstreamContext { request: &request, request_head_size: 0, trace_id: None },
+            &DownstreamContext { request: &request, request_head_size: 0, trace_id: None, server_name: None },
             &DownstreamResponse { response: &response, response_head_size: 0 },
             &start,
             &end,

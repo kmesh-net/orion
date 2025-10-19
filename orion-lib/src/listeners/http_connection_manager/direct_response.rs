@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,12 +23,19 @@ use http_body_util::Full;
 use hyper::{body::Incoming, Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::route::DirectResponseAction;
 
-impl RequestHandler<Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>> for &DirectResponseAction {
+use orion_format::context::UpstreamContext;
+
+use crate::listeners::access_log::AccessLogContext;
+
+impl<'a> RequestHandler<(Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, &'a str)> for &DirectResponseAction {
     async fn to_response(
         self,
-        _ctx: &TransactionHandler,
-        request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
+        trans_handler: &TransactionHandler,
+        (request, route_name): (Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, &'a str),
     ) -> Result<Response<PolyBody>> {
+        if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
+            ctx.lock().loggers.with_context(&UpstreamContext { authority: None, cluster_name: None, route_name })
+        }
         let body = Full::new(self.body.as_ref().map(|b| bytes::Bytes::copy_from_slice(b.data())).unwrap_or_default());
         let mut resp = Response::new(body.into());
         *resp.status_mut() = self.status;

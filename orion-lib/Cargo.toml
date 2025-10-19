@@ -27,6 +27,8 @@ hyper = { version = "1", features = ["full"] }
 hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
 if-addrs = "0.14"
 ipnet = "2.9"
+lru_time_cache = "0.11.11"
+multimap = "0.10.0"
 once_cell = { version = "1.19" }
 opentelemetry = "0.29.0"
 hyper-util.workspace = true
@@ -73,6 +75,7 @@ url.workspace = true
 uuid = { version = "1.17.0", features = ["v4"] }
 x509-parser = { version = "0.17", features = ["default"] }
 hyperlocal = "0.9.1"
+tokio-util = "0.7.16"
 
 
 [dev-dependencies]

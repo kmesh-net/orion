@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +18,7 @@
 use super::{RequestHandler, TransactionHandler};
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
+    event_error::EventKind,
     listeners::synthetic_http_response::SyntheticHttpResponse,
     transport::{policy::RequestExt, HttpChannel},
     PolyBody, Result,
@@ -112,17 +110,23 @@ pub async fn handle_websocket_upgrade(
                         "Upgrade attempt failure, upstream did not accept websocket upgrade, returned status code {:?}",
                         response.status()
                     );
-                    Ok(SyntheticHttpResponse::not_allowed(ResponseFlags(FmtResponseFlags::UPSTREAM_CONNECTION_FAILURE))
-                        .into_response(version))
+                    Ok(SyntheticHttpResponse::not_allowed(
+                        EventKind::UpgradeFailed,
+                        ResponseFlags(FmtResponseFlags::UPSTREAM_CONNECTION_FAILURE),
+                    )
+                    .into_response(version))
                 },
                 Err(err) => {
                     error!("Upgrade failed in attempting to establish upstream websocket {:?}", err);
-                    Ok(SyntheticHttpResponse::bad_gateway(ResponseFlags(FmtResponseFlags::UPSTREAM_CONNECTION_FAILURE))
-                        .into_response(version))
+                    Ok(SyntheticHttpResponse::bad_gateway(
+                        EventKind::UpgradeFailed,
+                        ResponseFlags(FmtResponseFlags::UPSTREAM_CONNECTION_FAILURE),
+                    )
+                    .into_response(version))
                 },
             }
         },
-        _ => Ok(SyntheticHttpResponse::bad_request().into_response(version)),
+        _ => Ok(SyntheticHttpResponse::bad_request(EventKind::UpgradeFailed).into_response(version)),
     }
 }
 

@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +23,7 @@ use token_bucket::TokenBucket;
 
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::local_rate_limit::LocalRateLimit as LocalRateLimitConfig;
 
-use crate::body::response_flags::ResponseFlags;
+use crate::{body::response_flags::ResponseFlags, event_error::EventKind};
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 
 use crate::{
@@ -46,8 +43,12 @@ impl LocalRateLimit {
             if !token_bucket.consume(1) {
                 let status = self.status;
                 return FilterDecision::DirectResponse(
-                    SyntheticHttpResponse::custom_error(status, ResponseFlags(FmtResponseFlags::RATE_LIMITED))
-                        .into_response(req.version()),
+                    SyntheticHttpResponse::custom_error(
+                        status,
+                        EventKind::RateLimited,
+                        ResponseFlags(FmtResponseFlags::RATE_LIMITED),
+                    )
+                    .into_response(req.version()),
                 );
             }
         }

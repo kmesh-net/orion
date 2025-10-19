@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,22 +32,58 @@ macro_rules! core_ids {
 /// Return the number of the available cores to the caller thread.
 #[inline]
 pub fn get_avail_core_num() -> Result<usize> {
-    affinity::get_thread_affinity().map_err(|err| format!("get_avail_core_num: {err}").into()).map(|cpus| cpus.len())
+    #[cfg(target_os = "linux")]
+    {
+        affinity::get_thread_affinity()
+            .map_err(|err| format!("get_avail_core_num: {err}").into())
+            .map(|cpus| cpus.len())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Fallback implementation for non-Linux systems.
+        // This assumes the thread can run on any available logical core.
+        Ok(std::thread::available_parallelism()?.get())
+    }
 }
 
 /// Retrieve the current set of cores available to the caller thread.
 #[inline]
 pub fn get_core_ids() -> Result<Vec<CoreId>> {
-    affinity::get_thread_affinity()
-        .map_err(|err| format!("get_cores_id: {err}").into())
-        .map(|cores| cores.into_iter().map(CoreId::new).collect())
+    #[cfg(target_os = "linux")]
+    {
+        affinity::get_thread_affinity()
+            .map_err(|err| format!("get_cores_id: {err}").into())
+            .map(|cores| cores.into_iter().map(CoreId::new).collect())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Fallback implementation for non-Linux systems.
+        // This assumes the thread can run on any available logical core.
+        // 1. Get the number of logical cores from the standard library.
+        let core_count = std::thread::available_parallelism()?.get();
+
+        // 2. Create a vector of CoreIds from 0 to (core_count - 1).
+        let core_ids = (0..core_count).map(CoreId::new).collect();
+
+        // 3. Return the list of all available cores.
+        Ok(core_ids)
+    }
 }
 
 /// Set the current set of cores available to the caller thread.
 #[inline]
 pub fn set_cores_for_current(cores: &[CoreId]) -> Result<()> {
-    affinity::set_thread_affinity(cores.iter().map(|x| **x).collect::<Vec<usize>>())
-        .map_err(|err| format!("set_cores_for_current: {err}").into())
+    #[cfg(target_os = "linux")]
+    {
+        affinity::set_thread_affinity(cores.iter().map(|x| **x).collect::<Vec<usize>>())
+            .map_err(|err| format!("set_cores_for_current: {err}").into())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(orion_error::Error::new("set_cores_for_current: not supported on this platform"))
+    }
 }
 
 /// Returns core IDs grouped by NUMA node, with each inner vector representing the cores for a specific node

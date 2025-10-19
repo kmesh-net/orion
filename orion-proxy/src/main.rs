@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +26,8 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-fn main() -> orion_error::Result<()> {
+#[tokio::main]
+async fn main() -> orion_error::Result<()> {
     #[cfg(all(feature = "dhat-heap", not(feature = "jemalloc")))]
     let _profiler = dhat::Profiler::new_heap();
     orion_proxy::run()

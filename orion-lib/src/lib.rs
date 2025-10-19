@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +18,7 @@
 #![recursion_limit = "128"]
 
 pub mod configuration;
+pub mod event_error;
 
 pub mod access_log;
 mod body;
@@ -134,13 +132,16 @@ pub fn new_configuration_channel(capacity: usize) -> (ConfigurationSenders, Conf
 
 /// Start the listeners manager directly without spawning a background task.
 /// Caller must be inside a Tokio runtime and await this async function.
-pub async fn start_listener_manager(configuration_receivers: ConfigurationReceivers) -> Result<()> {
+pub async fn start_listener_manager(
+    configuration_receivers: ConfigurationReceivers,
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<()> {
     let ConfigurationReceivers { listener_configuration_receiver, route_configuration_receiver } =
         configuration_receivers;
 
     tracing::debug!("listeners manager starting");
     let mgr = ListenersManager::new(listener_configuration_receiver, route_configuration_receiver);
-    mgr.start().await.map_err(|err| {
+    mgr.start(ct).await.map_err(|err| {
         tracing::warn!(error = %err, "listeners manager exited with error");
         err
     })?;

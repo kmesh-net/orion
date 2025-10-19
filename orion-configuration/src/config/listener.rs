@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +27,7 @@ use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
 use crate::config::{listener, transport::BindDeviceOptions};
 use compact_str::CompactString;
 use ipnet::IpNet;
+use orion_interner::StringInterner;
 use serde::{Deserialize, Serialize, Serializer};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::{
@@ -38,12 +36,12 @@ use std::{
     str::FromStr,
 };
 
-use orion_interner::StringInterner;
+// Removed unused import
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Listener {
     pub name: CompactString,
-    pub address: SocketAddr,
+    pub address: ListenerAddress,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
     #[serde(default = "Default::default")]
@@ -52,6 +50,10 @@ pub struct Listener {
     pub with_tls_inspector: bool,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub proxy_protocol_config: Option<super::listener_filters::DownstreamProxyProtocolConfig>,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub with_tlv_listener_filter: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub tlv_listener_filter_config: Option<super::listener_filters::TlvListenerFilterConfig>,
 }
 
 impl Listener {
@@ -87,6 +89,18 @@ impl Listener {
             })
             .collect::<HashMap<_, _>>()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ListenerAddress {
+    Socket(SocketAddr),
+    Internal(InternalListener),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InternalListener {
+    pub buffer_size_kb: Option<u32>,
 }
 
 mod serde_filterchains {
@@ -397,7 +411,7 @@ mod envoy_conversions {
                 address,
                 additional_addresses,
                 stat_prefix,
-                filter_chains,
+                filter_chains: envoy_filter_chains,
                 filter_chain_matcher,
                 use_original_dst: _,
                 default_filter_chain: _,
@@ -466,8 +480,20 @@ mod envoy_conversions {
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
-                let address = Address::into_addr(convert_opt!(address)?)?;
-                let envoy_filter_chains = filter_chains.clone();
+
+                let address_result = convert_opt!(address)?;
+                let address = match address_result {
+                    Address::Socket(socket_addr) => crate::config::listener::ListenerAddress::Socket(socket_addr),
+                    Address::Internal(_internal_addr) => {
+                        crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
+                            buffer_size_kb: None, // Default buffer size, can be configured via bootstrap extension
+                        })
+                    },
+                    Address::Pipe(_, _) => {
+                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
+                    },
+                };
+                let filter_chains = envoy_filter_chains.clone();
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();
@@ -481,6 +507,8 @@ mod envoy_conversions {
                 let listener_filters: Vec<ListenerFilter> = convert_vec!(listener_filters)?;
                 let mut with_tls_inspector = false;
                 let mut proxy_protocol_config = None;
+                let mut with_tlv_listener_filter = false;
+                let mut tlv_listener_filter_config = None;
 
                 for filter in listener_filters {
                     match filter.config {
@@ -498,7 +526,17 @@ mod envoy_conversions {
                             }
                             proxy_protocol_config = Some(config);
                         },
+
                         ListenerFilterConfig::Ignored => (),
+
+                        ListenerFilterConfig::TlvListenerFilter(config) => {
+                            if with_tlv_listener_filter {
+                                return Err(GenericError::from_msg("duplicate TLV listener filter"))
+                                    .with_node("listener_filters");
+                            }
+                            with_tlv_listener_filter = true;
+                            tlv_listener_filter_config = Some(config);
+                        },
                     }
                 }
                 let bind_device = convert_vec!(socket_options)?;
@@ -512,6 +550,7 @@ mod envoy_conversions {
                     name,
                     address,
                     filter_chains,
+
                     bind_device_options: BindDeviceOptions {
                         bind_device,
                         bind_to_port: bind_to_port.map(|v| v.value),
@@ -519,6 +558,8 @@ mod envoy_conversions {
                     },
                     with_tls_inspector,
                     proxy_protocol_config,
+                    with_tlv_listener_filter,
+                    tlv_listener_filter_config,
                 })
             }())
             .with_name(name)
@@ -546,8 +587,9 @@ mod envoy_conversions {
                 metadata // transport_socket,
                          //transport_socket_connect_timeout // name,
             )?;
-            let name = if name.is_empty() { "filter_chain".to_owned() } else { name };
-            let name: CompactString = required!(name)?.into();
+
+            let name: CompactString = if name.is_empty() { "filter_chain".into() } else { name.into() };
+
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let filter_chain_match = filter_chain_match

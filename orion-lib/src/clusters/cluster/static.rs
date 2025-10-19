@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -74,15 +71,15 @@ impl ClusterOps for StaticCluster {
         self.health_check
     }
 
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
+    fn all_http_channels(&mut self) -> Vec<(Authority, HttpChannel)> {
         self.load_assignment.all_http_channels()
     }
 
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)> {
+    fn all_tcp_channels(&mut self) -> Vec<(Authority, TcpChannelConnector)> {
         self.load_assignment.all_tcp_channels()
     }
 
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
+    fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>> {
         self.load_assignment.try_all_grpc_channels()
     }
 

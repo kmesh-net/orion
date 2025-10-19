@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,6 +19,7 @@ use crate::{
     admin::start_admin_server,
     core_affinity,
     runtime::{self, RuntimeId},
+    signal::wait_signal,
     xds_configurator::XdsConfigurationHandler,
 };
 use compact_str::ToCompactString;
@@ -36,8 +34,9 @@ use orion_configuration::config::{
 use orion_error::Context;
 use orion_lib::{
     access_log::{start_access_loggers, update_configuration, Target},
+    clusters::cluster::ClusterType,
     get_listeners_and_clusters, new_configuration_channel, runtime_config, ConfigurationReceivers,
-    ConfigurationSenders, ListenerConfigurationChange, Result, SecretManager,
+    ConfigurationSenders, ListenerConfigurationChange, PartialClusterType, Result, SecretManager,
 };
 use orion_metrics::{metrics::init_global_metrics, wait_for_metrics_setup, Metrics, VecMetrics};
 use parking_lot::RwLock;
@@ -49,14 +48,30 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
+<<<<<<< HEAD
 pub fn run_orion(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
 ) -> Result<Vec<ConfigurationSenders>> {
+=======
+pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
+>>>>>>> origin/main
     debug!("Starting on thread {:?}", std::thread::current().name());
 
+    let ct = tokio_util::sync::CancellationToken::new();
+    let ct_clone = ct.clone();
+    tokio::spawn(async move {
+        // Set up signal handling and shutdown notification channel
+        wait_signal().await;
+        // Trigger cancellation
+        ct_clone.cancel();
+    });
+
     // launch the runtimes...
-    launch_runtimes(bootstrap, access_log_config).with_context_msg("failed to launch runtimes")
+    let res = launch_runtimes(bootstrap, access_log_config, ct).with_context_msg("failed to launch runtimes");
+    if let Err(err) = res {
+        warn!("Error running orion: {err}");
+    }
 }
 
 fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Result<usize> {
@@ -85,7 +100,7 @@ fn calculate_num_threads_per_runtime(num_cpus: usize, num_runtimes: usize) -> Re
 }
 
 #[derive(Debug, Clone)]
-struct ServiceInfo {
+struct ProxyConfiguration {
     bootstrap: Bootstrap,
     node: Node,
     configuration_senders: Vec<ConfigurationSenders>,
@@ -101,7 +116,12 @@ struct ServiceInfo {
 fn launch_runtimes(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
+<<<<<<< HEAD
 ) -> Result<Vec<ConfigurationSenders>> {
+=======
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<()> {
+>>>>>>> origin/main
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -136,24 +156,25 @@ fn launch_runtimes(
         return Err("No listeners and no ads clusters configured".into());
     }
 
-    let service_info = ServiceInfo {
+    let config = ProxyConfiguration {
         node,
         configuration_senders: config_senders.clone(),
         secret_manager,
         listener_factories,
-        bootstrap,
         clusters,
         ads_cluster_names,
         access_log_config,
         tracing,
         metrics: metrics.clone(),
+        bootstrap,
     };
 
     let services_handle = spawn_services_runtime_from_thread(
         "services",
         rt_config.num_service_threads.get() as usize,
         None,
-        service_info,
+        config,
+        ct.clone(),
     )?;
 
     if !are_metrics_empty {
@@ -174,7 +195,7 @@ fn launch_runtimes(
 
     info!("Launching with {} cpus, {} runtimes", num_cpus, num_runtimes);
 
-    let proxy_handles = {
+    let mut handlers = {
         (0..num_runtimes)
             .zip(config_receivers.into_iter())
             .map(|(id, config_receivers)| {
@@ -184,14 +205,15 @@ fn launch_runtimes(
                     metrics.clone(),
                     rt_config.affinity_strategy.clone().map(|affinity| (RuntimeId(id), affinity)),
                     config_receivers,
+                    ct.clone(),
                 )
             })
             .collect::<Result<Vec<_>>>()?
     };
 
-    let handles = proxy_handles.into_iter().chain(std::iter::once(services_handle)).collect::<Vec<_>>();
+    handlers.push(services_handle);
 
-    for h in handles {
+    for h in handlers {
         if let Err(err) = h.join() {
             warn!("Closing handler with error {err:?}");
         }
@@ -199,62 +221,56 @@ fn launch_runtimes(
     Ok(config_senders)
 }
 
-type RuntimeHandle = JoinHandle<Result<()>>;
-
 fn spawn_proxy_runtime_from_thread(
     thread_name: &'static str,
     num_threads: usize,
     metrics: Vec<Metrics>,
     affinity_info: Option<(RuntimeId, Affinity)>,
     configuration_receivers: ConfigurationReceivers,
-) -> Result<RuntimeHandle> {
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
 
-    let handle: JoinHandle<Result<()>> = thread::Builder::new().name(thread_name.clone()).spawn(move || {
+    let handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
         let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, Some(metrics));
         rt.block_on(async {
             tokio::select! {
-                _ = start_proxy(configuration_receivers) => {
+                _ = start_proxy(configuration_receivers, ct.clone()) => {
                     info!("Proxy Runtime terminated!");
-                    Ok(())
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("CTRL+C (Proxy runtime)!");
-                    Ok(())
+                _ = ct.cancelled() => {
+                    info!("Shutdown channel closed, shutting down Proxy runtime!");
                 }
             }
-        })
+        });
     })?;
     Ok(handle)
 }
 
 fn spawn_services_runtime_from_thread(
     thread_name: &'static str,
-    num_threads: usize,
+    threads_num: usize,
     affinity_info: Option<(RuntimeId, Affinity)>,
-    service_info: ServiceInfo,
-) -> Result<RuntimeHandle> {
+    config: ProxyConfiguration,
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<JoinHandle<()>> {
     let thread_name = build_thread_name(thread_name, affinity_info.as_ref());
-
     let rt_handle = thread::Builder::new().name(thread_name.clone()).spawn(move || {
-        let rt = runtime::build_tokio_runtime(&thread_name, num_threads, affinity_info, None);
+        let rt = runtime::build_tokio_runtime(&thread_name, threads_num, affinity_info, None);
         rt.block_on(async {
             tokio::select! {
-                result = spawn_services(service_info) => {
+                result = run_services(config) => {
                     if let Err(err) = result {
                         warn!("Error in services runtime: {err:?}");
                     }
-                    info!("Service Runtime terminated!");
-                    Ok(())
+                    info!("Services Runtime terminated!");
                 }
-                _ = tokio::signal::ctrl_c() => {
-                    info!("CTRL+C (service runtime)!");
-                    Ok(())
+                _ = ct.cancelled() => {
+                    info!("Shutdown channel closed, shutting down Services runtime!");
                 }
             }
-        })
+        });
     })?;
-
     Ok(rt_handle)
 }
 
@@ -265,8 +281,8 @@ fn build_thread_name(thread_name: &'static str, affinity_info: Option<&(RuntimeI
     }
 }
 
-async fn spawn_services(info: ServiceInfo) -> Result<()> {
-    let ServiceInfo {
+async fn run_services(config: ProxyConfiguration) -> Result<()> {
+    let ProxyConfiguration {
         bootstrap,
         node,
         configuration_senders,
@@ -278,70 +294,44 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
         metrics,
         #[allow(unused_variables)]
         tracing,
-    } = info;
+    } = config;
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
-    // spawn XSD configuration service...
-    let configuration_senders_clone = configuration_senders.clone();
-    let bootstrap_clone = bootstrap.clone();
-    let secret_manager_clone = secret_manager.clone();
-    set.spawn(async move {
-        configure_initial_resources(bootstrap_clone, listener_factories, configuration_senders_clone.clone()).await?;
-        let xds_handler = XdsConfigurationHandler::new(secret_manager_clone, configuration_senders_clone);
-        _ = xds_handler.xds_run(node, clusters, ads_cluster_names).await;
-        Ok(())
-    });
+    // spawn XDS configuration service...
+    spawn_xds_client(
+        &mut set,
+        bootstrap.clone(),
+        node,
+        configuration_senders.clone(),
+        secret_manager.clone(),
+        listener_factories,
+        clusters,
+        ads_cluster_names,
+    );
 
     // spawn access loggers service...
     if let Some(conf) = access_log_config {
-        let listeners = bootstrap.static_resources.listeners.clone();
-        set.spawn(async move {
-            let handles = start_access_loggers(
-                conf.num_instances.get(),
-                conf.queue_length.get(),
-                conf.log_rotation.0.clone(),
-                conf.max_log_files.get(),
-            );
-
-            info!("Access loggers started with {} instances", conf.num_instances);
-
-            let listener_configurations =
-                listeners.iter().map(|l| (l.name.clone(), l.get_access_log_configurations())).collect::<Vec<_>>();
-
-            for (listener_name, access_log_configurations) in listener_configurations {
-                _ = update_configuration(
-                    Target::Listener(listener_name.to_compact_string()),
-                    access_log_configurations,
-                )
-                .await;
-            }
-
-            handles.join_all().await;
-            Ok(())
-        });
+        spawn_access_loggers(&mut set, bootstrap.clone(), conf);
     }
 
     // spawn admin interface task
     if bootstrap.admin.is_some() {
-        set.spawn(async move {
-            _ = start_admin_server(bootstrap, configuration_senders, secret_manager).await;
-            Ok(())
-        });
+        spawn_admin_service(&mut set, bootstrap, configuration_senders, secret_manager);
     }
 
     // spawn metrics exporter...
     if metrics.is_empty() {
         info!("OTEL metrics: stats_sink not configured (skipped)");
     } else {
-        #[cfg(feature = "tracing")]
+        #[cfg(feature = "metrics")]
         orion_metrics::otel_launch_exporter(&metrics).await?;
     }
 
     // spawn tracing exporters...
-    #[cfg(feature = "tracing")]
     if tracing.is_empty() {
         info!("OTEL tracing: no tracers configured (skipped)");
     } else {
+        #[cfg(feature = "tracing")]
         orion_tracing::otel_update_tracers(tracing)?;
     }
 
@@ -349,11 +339,70 @@ async fn spawn_services(info: ServiceInfo) -> Result<()> {
     Ok(())
 }
 
+fn spawn_xds_client(
+    set: &mut JoinSet<Result<()>>,
+    bootstrap: Bootstrap,
+    node: Node,
+    configuration_senders: Vec<ConfigurationSenders>,
+    secret_manager: Arc<RwLock<SecretManager>>,
+    listener_factories: Vec<orion_lib::ListenerFactory>,
+    clusters: Vec<orion_lib::PartialClusterType>,
+    ads_cluster_names: Vec<String>,
+) {
+    set.spawn(async move {
+        let initial_clusters =
+            configure_initial_resources(bootstrap, listener_factories, clusters, configuration_senders.clone()).await?;
+        if !ads_cluster_names.is_empty() {
+            let mut xds_handler = XdsConfigurationHandler::new(secret_manager, configuration_senders);
+            _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
+        }
+        Ok(())
+    });
+}
+
+fn spawn_access_loggers(set: &mut JoinSet<Result<()>>, bootstrap: Bootstrap, conf: AccessLogConfig) {
+    let listeners = bootstrap.static_resources.listeners;
+    set.spawn(async move {
+        let handles = start_access_loggers(
+            conf.num_instances.get(),
+            conf.queue_length.get(),
+            conf.log_rotation.0.clone(),
+            conf.max_log_files.get(),
+        );
+
+        info!("Access loggers started with {} instances", conf.num_instances);
+
+        let listener_configurations =
+            listeners.iter().map(|l| (l.name.clone(), l.get_access_log_configurations())).collect::<Vec<_>>();
+
+        for (listener_name, access_log_configurations) in listener_configurations {
+            _ = update_configuration(Target::Listener(listener_name.to_compact_string()), access_log_configurations)
+                .await;
+        }
+
+        handles.join_all().await;
+        Ok(())
+    });
+}
+
+fn spawn_admin_service(
+    set: &mut JoinSet<Result<()>>,
+    bootstrap: Bootstrap,
+    configuration_senders: Vec<ConfigurationSenders>,
+    secret_manager: Arc<RwLock<SecretManager>>,
+) {
+    set.spawn(async move {
+        _ = start_admin_server(bootstrap, configuration_senders, secret_manager).await;
+        Ok(())
+    });
+}
+
 async fn configure_initial_resources(
     bootstrap: Bootstrap,
     listeners: Vec<orion_lib::ListenerFactory>,
+    clusters: Vec<PartialClusterType>,
     configuration_senders: Vec<ConfigurationSenders>,
-) -> Result<()> {
+) -> Result<Vec<ClusterType>> {
     let listeners_tx: Vec<_> = configuration_senders
         .into_iter()
         .map(|ConfigurationSenders { listener_configuration_sender, route_configuration_sender: _ }| {
@@ -371,10 +420,13 @@ async fn configure_initial_resources(
         .map_err(Into::<orion_error::Error>::into)?;
     }
 
-    Ok(())
+    clusters.into_iter().map(orion_lib::clusters::add_cluster).collect::<Result<_>>()
 }
 
-async fn start_proxy(configuration_receivers: ConfigurationReceivers) -> Result<()> {
-    orion_lib::start_listener_manager(configuration_receivers).await?;
+async fn start_proxy(
+    configuration_receivers: ConfigurationReceivers,
+    ct: tokio_util::sync::CancellationToken,
+) -> Result<()> {
+    orion_lib::start_listener_manager(configuration_receivers, ct).await?;
     Ok(())
 }

@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -141,6 +138,7 @@ filterChains:
     /// where depending on the source the decoding would differ. This is no longer
     /// the case, so the asserts in this test were inverted (but the comments remain).
     #[test]
+    #[allow(clippy::panic)]
     fn yaml_and_prost_eq() {
         let l_yaml: Listener = from_yaml(YAML_PAYLOAD_LISTEN_FILTER).unwrap();
         let l_pb: Listener = Listener::decode(prost_payload_listen_filter().as_slice()).unwrap();

@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,7 +19,7 @@ use http::uri::Authority;
 
 use orion_configuration::config::{
     cluster::{
-        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck, HealthStatus,
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthCheck, HealthStatus,
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
     core::envoy_conversions::Address,
@@ -94,15 +91,15 @@ impl ClusterOps for DynamicCluster {
         self.health_check
     }
 
-    fn all_http_channels(&self) -> Vec<(Authority, HttpChannel)> {
+    fn all_http_channels(&mut self) -> Vec<(Authority, HttpChannel)> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_http_channels)
     }
 
-    fn all_tcp_channels(&self) -> Vec<(Authority, TcpChannelConnector)> {
+    fn all_tcp_channels(&mut self) -> Vec<(Authority, TcpChannelConnector)> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::all_tcp_channels)
     }
 
-    fn all_grpc_channels(&self) -> Vec<Result<(Authority, GrpcService)>> {
+    fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>> {
         self.load_assignment.as_ref().map_or(Vec::new(), ClusterLoadAssignment::try_all_grpc_channels)
     }
 
@@ -174,7 +171,7 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
                         let load_balancing_weight = std::num::NonZeroU32::new(ep.weight)
                             .ok_or_else(|| format!("Invalid load balancing weight: {}", ep.weight))?;
                         Ok(LbEndpointConfig {
-                            address: Address::try_from(&ep.authority)?,
+                            address: EndpointAddress::Socket(Address::try_from(ep.authority())?.into_socket_addr()?),
                             health_status: ep.health_status,
                             load_balancing_weight,
                         })

@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +15,7 @@
 //
 //
 
+use compact_str::CompactString;
 use orion_configuration::config::common::TlvType;
 use std::{collections::HashMap, net::SocketAddr};
 
@@ -36,6 +34,12 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
+    FromTlv {
+        original_destination_address: SocketAddr,
+        tlv_data: HashMap<u8, Vec<u8>>,
+        proxy_peer_address: SocketAddr,
+        proxy_local_address: SocketAddr,
+    },
 }
 
 impl DownstreamConnectionMetadata {
@@ -43,19 +47,37 @@ impl DownstreamConnectionMetadata {
         match self {
             Self::FromSocket { peer_address, .. } => *peer_address,
             Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
+            Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
         }
     }
     pub fn local_address(&self) -> SocketAddr {
         match self {
             Self::FromSocket { local_address, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
+            Self::FromTlv { original_destination_address, .. } => *original_destination_address,
         }
     }
     pub fn original_destination_address(&self) -> SocketAddr {
         match self {
             Self::FromSocket { original_destination_address: Some(dst_address), .. } => *dst_address,
-            Self::FromSocket { local_address, original_destination_address: None, .. } =>  *local_address,
+            Self::FromSocket { local_address, original_destination_address: None, .. } => *local_address,
             Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
+            Self::FromTlv { original_destination_address, .. } => *original_destination_address,
         }
-    }    
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DownstreamMetadata {
+    pub connection: DownstreamConnectionMetadata,
+    pub server_name: Option<CompactString>,
+}
+
+impl DownstreamMetadata {
+    pub fn new<S>(connection: DownstreamConnectionMetadata, server_name: Option<S>) -> Self
+    where
+        S: Into<CompactString>,
+    {
+        Self { connection, server_name: server_name.map(Into::into) }
+    }
 }
