@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -248,15 +245,16 @@ mod envoy_conversions {
                     let serialized = serde_yaml::to_string(&new_conf)?;
                     tracing::info!("\n{serialized}\n");
                     if !path.ends_with("new.yaml") {
-                        let new_path = format!(
-                            "../orion-proxy/conf/{}-new.yaml",
+                        let temp_dir = std::env::temp_dir();
+                        let new_path = temp_dir.join(format!(
+                            "{}-new.yaml",
                             path.file_name()
-                                .unwrap()
+                                .expect("path should have a file name")
                                 .to_str()
-                                .unwrap()
+                                .expect("file name should be valid UTF-8")
                                 .trim_end_matches(".yaml")
                                 .replace("envoy-", "orion-")
-                        );
+                        ));
                         std::fs::write(new_path, serialized.as_bytes())?;
                     }
                     let deserialized: Config = serde_yaml::from_str(&serialized)?;

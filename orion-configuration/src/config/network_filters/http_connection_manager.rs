@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -1172,7 +1169,7 @@ mod envoy_conversions {
                 // response_headers_to_remove,
                 tracing,
                 per_request_buffer_limit_bytes,
-                stat_prefix // action
+                stat_prefix
             )?;
             let response_headers_to_add = convert_vec!(response_headers_to_add)?;
             let request_headers_to_add = convert_vec!(request_headers_to_add)?;

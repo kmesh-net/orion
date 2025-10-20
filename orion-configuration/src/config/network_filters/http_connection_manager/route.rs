@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +38,6 @@ use std::{
     str::FromStr,
     time::Duration,
 };
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
@@ -85,6 +81,15 @@ pub enum PathRewriteSpecifier {
     Regex(RegexMatchAndSubstitute),
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthorityRewriteSpecifier {
+    Authority(#[serde(with = "http_serde_ext::authority")] Authority),
+    Header(CompactString),
+    Regex(RegexMatchAndSubstitute),
+    AutoHostRewrite,
+}
+
 impl PathRewriteSpecifier {
     /// will preserve the query part of the input if the replacement does not contain one
     #[allow(clippy::redundant_else)]
@@ -123,6 +128,47 @@ impl PathRewriteSpecifier {
             }
         }
         Some(PathAndQuery::from_str(&new_path)).transpose()
+    }
+}
+
+impl AuthorityRewriteSpecifier {
+    /// Applies authority rewrite based on the specifier type
+    pub fn apply(
+        &self,
+        uri: &http::Uri,
+        headers: &http::HeaderMap,
+        upstream_authority: &Authority,
+    ) -> Option<Authority> {
+        match self {
+            AuthorityRewriteSpecifier::Authority(authority) => Some(authority.clone()),
+
+            AuthorityRewriteSpecifier::Header(header_name) => {
+                let Some(header_value) = headers.get(header_name.as_str()) else {
+                    return None;
+                };
+                let Ok(header_str) = header_value.to_str() else {
+                    return None;
+                };
+                Authority::from_str(header_str).ok()
+            },
+
+            AuthorityRewriteSpecifier::Regex(regex) => {
+                let current_authority = uri
+                    .authority()
+                    .map(Authority::as_str)
+                    .or_else(|| headers.get(http::header::HOST).and_then(|h| h.to_str().ok()))
+                    .unwrap_or_default();
+
+                let replacement = regex.pattern.replace_all(current_authority, regex.substitution.as_str());
+                if let std::borrow::Cow::Borrowed(_) = replacement {
+                    None
+                } else {
+                    Authority::from_str(&replacement).ok()
+                }
+            },
+
+            AuthorityRewriteSpecifier::AutoHostRewrite => Some(upstream_authority.clone()),
+        }
     }
 }
 
@@ -234,6 +280,8 @@ pub struct RouteAction {
     pub timeout: Option<Duration>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub rewrite: Option<PathRewriteSpecifier>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub authority_rewrite: Option<AuthorityRewriteSpecifier>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub retry_policy: Option<RetryPolicy>,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -641,16 +689,97 @@ mod tests {
         let result = route_match.match_request(&req);
         assert!(!result.matched());
     }
+
+    #[test]
+    fn test_authority_rewrite_auto_host_rewrite() {
+        let authority_rewrite = AuthorityRewriteSpecifier::AutoHostRewrite;
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(upstream_authority));
+    }
+
+    #[test]
+    fn test_authority_rewrite_specific_authority() {
+        let target_authority = Authority::from_str("target.example.com:9090").unwrap();
+        let authority_rewrite = AuthorityRewriteSpecifier::Authority(target_authority.clone());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(target_authority));
+    }
+
+    #[test]
+    fn test_authority_rewrite_header() {
+        let authority_rewrite = AuthorityRewriteSpecifier::Header("x-target-host".into());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+        headers.insert("x-target-host", "header.example.com:7070".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(Authority::from_str("header.example.com:7070").unwrap()));
+    }
+
+    #[test]
+    fn test_authority_rewrite_header_missing() {
+        let authority_rewrite = AuthorityRewriteSpecifier::Header("x-missing-header".into());
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://original.example.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "original.example.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_authority_rewrite_regex() {
+        let regex = RegexMatchAndSubstitute {
+            pattern: Regex::new(r"^([^.]+)\.original\.com$").unwrap(),
+            substitution: "${1}.rewritten.com".into(),
+        };
+        let authority_rewrite = AuthorityRewriteSpecifier::Regex(regex);
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "http://api.original.com/path".parse::<http::Uri>().unwrap();
+        let mut headers = http::HeaderMap::new();
+        headers.insert("host", "api.original.com".parse().unwrap());
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, Some(Authority::from_str("api.rewritten.com").unwrap()));
+    }
+
+    #[test]
+    fn test_authority_rewrite_regex_no_host_header() {
+        let regex = RegexMatchAndSubstitute {
+            pattern: Regex::new(r"^([^.]+)\.original\.com$").unwrap(),
+            substitution: "${1}.rewritten.com".into(),
+        };
+        let authority_rewrite = AuthorityRewriteSpecifier::Regex(regex);
+        let upstream_authority = Authority::from_str("upstream.example.com:8080").unwrap();
+        let uri = "/path".parse::<http::Uri>().unwrap();
+        let headers = http::HeaderMap::new();
+
+        let result = authority_rewrite.apply(&uri, &headers, &upstream_authority);
+        assert_eq!(result, None);
+    }
 }
 
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
-        Action, AuthorityRedirect, Connect, DirectResponseAction, DirectResponseBody, HashPolicy, PathMatcher,
-        PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier, QueryParameterMatcher,
-        RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig,
-        Websocket, DEFAULT_TIMEOUT,
+        Action, AuthorityRedirect, AuthorityRewriteSpecifier, Connect, DirectResponseAction, DirectResponseBody,
+        HashPolicy, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier,
+        QueryParameterMatcher, RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch,
+        UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
     };
     use crate::config::{
         common::*,
@@ -675,7 +804,8 @@ mod envoy_conversions {
                     ConnectionProperties as EnvoyConnectionProperties, Header as EnvoyHeader,
                     PolicySpecifier as EnvoyPolicySpecifier, QueryParameter as EnvoyQueryParameter,
                 },
-                HashPolicy as EnvoyHashPolicy, UpgradeConfig as EnvoyUpgradeConfig,
+                HashPolicy as EnvoyHashPolicy, HostRewriteSpecifier as EnvoyHostRewriteSpecifier,
+                UpgradeConfig as EnvoyUpgradeConfig,
             },
             route_match::PathSpecifier as EnvoyPathSpecifier,
             DirectResponseAction as EnvoyDirectResponseAction, QueryParameterMatcher as EnvoyQueryParameterMatcher,
@@ -900,10 +1030,8 @@ mod envoy_conversions {
                 internal_redirect_policy,
                 internal_redirect_action,
                 max_internal_redirects,
-                hedge_policy,
-                //max_stream_duration,
-                // cluster_specifier,
-                host_rewrite_specifier
+                hedge_policy // cluster_specifier,
+                             // host_rewrite_specifier
             )?;
             let cluster_not_found_response_code =
                 parse_cluster_not_found_response_code(cluster_not_found_response_code)?;
@@ -927,11 +1055,45 @@ mod envoy_conversions {
             let retry_policy = retry_policy.map(RetryPolicy::try_from).transpose().with_node("retry_policy")?;
             let upgrade_config = upgrade_configs.try_into().with_node("upgrade_configs").ok();
             let hash_policy = convert_vec!(hash_policy)?;
+            let authority_rewrite = match host_rewrite_specifier {
+                Some(EnvoyHostRewriteSpecifier::AutoHostRewrite(bv)) => {
+                    if bv.value {
+                        Ok(Some(AuthorityRewriteSpecifier::AutoHostRewrite))
+                    } else {
+                        Ok(None)
+                    }
+                },
+                Some(spec) => match spec {
+                    EnvoyHostRewriteSpecifier::HostRewriteLiteral(literal) => {
+                        Authority::from_str(&literal).map(AuthorityRewriteSpecifier::Authority).map_err(|e| {
+                            GenericError::from_msg_with_cause(
+                                format!("failed to parse host rewrite literal '{literal}' as authority"),
+                                e,
+                            )
+                        })
+                    },
+                    EnvoyHostRewriteSpecifier::HostRewriteHeader(header) => match HeaderName::from_str(&header) {
+                        Ok(_) => Ok(AuthorityRewriteSpecifier::Header(header.into())),
+                        Err(e) => Err(GenericError::from_msg_with_cause(
+                            format!("failed to parse host rewrite header '{header}' as header name"),
+                            e,
+                        )),
+                    },
+                    EnvoyHostRewriteSpecifier::HostRewritePathRegex(regex) => {
+                        regex.try_into().map(AuthorityRewriteSpecifier::Regex)
+                    },
+                    EnvoyHostRewriteSpecifier::AutoHostRewrite(_) => unreachable!(),
+                }
+                .map(Some),
+                None => Ok(None),
+            }
+            .with_node("host_rewrite_specifier")?;
             Ok(Self {
                 cluster_not_found_response_code,
                 timeout,
                 cluster_specifier,
                 rewrite,
+                authority_rewrite,
                 retry_policy,
                 upgrade_config,
                 hash_policy,

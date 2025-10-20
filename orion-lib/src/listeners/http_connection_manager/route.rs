@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,12 +15,12 @@
 //
 //
 use super::{http_modifiers, upgrades as upgrade_utils, RequestHandler, TransactionHandler};
+use crate::event_error::{EventError, EventKind, TryInferFrom};
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
     clusters::{
         balancers::hash_policy::HashState,
         clusters_manager::{self, RoutingContext},
-        retry_policy::{EventError, TryInferFrom},
     },
     listeners::{
         access_log::AccessLogContext, http_connection_manager::HttpConnectionManager,
@@ -32,6 +29,7 @@ use crate::{
     transport::policy::{RequestContext, RequestExt},
     PolyBody, Result,
 };
+
 use http::{uri::Parts as UriParts, Uri};
 use hyper::{body::Incoming, Request, Response};
 use opentelemetry::trace::Span;
@@ -54,6 +52,7 @@ use tracing::{debug, info};
 pub struct MatchedRequest<'a> {
     pub request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
     pub retry_policy: Option<&'a RetryPolicy>,
+    pub route_name: &'a str,
     pub remote_address: SocketAddr,
     pub route_match: RouteMatchResult,
     pub websocket_enabled_by_default: bool,
@@ -69,6 +68,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
     ) -> Result<Response<PolyBody>> {
         let MatchedRequest {
             request: downstream_request,
+            route_name,
             retry_policy,
             remote_address,
             route_match,
@@ -92,9 +92,10 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
         match maybe_channel {
             Ok(svc_channel) => {
                 if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-                    ctx.access_loggers.lock().with_context(&UpstreamContext {
-                        authority: &svc_channel.upstream_authority,
-                        cluster_name: svc_channel.cluster_name,
+                    ctx.lock().loggers.with_context(&UpstreamContext {
+                        authority: Some(&svc_channel.upstream_authority),
+                        cluster_name: Some(svc_channel.cluster_name),
+                        route_name,
                     })
                 }
 
@@ -109,16 +110,30 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     } else {
                         None
                     };
-                    if path_and_query_replacement.is_some() {
+
+                    let authority_replacement = if let Some(authority_rewrite) = &self.authority_rewrite {
+                        authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
+                    } else {
+                        None
+                    };
+
+                    if path_and_query_replacement.is_some() || authority_replacement.is_some() {
                         parts.uri = {
-                            let UriParts { scheme, authority, path_and_query: _, .. } = parts.uri.into_parts();
+                            let UriParts { scheme, authority, path_and_query, .. } = parts.uri.into_parts();
                             let mut new_parts = UriParts::default();
                             new_parts.scheme = scheme;
-                            new_parts.authority = authority;
-                            new_parts.path_and_query = path_and_query_replacement;
-                            Uri::from_parts(new_parts).with_context_msg("failed to replace request path_and_query")?
+                            new_parts.authority = authority_replacement.clone().or(authority);
+                            new_parts.path_and_query = path_and_query_replacement.or(path_and_query);
+                            Uri::from_parts(new_parts).with_context_msg("failed to replace request URI")?
                         }
                     }
+
+                    if let Some(new_authority) = &authority_replacement {
+                        let header_value = http::HeaderValue::from_str(new_authority.as_str())
+                            .with_context_msg("failed to create Host header value")?;
+                        parts.headers.insert(http::header::HOST, header_value);
+                    }
+
                     Request::from_parts(parts, body.map_into())
                 };
 
@@ -146,7 +161,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                 }
 
                 if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
-                    ctx.access_loggers.lock().with_context(&UpstreamRequest(&upstream_request));
+                    ctx.lock().loggers.with_context(&UpstreamRequest(&upstream_request));
                 }
 
                 let websocket_enabled = if let Some(upgrade_config) = self.upgrade_config {
@@ -159,7 +174,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                         Ok(maybe_upgrade) => maybe_upgrade,
                         Err(upgrade_error) => {
                             debug!("Failed to upgrade to websockets {upgrade_error}");
-                            return Ok(SyntheticHttpResponse::bad_request().into_response(ver));
+                            return Ok(SyntheticHttpResponse::bad_request(EventKind::UpgradeFailed).into_response(ver));
                         },
                     }
                 } else {
@@ -186,28 +201,33 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                 match resp {
                     Err(err) => {
                         let err = err.into_inner();
-                        let flags = EventError::try_infer_from(&err).map(ResponseFlags::from).unwrap_or_default();
+                        let event_error = EventError::try_infer_from(&err);
+                        let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
+                        let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
                         debug!(
                             "HttpConnectionManager Error processing response {:?}: {}({})",
                             err,
                             ResponseFlagsLong(&flags.0).to_smolstr(),
                             ResponseFlagsShort(&flags.0).to_smolstr()
                         );
-                        Ok(SyntheticHttpResponse::bad_gateway(flags).into_response(ver))
+                        Ok(SyntheticHttpResponse::bad_gateway(event_kind, flags).into_response(ver))
                     },
                     Ok(resp) => Ok(resp),
                 }
             },
+            // http connection not avaiable from cluster...
             Err(err) => {
                 let err = err.into_inner();
-                let flags = EventError::try_infer_from(&err).map(ResponseFlags::from).unwrap_or_default();
+                let event_error = EventError::try_infer_from(&err);
+                let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
+                let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
                 debug!(
                     "Failed to get an HTTP connection: {:?}: {}({})",
                     err,
                     ResponseFlagsLong(&flags.0).to_smolstr(),
                     ResponseFlagsShort(&flags.0).to_smolstr()
                 );
-                Ok(SyntheticHttpResponse::internal_error(flags).into_response(downstream_request.version()))
+                Ok(SyntheticHttpResponse::internal_error(event_kind, flags).into_response(downstream_request.version()))
             },
         }
     }

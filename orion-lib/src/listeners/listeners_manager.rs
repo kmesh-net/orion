@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,13 +15,12 @@
 //
 //
 
-use std::collections::BTreeMap;
-
+use multimap::MultiMap;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use orion_configuration::config::{
-    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::listener::{Listener, ListenerFactory};
@@ -50,34 +46,41 @@ pub enum TlsContextChange {
 struct ListenerInfo {
     handle: abort_on_drop::ChildTask<()>,
     listener_conf: ListenerConfig,
+    version: u64,
 }
 impl ListenerInfo {
-    fn new(handle: tokio::task::JoinHandle<()>, listener_conf: ListenerConfig) -> Self {
-        Self { handle: handle.into(), listener_conf }
+    fn new(handle: tokio::task::JoinHandle<()>, listener_conf: ListenerConfig, version: u64) -> Self {
+        Self { handle: handle.into(), listener_conf, version }
     }
 }
 
 pub struct ListenersManager {
-    configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+    listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
-    listener_handles: BTreeMap<&'static str, ListenerInfo>,
+    listener_handles: MultiMap<String, ListenerInfo>,
+    version_counter: u64,
 }
 
 impl ListenersManager {
     pub fn new(
-        configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
+        listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
         route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
     ) -> Self {
-        ListenersManager { configuration_channel, route_configuration_channel, listener_handles: BTreeMap::new() }
+        ListenersManager {
+            listener_configuration_channel,
+            route_configuration_channel,
+            listener_handles: MultiMap::new(),
+            version_counter: 0,
+        }
     }
 
-    pub async fn start(mut self) -> Result<()> {
+    pub async fn start(mut self, ct: tokio_util::sync::CancellationToken) -> Result<()> {
         let (tx_secret_updates, _) = broadcast::channel(16);
         let (tx_route_updates, _) = broadcast::channel(16);
-
+        // TODO: create child token for each listener?
         loop {
             tokio::select! {
-                Some(listener_configuration_change) = self.configuration_channel.recv() => {
+                Some(listener_configuration_change) = self.listener_configuration_channel.recv() => {
                     match listener_configuration_change {
                         ListenerConfigurationChange::Added(boxed) => {
                             let (factory, listener_conf) = *boxed;
@@ -99,8 +102,8 @@ impl ListenersManager {
                         },
                         ListenerConfigurationChange::GetConfiguration(config_dump_tx) => {
                             let listeners: Vec<ListenerConfig> = self.listener_handles
-                                .values()
-                                .map(|info| info.listener_conf.clone())
+                                .iter()
+                                .map(|(_, info)| info.listener_conf.clone())
                                 .collect();
                             config_dump_tx.send(ConfigDump { listeners: Some(listeners), ..Default::default() }).await?;
                         },
@@ -113,40 +116,51 @@ impl ListenersManager {
                         warn!("Internal problem when updating a route: {e}");
                     }
                 },
-                else => {
-                    warn!("All listener manager channels are closed...exiting");
-                    return Err("All listener manager channels are closed...exiting".into());
+                _ = ct.cancelled() => {
+                    warn!("Listener manager exiting");
+                    return Ok(());
                 }
             }
         }
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name();
-        let (addr, dev) = listener.get_socket();
-        info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
-        // spawn the task for this listener address, this will spawn additional task per connection
+        let listener_name = listener.get_name().to_string();
+        if let Some((addr, dev)) = listener.get_socket() {
+            info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
+        } else {
+            info!("Internal listener {}", listener_name);
+        }
+
+        self.version_counter += 1;
+        let version = self.version_counter;
+
+        let listener_name_for_async = listener_name.clone();
+
         let join_handle = tokio::spawn(async move {
             let error = listener.start().await;
-            warn!("Listener {listener_name} exited: {error}");
+            info!("Listener {} version {} exited: {}", listener_name_for_async, version, error);
         });
-        #[cfg(debug_assertions)]
-        if self.listener_handles.contains_key(&listener_name) {
-            debug!("Listener {listener_name} already exists, replacing it");
-        }
-        // note: join handle gets overwritten here if it already exists.
-        // handles are abort on drop so will be aborted, closing the socket
-        // but the any tasks spawned within this task, which happens on a per-connection basis,
-        // will survive past this point and only get dropped when their session ends
-        self.listener_handles.insert(listener_name, ListenerInfo::new(join_handle, listener_conf));
+
+        let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
+        self.listener_handles.insert(listener_name.clone(), listener_info);
+
+        let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
+        info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
         Ok(())
     }
 
     pub fn stop_listener(&mut self, listener_name: &str) -> Result<()> {
-        if let Some(abort_handler) = self.listener_handles.remove(listener_name) {
-            info!("{listener_name} : Stopped");
-            abort_handler.handle.abort();
+        if let Some(listeners) = self.listener_handles.get_vec_mut(listener_name) {
+            info!("Stopping all {} version(s) of listener {}", listeners.len(), listener_name);
+            for listener_info in listeners.drain(..) {
+                info!("Stopping listener {} version {}", listener_name, listener_info.version);
+                listener_info.handle.abort();
+            }
+            self.listener_handles.remove(listener_name);
+        } else {
+            info!("No listeners found with name {}", listener_name);
         }
 
         Ok(())
@@ -179,11 +193,16 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+            address: orion_configuration::config::listener::ListenerAddress::Socket(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                1234,
+            )),
             filter_chains: HashMap::default(),
             bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info.clone()).unwrap();
         assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
@@ -197,9 +216,11 @@ mod tests {
         assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
         tokio::task::yield_now().await;
 
-        // This should fail because the old listener exited already dropping the rx
-        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_err());
-        // Yield once more just in case more logs can be seen
+        // Both listeners should still be active (multiple versions allowed)
+        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 2);
         tokio::task::yield_now().await;
     }
 
@@ -218,11 +239,16 @@ mod tests {
         let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
         let l1_info = ListenerConfig {
             name: name.into(),
-            address: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234),
+            address: orion_configuration::config::listener::ListenerAddress::Socket(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                1234,
+            )),
             filter_chains: HashMap::default(),
             bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
         };
         man.start_listener(l1, l1_info).unwrap();
 
@@ -232,7 +258,7 @@ mod tests {
 
         // See .start_listener() - in the case all channels are dropped the task there
         // should exit with this warning msg
-        let expected = format!("Listener {name} exited: channel closed");
+        let expected = format!("Listener {name} version 1 exited: channel closed");
         logs_assert(|lines: &[&str]| {
             let logs: Vec<_> = lines.iter().filter(|ln| ln.contains(&expected)).collect();
             if logs.len() == 1 {
@@ -241,5 +267,79 @@ mod tests {
                 Err(format!("Expecting 1 log line for listener shutdown (got {})", logs.len()))
             }
         });
+    }
+
+    #[traced_test]
+    #[tokio::test]
+    async fn start_multiple_listener_versions() {
+        let chan = 10;
+        let name = "multi-version-listener";
+
+        let (_conf_tx, conf_rx) = mpsc::channel(chan);
+        let (_route_tx, route_rx) = mpsc::channel(chan);
+        let mut man = ListenersManager::new(conf_rx, route_rx);
+
+        let (routeb_tx1, routeb_rx) = broadcast::channel(chan);
+        let (_secb_tx1, secb_rx) = broadcast::channel(chan);
+        let l1 = Listener::test_listener(name, routeb_rx, secb_rx);
+        let l1_info = ListenerConfig {
+            name: name.into(),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234)),
+            filter_chains: HashMap::default(),
+            bind_device_options: BindDeviceOptions::default(),
+            with_tls_inspector: false,
+            proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
+        };
+        man.start_listener(l1, l1_info).unwrap();
+        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        tokio::task::yield_now().await;
+
+        let (routeb_tx2, routeb_rx) = broadcast::channel(chan);
+        let (_secb_tx2, secb_rx) = broadcast::channel(chan);
+        let l2 = Listener::test_listener(name, routeb_rx, secb_rx);
+        let l2_info = ListenerConfig {
+            name: name.into(),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235)), // Different port
+            filter_chains: HashMap::default(),
+            bind_device_options: BindDeviceOptions::default(),
+            with_tls_inspector: false,
+            proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
+        };
+        man.start_listener(l2, l2_info).unwrap();
+        assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        tokio::task::yield_now().await;
+
+        let (routeb_tx3, routeb_rx) = broadcast::channel(chan);
+        let (_secb_tx3, secb_rx) = broadcast::channel(chan);
+        let l3 = Listener::test_listener(name, routeb_rx, secb_rx);
+        let l3_info = ListenerConfig {
+            name: name.into(),
+            address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1236)), // Different port
+            filter_chains: HashMap::default(),
+            bind_device_options: BindDeviceOptions::default(),
+            with_tls_inspector: false,
+            proxy_protocol_config: None,
+            with_tlv_listener_filter: false,
+            tlv_listener_filter_config: None,
+        };
+        man.start_listener(l3, l3_info).unwrap();
+        assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        tokio::task::yield_now().await;
+
+        assert!(routeb_tx1.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        assert!(routeb_tx2.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+        assert!(routeb_tx3.send(RouteConfigurationChange::Removed("n/a".into())).is_ok());
+
+        assert_eq!(man.listener_handles.get_vec(name).unwrap().len(), 3);
+
+        man.stop_listener(name).unwrap();
+
+        assert!(man.listener_handles.get_vec(name).is_none());
+
+        tokio::task::yield_now().await;
     }
 }

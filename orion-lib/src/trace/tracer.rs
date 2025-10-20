@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -149,7 +146,6 @@ impl Tracer {
         // Trigger: x_request_id...
 
         if let Some(trace_id) = request_id.as_ref().and_then(|val| <u128 as FromHeaderValue>::from(val.as_ref()).ok()) {
-            println!("here!");
             if forced
                 || (Self::should_sample(self.tracing.random_sampling)
                     && Self::should_sample(self.tracing.overall_sampling))

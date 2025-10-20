@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,7 +20,10 @@ use super::{
     tcp_proxy::{TcpProxy, TcpProxyBuilder},
 };
 use crate::{
-    listeners::{filter_state::DownstreamConnectionMetadata, http_connection_manager::ExtendedRequest},
+    listeners::{
+        filter_state::{DownstreamConnectionMetadata, DownstreamMetadata},
+        http_connection_manager::ExtendedRequest,
+    },
     secrets::{TlsConfigurator, WantsToBuildServer},
     transport::AsyncReadWrite,
     AsyncStream, ConversionContext, Error, Result,
@@ -97,7 +97,6 @@ pub struct FilterchainBuilder {
     rbac_filters: Vec<NetworkRbac>,
     tls_configurator: Option<TlsConfigurator<ServerConfig, WantsToBuildServer>>,
 }
-
 impl FilterchainBuilder {
     pub fn with_listener_name(self, name: &'static str) -> Self {
         FilterchainBuilder { listener_name: Some(name), ..self }
@@ -161,7 +160,8 @@ impl FilterchainType {
         let network_context =
             NetworkContext::new(downstream_metadata.local_address(), downstream_metadata.peer_address(), server_name);
         for rbac in rbac_filters {
-            if !rbac.is_permitted(network_context) {
+            let (permitted, _) = rbac.is_permitted(&network_context);
+            if !permitted {
                 return None;
             }
         }
@@ -171,7 +171,7 @@ impl FilterchainType {
     pub async fn start_filterchain(
         &self,
         stream: AsyncStream,
-        downstream_metadata: Arc<DownstreamConnectionMetadata>,
+        downstream_metadata: Arc<DownstreamMetadata>,
         shard_id: ThreadId,
         listener_name: &'static str,
         start_instant: std::time::Instant,
@@ -255,7 +255,6 @@ impl FilterchainType {
                 }
 
                 let tcp_proxy = tcp_proxy.clone();
-                let listener_name = tcp_proxy.listener_name;
                 let server_config = config
                     .tls_configurator
                     .clone()

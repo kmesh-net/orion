@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,56 +52,44 @@ impl Context for TcpContext<'_> {
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::UpstreamHost | Operator::UpstreamRemoteAddress => match self.upstream_peer_addr {
-                Some(addr) => StringType::Smol(addr.to_smolstr()),
-                None => StringType::None,
+            Operator::UpstreamHost | Operator::UpstreamRemoteAddress => {
+                self.upstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.to_smolstr()))
             },
-            Operator::UpstreamRemoteAddressWithoutPort => match self.upstream_peer_addr {
-                None => StringType::None,
-                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
+            Operator::UpstreamRemoteAddressWithoutPort => {
+                self.upstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.ip().to_smolstr()))
             },
-            Operator::UpstreamRemotePort => match self.upstream_peer_addr {
-                None => StringType::None,
-                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
+            Operator::UpstreamRemotePort => {
+                self.upstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.port().to_smolstr()))
             },
-            Operator::UpstreamLocalAddress => match self.upstream_local_addr {
-                Some(addr) => StringType::Smol(addr.to_smolstr()),
-                None => StringType::None,
+            Operator::UpstreamLocalAddress => {
+                self.upstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.to_smolstr()))
             },
-            Operator::UpstreamLocalAddressWithoutPort => match self.upstream_local_addr {
-                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
-                None => StringType::None,
+            Operator::UpstreamLocalAddressWithoutPort => {
+                self.upstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.ip().to_smolstr()))
             },
-            Operator::UpstreamLocalPort => match self.upstream_local_addr {
-                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
-                None => StringType::None,
+            Operator::UpstreamLocalPort => {
+                self.upstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.port().to_smolstr()))
             },
-            Operator::DownstreamLocalAddress => match self.downstream_local_addr {
-                Some(addr) => StringType::Smol(addr.to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamLocalAddress => {
+                self.downstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.to_smolstr()))
             },
-            Operator::DownstreamLocalAddressWithoutPort => match self.downstream_local_addr {
-                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamLocalAddressWithoutPort => {
+                self.downstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.ip().to_smolstr()))
             },
-            Operator::DownstreamLocalPort => match self.downstream_local_addr {
-                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamLocalPort => {
+                self.downstream_local_addr.map_or(StringType::None, |addr| StringType::Smol(addr.port().to_smolstr()))
             },
 
-            Operator::DownstreamRemoteAddress => match self.downstream_peer_addr {
-                Some(addr) => StringType::Smol(addr.to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamRemoteAddress => {
+                self.downstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.to_smolstr()))
             },
 
-            Operator::DownstreamRemoteAddressWithoutPort => match self.downstream_peer_addr {
-                Some(addr) => StringType::Smol(addr.ip().to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamRemoteAddressWithoutPort => {
+                self.downstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.ip().to_smolstr()))
             },
 
-            Operator::DownstreamRemotePort => match self.downstream_peer_addr {
-                Some(addr) => StringType::Smol(addr.port().to_smolstr()),
-                None => StringType::None,
+            Operator::DownstreamRemotePort => {
+                self.downstream_peer_addr.map_or(StringType::None, |addr| StringType::Smol(addr.port().to_smolstr()))
             },
 
             Operator::UpstreamCluster | Operator::UpstreamClusterRaw => {
@@ -145,8 +130,9 @@ fn hash_connection(local: Option<&SocketAddr>, peer: Option<&SocketAddr>, protoc
 
 #[derive(Clone, Debug)]
 pub struct UpstreamContext<'a> {
-    pub authority: &'a Authority,
-    pub cluster_name: &'a str,
+    pub authority: Option<&'a Authority>,
+    pub cluster_name: Option<&'a str>,
+    pub route_name: &'a str,
 }
 
 impl Context for UpstreamContext<'_> {
@@ -155,10 +141,13 @@ impl Context for UpstreamContext<'_> {
     }
     fn eval_part(&self, op: &Operator) -> StringType {
         match op {
-            Operator::UpstreamHost => StringType::Smol(SmolStr::new(self.authority.as_str())),
-            Operator::UpstreamCluster | Operator::UpstreamClusterRaw => {
-                StringType::Smol(SmolStr::new(self.cluster_name))
+            Operator::UpstreamHost => {
+                self.authority.map_or(StringType::None, |name| StringType::Smol(SmolStr::new(name)))
             },
+            Operator::UpstreamCluster | Operator::UpstreamClusterRaw => {
+                self.cluster_name.map_or(StringType::None, |cluster_name| StringType::Smol(SmolStr::new(cluster_name)))
+            },
+            Operator::RouteName => StringType::Smol(SmolStr::new(self.route_name)),
             _ => StringType::None,
         }
     }
@@ -187,6 +176,7 @@ pub struct InitHttpContext<'a, T> {
     pub downstream_request: &'a Request<T>,
     pub request_head_size: usize,
     pub trace_id: Option<u128>,
+    pub server_name: Option<&'a str>,
 }
 
 impl<T> Context for InitHttpContext<'_, T> {
@@ -200,6 +190,7 @@ impl<T> Context for InitHttpContext<'_, T> {
                 request: self.downstream_request,
                 trace_id: self.trace_id,
                 request_head_size: self.request_head_size,
+                server_name: self.server_name,
             }
             .eval_part(op),
         }
@@ -262,6 +253,9 @@ pub struct FinishContext {
     pub bytes_received: u64,
     pub bytes_sent: u64,
     pub response_flags: ResponseFlags,
+    pub upstream_failure: Option<&'static str>,
+    pub response_code_details: Option<&'static str>,
+    pub connection_termination_details: Option<&'static str>,
 }
 
 impl Context for FinishContext {
@@ -284,6 +278,15 @@ impl Context for FinishContext {
                 let mut buffer = itoa::Buffer::new();
                 StringType::Smol(SmolStr::new(buffer.format(self.bytes_sent)))
             },
+            Operator::UpstreamTransportFailureReason => {
+                self.upstream_failure.map_or(StringType::None, |msg| StringType::Smol(SmolStr::new_static(msg)))
+            },
+            Operator::ResponseCodeDetails => {
+                self.response_code_details.map_or(StringType::None, |msg| StringType::Smol(SmolStr::new_static(msg)))
+            },
+            Operator::ConnectionTerminationDetails => self
+                .connection_termination_details
+                .map_or(StringType::None, |msg| StringType::Smol(SmolStr::new_static(msg))),
             _ => StringType::None,
         }
     }
@@ -293,6 +296,7 @@ pub struct DownstreamContext<'a, T> {
     pub request: &'a Request<T>,
     pub request_head_size: usize,
     pub trace_id: Option<u128>,
+    pub server_name: Option<&'a str>,
 }
 
 pub struct DownstreamResponse<'a, T> {
@@ -339,21 +343,18 @@ impl<T> Context for DownstreamContext<'_, T> {
                     StringType::None
                 }
             },
-            Operator::Request(h) => {
-                let hv = self.request.headers().get(h.0.as_str());
-                match hv {
-                    Some(hv) => StringType::Bytes(hv.as_bytes().into()),
-                    None => StringType::None,
-                }
-            },
-            Operator::TraceId => {
-                if let Some(trace_id) = self.trace_id {
-                    StringType::Smol(format_smolstr!("{:032x}", trace_id))
-                } else {
-                    StringType::None
-                }
-            },
+            Operator::Request(h) => self
+                .request
+                .headers()
+                .get(h.0.as_str())
+                .map_or(StringType::None, |hv| StringType::Bytes(hv.as_bytes().into())),
+            Operator::TraceId => self
+                .trace_id
+                .map_or(StringType::None, |trace_id| StringType::Smol(format_smolstr!("{:032x}", trace_id))),
             Operator::Protocol => StringType::Smol(SmolStr::new_static(self.request.version().to_static_str())),
+            Operator::RequestedServerName => {
+                self.server_name.map_or(StringType::None, |sni| StringType::Smol(SmolStr::new(sni)))
+            },
             _ => StringType::None,
         }
     }
@@ -397,13 +398,11 @@ impl<T> Context for DownstreamResponse<'_, T> {
             Operator::ResponseStatus | Operator::ResponseCode => {
                 StringType::Smol(SmolStr::new_inline(self.response.status().as_str()))
             },
-            Operator::Response(header_name) => {
-                let hv = self.response.headers().get(header_name.0.as_str());
-                match hv {
-                    Some(hv) => StringType::Bytes(hv.as_bytes().into()),
-                    None => StringType::None,
-                }
-            },
+            Operator::Response(header_name) => self
+                .response
+                .headers()
+                .get(header_name.0.as_str())
+                .map_or(StringType::None, |hv| StringType::Bytes(hv.as_bytes().into())),
             _ => StringType::None,
         }
     }

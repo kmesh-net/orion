@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -98,6 +95,9 @@ fn benchmark_rust_format(c: &mut Criterion) {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let default_header_value = HeaderValue::from_static("");
@@ -177,6 +177,9 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let fmt = LogFormatter::try_new(DEFAULT_ACCESS_LOG_FORMAT, false).stealth_unwrap();
@@ -186,7 +189,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -199,7 +202,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -217,7 +220,7 @@ fn benchmark_log_formatter(c: &mut Criterion) {
 
     let mut formatted = fmt.local_clone();
     eval_format(
-        &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+        &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
         &DownstreamResponse { response: &response, response_head_size: 0 },
         &start,
         &end,
@@ -247,6 +250,9 @@ fn benchmark_request_parts(c: &mut Criterion) {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let fmt = LogFormatter::try_new("%START_TIME%", false).stealth_unwrap();
@@ -254,7 +260,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -268,7 +274,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -282,7 +288,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -296,7 +302,7 @@ fn benchmark_request_parts(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,
@@ -360,6 +366,9 @@ fn benchmark_log_headers(c: &mut Criterion) {
         bytes_received: 128,
         bytes_sent: 256,
         response_flags: ResponseFlags::empty(),
+        upstream_failure: None,
+        response_code_details: None,
+        connection_termination_details: None,
     };
 
     let fmt = LogFormatter::try_new(ENVOY_FORMAT, false).stealth_unwrap();
@@ -368,7 +377,7 @@ fn benchmark_log_headers(c: &mut Criterion) {
         b.iter(|| {
             let mut fmt = fmt.local_clone();
             black_box(eval_format(
-                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0 },
+                &DownstreamContext { request: &request, trace_id: None, request_head_size: 0, server_name: None },
                 &DownstreamResponse { response: &response, response_head_size: 0 },
                 &start,
                 &end,

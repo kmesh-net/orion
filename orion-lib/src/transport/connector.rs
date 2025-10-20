@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,9 +35,9 @@ use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
 use tracing::{debug, warn};
 
-use crate::clusters::retry_policy::{elapsed, EventError};
+use crate::event_error::{elapsed, EventError};
 
-use super::{resolve};
+use super::resolve;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -65,6 +62,7 @@ pub struct LocalConnectorWithDNSResolver {
 }
 
 impl LocalConnectorWithDNSResolver {
+    #[allow(clippy::too_many_lines)]
     pub fn connect(
         &self,
     ) -> impl Future<Output = std::result::Result<(TcpStream, &'static str), WithContext<ConnectError>>> + 'static {
@@ -140,38 +138,47 @@ impl LocalConnectorWithDNSResolver {
                         .map_into()
                 })?;
             }
-            
-            if let Some(bind_addr) = bind_address{
-                match bind_addr.address(){
-                    orion_configuration::config::core::envoy_conversions::Address::Socket(bind_address, _) => {
-                        let maybe_socket_addr = format!("{bind_address}:0").parse::<std::net::SocketAddr>();                        
-                        let bind_address = maybe_socket_addr.map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
-                        WithContext::new(e)
-                            .with_context_data(TcpErrorContext {
-                                upstream_addr: addr,
-                                response_flags: ResponseFlags::LOCAL_RESET,
-                                cluster_name,
+
+            if let Some(bind_addr) = bind_address {
+                match bind_addr.address() {
+                    orion_configuration::config::core::envoy_conversions::Address::Socket(bind_address) => {
+                        let maybe_socket_addr = format!("{bind_address}:0").parse::<std::net::SocketAddr>();
+                        let bind_address = maybe_socket_addr
+                            .map_err(|e| {
+                                EventError::IoError(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))
                             })
-                            .map_into()
-                        })?;
-                        
+                            .map_err(|e| {
+                                WithContext::new(e)
+                                    .with_context_data(TcpErrorContext {
+                                        upstream_addr: addr,
+                                        response_flags: ResponseFlags::LOCAL_RESET,
+                                        cluster_name,
+                                    })
+                                    .map_into()
+                            })?;
+
                         let maybe_error = sock.bind(bind_address);
                         debug!("LocalConnectorWithDNSResolver socket bound to {bind_address} {maybe_error:?}");
-                        maybe_error.map_err(|e| EventError::ConnectFailure(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))).map_err(|e| {
-                        WithContext::new(e)
-                            .with_context_data(TcpErrorContext {
-                                upstream_addr: addr,
-                                response_flags: ResponseFlags::LOCAL_RESET,
-                                cluster_name,
+                        maybe_error
+                            .map_err(|e| {
+                                EventError::IoError(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))
                             })
-                            .map_into()
-                        })?
+                            .map_err(|e| {
+                                WithContext::new(e)
+                                    .with_context_data(TcpErrorContext {
+                                        upstream_addr: addr,
+                                        response_flags: ResponseFlags::LOCAL_RESET,
+                                        cluster_name,
+                                    })
+                                    .map_into()
+                            })?
                     },
-                        
-                    orion_configuration::config::core::envoy_conversions::Address::Pipe(_, _) => (),
-                }                
+
+                    orion_configuration::config::core::envoy_conversions::Address::Pipe(_, _)
+                    | orion_configuration::config::core::envoy_conversions::Address::Internal(_) => (),
+                }
             }
-            
+
             let stream = if let Some(connection_timeout) = connection_timeout {
                 fast_timeout(connection_timeout, sock.connect(addr))
                     .await // Result<Result<TcpStream, io::Error>>, Elapsed>
@@ -185,7 +192,7 @@ impl LocalConnectorWithDNSResolver {
                             })
                             .map_into()
                     })? // Result<TcpStream, io::Error>
-                    .map_err(|orig| EventError::ConnectFailure(io::Error::new(orig.kind(), orig.to_string())))
+                    .map_err(|orig| EventError::IoError(io::Error::new(orig.kind(), orig.to_string())))
                     .map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {
@@ -198,7 +205,7 @@ impl LocalConnectorWithDNSResolver {
             } else {
                 sock.connect(addr)
                     .await
-                    .map_err(|orig| EventError::ConnectFailure(io::Error::new(orig.kind(), orig.to_string())))
+                    .map_err(|orig| EventError::IoError(io::Error::new(orig.kind(), orig.to_string())))
                     .map_err(|e| {
                         WithContext::new(e)
                             .with_context_data(TcpErrorContext {

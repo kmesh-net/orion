@@ -5,9 +5,14 @@ use glob::glob;
 /// std::env::set_var("PROTOC", The Path of Protoc);
 fn main() -> std::io::Result<()> {
     let descriptor_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("proto_descriptor.bin");
-    let protos: Vec<PathBuf> = glob("data-plane-api/envoy/**/v3/*.proto").unwrap().filter_map(Result::ok).collect();
-    let istio_protos: Vec<PathBuf> = glob("udpa/udpa/type/v1/*.proto").unwrap().filter_map(Result::ok).collect();
-    let protos: Vec<PathBuf> = protos.into_iter().chain(istio_protos).collect();
+
+    let mut protos: Vec<PathBuf> = glob("data-plane-api/envoy/**/v3/*.proto").unwrap().filter_map(Result::ok).collect();
+
+    let udpa_protos: Vec<PathBuf> = glob("xds/udpa/**/*.proto").unwrap().filter_map(Result::ok).collect();
+    protos.extend(udpa_protos);
+
+    let custom_protos: Vec<PathBuf> = glob("../proto/**/*.proto").unwrap().filter_map(Result::ok).collect();
+    protos.extend(custom_protos);
 
     let include_paths = [
         "data-plane-api/",
@@ -20,6 +25,7 @@ fn main() -> std::io::Result<()> {
         "cel-spec/proto",
         "protobuf/src/",
         "udpa/udpa/type/v1",
+        "../proto/",
     ];
 
     let mut config = prost_build::Config::new();

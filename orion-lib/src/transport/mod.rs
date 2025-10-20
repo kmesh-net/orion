@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +27,7 @@ pub use resolver::resolve;
 pub mod policy;
 pub mod proxy_protocol;
 pub mod tls_inspector;
+pub mod tlv_listener_filter;
 pub mod transport_socket;
 
 pub use self::{
@@ -37,6 +35,7 @@ pub use self::{
     http_channel::{HttpChannel, HttpChannelBuilder},
     proxy_protocol::ProxyProtocolReader,
     tcp_channel::TcpChannelConnector,
+    tlv_listener_filter::TlvListenerFilter,
     transport_socket::UpstreamTransportSocketConfigurator,
 };
 

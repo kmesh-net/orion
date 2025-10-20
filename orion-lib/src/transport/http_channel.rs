@@ -1,7 +1,4 @@
-// SPDX-FileCopyrightText: © 2025 kmesh authors
-// SPDX-License-Identifier: Apache-2.0
-//
-// Copyright 2025 kmesh authors
+// Copyright 2025 The kmesh Authors
 //
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +21,8 @@ use super::{
 };
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
-    clusters::retry_policy::{EventError, RetryCondition, TryInferFrom},
+    clusters::retry_policy::RetryCondition,
+    event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
         http_connection_manager::{RequestHandler, TransactionHandler},
         synthetic_http_response::SyntheticHttpResponse,
@@ -49,7 +47,8 @@ use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
     core::envoy_conversions::Address,
-    network_filters::http_connection_manager::RetryPolicy, transport::BindDeviceOptions,
+    network_filters::http_connection_manager::RetryPolicy,
+    transport::BindDeviceOptions,
 };
 use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
 use orion_metrics::{metrics::clusters, with_metric};
@@ -178,18 +177,18 @@ impl HttpChannelBuilder {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub fn build(self) -> crate::Result<HttpChannel> {        
+    pub fn build(self) -> crate::Result<HttpChannel> {
         match self.address {
-            Some(Address::Socket(_, _)) => self.build_channel_from_authority(),
+            Some(Address::Socket(_)) => self.build_channel_from_authority(),
             Some(Address::Pipe(_, _)) => self.build_channel_from_pipe(),
+            Some(Address::Internal(_)) => Err(Error::from("Internal not supported yet")),
             None => Err(Error::from("Address is mandatory")),
         }
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub fn build_with_no_address(self) -> crate::Result<HttpChannel> {        
+    pub fn build_with_no_address(self) -> crate::Result<HttpChannel> {
         self.build_channel_from_authority()
-        
     }
 
     fn configure_hyper_client(&self) -> Builder {
@@ -204,6 +203,12 @@ impl HttpChannelBuilder {
         let configured_upstream_http_version = self.http_protocol_options.codec;
 
         self.configure_http2_if_needed(&mut client_builder, configured_upstream_http_version);
+
+        #[cfg(feature = "metrics")]
+        {
+            let cluster_name = self.cluster_name.unwrap_or_default();
+            client_builder.event_handler(EventHandler::new(update_upstream_stats, cluster_name));
+        }
 
         client_builder
     }
@@ -314,66 +319,56 @@ impl HttpChannelBuilder {
             _ => Err(Error::from("Trying to build a pipe address from invalid address")),
         }
     }
+}
 
-    #[cfg(feature = "metrics")]
-    fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
-        use tracing::info;
-        let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
-        let shard_id = std::thread::current().id();
-        if let Some(pk) = key.downcast_ref::<PoolKey>() {
-            info!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
-        }
-        match event {
-            ConnectionEvent::NewConnection => {
-                with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-                with_metric!(clusters::UPSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            },
-            ConnectionEvent::IdleConnectionClosed => {
-                with_metric!(
-                    clusters::UPSTREAM_CX_DESTROY,
-                    add,
-                    1,
-                    shard_id,
-                    &[KeyValue::new("cluster", cluster_name)]
-                );
-                with_metric!(
-                    clusters::UPSTREAM_CX_IDLE_TIMEOUT,
-                    add,
-                    1,
-                    shard_id,
-                    &[KeyValue::new("cluster", cluster_name)]
-                );
-                with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            },
-            ConnectionEvent::ConnectionError => {
-                with_metric!(
-                    clusters::UPSTREAM_CX_CONNECT_FAIL,
-                    add,
-                    1,
-                    shard_id,
-                    &[KeyValue::new("cluster", cluster_name)]
-                );
-            },
-            ConnectionEvent::ConnectionTimeout => {
-                with_metric!(
-                    clusters::UPSTREAM_CX_CONNECT_TIMEOUT,
-                    add,
-                    1,
-                    shard_id,
-                    &[KeyValue::new("cluster", cluster_name)]
-                );
-            },
-            ConnectionEvent::ConnectionClosed => {
-                with_metric!(
-                    clusters::UPSTREAM_CX_DESTROY,
-                    add,
-                    1,
-                    shard_id,
-                    &[KeyValue::new("cluster", cluster_name)]
-                );
-                with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            },
-        }
+#[cfg(feature = "metrics")]
+#[allow(clippy::needless_pass_by_value)]
+fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
+    use tracing::debug;
+    let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
+    let shard_id = std::thread::current().id();
+    if let Some(pk) = key.downcast_ref::<PoolKey>() {
+        debug!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
+    }
+
+    match event {
+        ConnectionEvent::NewConnection => {
+            with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            with_metric!(clusters::UPSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        },
+        ConnectionEvent::IdleConnectionClosed => {
+            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            with_metric!(
+                clusters::UPSTREAM_CX_IDLE_TIMEOUT,
+                add,
+                1,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
+            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        },
+        ConnectionEvent::ConnectionError => {
+            with_metric!(
+                clusters::UPSTREAM_CX_CONNECT_FAIL,
+                add,
+                1,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
+        },
+        ConnectionEvent::ConnectionTimeout => {
+            with_metric!(
+                clusters::UPSTREAM_CX_CONNECT_TIMEOUT,
+                add,
+                1,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
+        },
+        ConnectionEvent::ConnectionClosed => {
+            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        },
     }
 }
 
@@ -445,34 +440,6 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
         }
     }
 }
-
-// fn update_upstream_stats(
-//     client_stats: &ClientEndpointStats,
-//     cluster_name: &'static str,
-//     shard_id: (ThreadId, Authority),
-//     is_tls: bool,
-// ) {
-//     let total = client_stats.total_cx.load(std::sync::atomic::Ordering::Relaxed) as u64;
-//     let destroy = client_stats.destroy_cx.load(std::sync::atomic::Ordering::Relaxed) as u64;
-//     let active = total.saturating_sub(destroy);
-//
-//     with_metric!(
-//         clusters::UPSTREAM_CX_TOTAL,
-//         store,
-//         total,
-//         shard_id.clone(),
-//         &[KeyValue::new("clusters", cluster_name)]
-//     );
-//     with_metric!(
-//         clusters::UPSTREAM_CX_DESTROY,
-//         store,
-//         destroy,
-//         shard_id.clone(),
-//         &[KeyValue::new("clusters", cluster_name)]
-//     );
-//
-//     with_metric!(clusters::UPSTREAM_CX_ACTIVE, store, active, shard_id, &[KeyValue::new("clusters", cluster_name)]);
-// }
 
 impl HttpChannel {
     /// Send the request and return the Result, either the Response or an Error,
@@ -630,15 +597,19 @@ impl HttpChannel {
                         ResponseFlagsLong(&response_flags.0).to_smolstr(),
                         ResponseFlagsShort(&response_flags.0).to_smolstr()
                     );
+
                     match event_error {
-                        EventError::RefusedStream | EventError::ConnectFailure(_) | EventError::ConnectTimeout(_) => {
-                            Ok(SyntheticHttpResponse::service_unavailable(response_flags).into_response(version))
-                        },
+                        EventError::RefusedStream | EventError::IoError(_) | EventError::ConnectTimeout(_) => Ok(
+                            SyntheticHttpResponse::service_unavailable(EventKind::Error(event_error), response_flags)
+                                .into_response(version),
+                        ),
                         EventError::PerTryTimeout | EventError::RouteTimeout => {
-                            Ok(SyntheticHttpResponse::gateway_timeout(response_flags).into_response(version))
+                            Ok(SyntheticHttpResponse::gateway_timeout(EventKind::Error(event_error), response_flags)
+                                .into_response(version))
                         },
                         EventError::Reset | EventError::Http3PostConnectFailure => {
-                            Ok(SyntheticHttpResponse::bad_gateway(response_flags).into_response(version))
+                            Ok(SyntheticHttpResponse::bad_gateway(EventKind::Error(event_error), response_flags)
+                                .into_response(version))
                         },
                     }
                 } else {
