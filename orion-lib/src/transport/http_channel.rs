@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
-    clusters::retry_policy::RetryCondition,
+    clusters::{retry_policy::RetryCondition},
     event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
         http_connection_manager::{RequestHandler, TransactionHandler},
@@ -45,8 +45,7 @@ use hyper_util::{
 use hyperlocal::UnixConnector;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
-    cluster::http_protocol_options::{Codec, HttpProtocolOptions},
-    core::envoy_conversions::Address,
+    cluster::{http_protocol_options::{Codec, HttpProtocolOptions}, EndpointAddress},    
     network_filters::http_connection_manager::RetryPolicy,
     transport::BindDeviceOptions,
 };
@@ -122,7 +121,7 @@ impl HttpChannelClient {
 #[derive(Default)]
 pub struct HttpChannelBuilder {
     tls: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
-    address: Option<Address>,
+    address: Option<EndpointAddress>,
     authority: Option<Authority>,
     bind_device_options: BindDeviceOptions,
     server_name: Option<ServerName<'static>>,
@@ -160,7 +159,7 @@ impl HttpChannelBuilder {
         Self { authority: Some(authority), ..self }
     }
 
-    pub fn with_address(self, address: Address) -> Self {
+    pub fn with_address(self, address: EndpointAddress) -> Self {
         Self { address: Some(address), ..self }
     }
 
@@ -179,9 +178,9 @@ impl HttpChannelBuilder {
     #[allow(clippy::cast_sign_loss)]
     pub fn build(self) -> crate::Result<HttpChannel> {
         match self.address {
-            Some(Address::Socket(_)) => self.build_channel_from_authority(),
-            Some(Address::Pipe(_, _)) => self.build_channel_from_pipe(),
-            Some(Address::Internal(_)) => Err(Error::from("Internal not supported yet")),
+            Some(EndpointAddress::Socket(_)) => self.build_channel_from_authority(),
+            Some(EndpointAddress::Pipe(_, _)) => self.build_channel_from_pipe(),
+            Some(EndpointAddress::Internal(_)) => Err(Error::from("Internal not supported yet")),
             None => Err(Error::from("Address is mandatory")),
         }
     }
@@ -295,7 +294,7 @@ impl HttpChannelBuilder {
         use hyperlocal::Uri;
 
         match &self.address {
-            Some(Address::Pipe(name, _)) => {
+            Some(EndpointAddress::Pipe(name, _)) => {
                 let _client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
                 let uri: hyper::Uri = Uri::new(name.clone(), "").into();

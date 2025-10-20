@@ -20,13 +20,8 @@ use http_body::Body;
 
 use crate::event_error::EventError;
 use orion_configuration::config::network_filters::http_connection_manager::{RetryOn, RetryPolicy};
-use orion_format::types::ResponseFlags as FmtResponseFlags;
-
-use tokio::time::error::Elapsed;
 use tracing::warn;
 
-use crate::{body::response_flags::ResponseFlags, Error as BoxError};
-use std::{error::Error, io};
 
 use orion_http_header::{X_ENVOY_RATELIMITED, X_ORION_RATELIMITED};
 

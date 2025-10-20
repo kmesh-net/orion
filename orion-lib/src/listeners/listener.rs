@@ -48,7 +48,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
 };
 use tokio::{
     net::{TcpListener, TcpSocket},

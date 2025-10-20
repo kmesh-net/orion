@@ -150,11 +150,9 @@ where
 #[cfg(test)]
 mod test {
     use orion_configuration::config::{
-        cluster::HttpProtocolOptions, core::envoy_conversions::Address, transport::BindDeviceOptions,
+        cluster::HttpProtocolOptions, transport::BindDeviceOptions,
     };
-    use std::sync::Arc;
-    use tokio::net::unix::pipe;
-
+    use std::sync::Arc;    
     use super::DefaultBalancer;
     use crate::{
         clusters::{
@@ -176,12 +174,9 @@ mod test {
                 if health_status == HealthStatus::Healthy {
                     healthy += 1;
                 }
-                let address = Address::Socket(
-                    format!("{}:{}", auth.host().to_owned(), auth.port_u16().unwrap()).parse().unwrap(),
-                );
+                
                 lb_endpoints.push(Arc::new(LbEndpoint::new(
-                    auth,
-                    address,
+                    auth,                    
                     "test_cluster",
                     BindDeviceOptions::default(),
                     weight,

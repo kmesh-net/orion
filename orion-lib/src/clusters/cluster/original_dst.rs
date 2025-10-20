@@ -15,16 +15,14 @@
 //
 //
 
-use std::{
-    collections::BTreeSet,
-    net::{IpAddr, SocketAddr},
+use std::{    
+    net::{SocketAddr},
     str::FromStr,
-    time::{Duration, Instant},
+    time::{Duration},
 };
 
 use lru_time_cache::LruCache;
 
-use if_addrs;
 use orion_configuration::config::{
     cluster::{ClusterDiscoveryType, HealthCheck, OriginalDstRoutingMethod},
     transport::BindDeviceOptions,
@@ -202,7 +200,7 @@ impl ClusterOps for OriginalDstCluster {
 
     fn get_grpc_connection(&mut self, context: RoutingContext) -> Result<GrpcService> {
         match context {
-            RoutingContext::Authority(authority, original_dst_address) => {
+            RoutingContext::Authority(authority, _original_dst_address) => {
                 self.get_grpc_connection_by_authority(authority)
             },
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority routing context", self.name).into()),

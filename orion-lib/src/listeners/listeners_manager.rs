@@ -20,7 +20,7 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 use orion_configuration::config::{
-    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::listener::{Listener, ListenerFactory};
@@ -175,7 +175,7 @@ mod tests {
     };
 
     use super::*;
-    use orion_configuration::config::{transport::BindDeviceOptions, Listener as ListenerConfig};
+    use orion_configuration::config::{listener::ListenerAddress, transport::BindDeviceOptions, Listener as ListenerConfig};
     use tracing_test::traced_test;
 
     #[traced_test]

@@ -357,7 +357,7 @@ mod envoy_conversions {
                     Cluster as EnvoyCluster,
                 },
                 core::v3::{
-                    BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus, SocketAddress, TransportSocket as EnvoyTransportSocket
+                    BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus, TransportSocket as EnvoyTransportSocket
                 },
                 endpoint::v3::{
                     lb_endpoint::HostIdentifier as EnvoyHostIdentifier,
@@ -808,8 +808,8 @@ mod envoy_conversions {
                             server_listener_name: internal_addr.server_listener_name.into(),
                             endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
                         })),
-                        Address::Pipe(_, _) => {
-                            Err(GenericError::unsupported_variant("Pipe addresses are not supported for endpoints"))
+                        Address::Pipe(name, options,) => {
+                            Ok(EndpointAddress::Pipe(name, options))
                         },
                     }
                 })(),

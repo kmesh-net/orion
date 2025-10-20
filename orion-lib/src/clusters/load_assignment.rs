@@ -25,8 +25,7 @@ use orion_configuration::config::{
         ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthStatus, HttpProtocolOptions,
         InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
         LocalityLbEndpoints as LocalityLbEndpointsConfig,
-    },
-    core::envoy_conversions::Address,
+    },    
     transport::BindDeviceOptions,
 };
 use tracing::debug;
@@ -44,7 +43,7 @@ use super::{
 };
 use crate::{
     transport::{
-        tcp_channel, GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
+        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
         UpstreamTransportSocketConfigurator,
     },
     Result,
@@ -220,7 +219,7 @@ impl LbEndpoint {
             EndpointAddressType::Socket(authority, http_channel, _) => {
                 GrpcService::try_new(http_channel.clone(), authority.clone())
             },
-            EndpointAddressType::Pipe(name, _, http_channel, __) => {
+            EndpointAddressType::Pipe(_name, _, http_channel, __) => {
                 GrpcService::try_new(http_channel.clone(),dummy_authority().clone())
             },
             EndpointAddressType::Internal(_, _) => Err("Internal endpoints don't support gRPC service yet".into()),
@@ -230,7 +229,7 @@ impl LbEndpoint {
     pub fn http_channel(&self) -> Option<&HttpChannel> {
         match &self.address {
             EndpointAddressType::Socket(_, http_channel, _) => Some(http_channel),
-            EndpointAddressType::Pipe(name, _, http_channel, __) => Some(http_channel),
+            EndpointAddressType::Pipe(_name, _, http_channel, __) => Some(http_channel),
             EndpointAddressType::Internal(_, _) => None,
         }
     }
@@ -238,7 +237,7 @@ impl LbEndpoint {
     pub fn tcp_channel(&self) -> Option<&TcpChannelConnector> {
         match &self.address {
             EndpointAddressType::Socket(_, _, tcp_channel_connector) => Some(tcp_channel_connector),
-            EndpointAddressType::Pipe(name, _, http_channel, tcp_channel_connector) => Some(tcp_channel_connector),
+            EndpointAddressType::Pipe(_name, _, _http_channel, tcp_channel_connector) => Some(tcp_channel_connector),
             EndpointAddressType::Internal(_, _) => None,
         }
     }
@@ -279,7 +278,7 @@ struct LbEndpointBuilder {
     cluster_name: &'static str,
     endpoint: PartialLbEndpoint,
     http_protocol_options: HttpProtocolOptions,
-    transport_socket: UpstreamTransportSocketConfigurator,
+    transport_socket: UpstreamTransportSocketConfigurator,    
     #[builder(default)]
     server_name: Option<ServerName<'static>>,
     connect_timeout: Option<Duration>,
@@ -302,11 +301,16 @@ impl LbEndpointBuilder {
                 let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
-                    .with_authority(authority.clone());
+                    .with_address(address.clone())
+                    .with_authority(authority.clone())
+                    .with_cluster_name(cluster_name);
 
                 // Configure TLS if needed
                 if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
-                    builder = builder.with_tls(Some(tls_configurator.clone()));
+                    builder = builder.with_tls(Some(tls_configurator.clone()))
+                }
+                if let Some(server_name) =  self.server_name.as_ref(){
+                    builder = builder.with_server_name(server_name.clone());
                 }
 
 
@@ -320,15 +324,20 @@ impl LbEndpointBuilder {
                 );
                 EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
-            EndpointAddress::Pipe(name, options) => {
+            EndpointAddress::Pipe(_, _) => {
                 let authority = dummy_authority().clone();
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
-                    .with_authority(authority.clone());
+                    .with_authority(authority.clone())
+                    .with_address(address.clone())
+                    .with_cluster_name(cluster_name);
 
                 // Configure TLS if needed
                 if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
                     builder = builder.with_tls(Some(tls_configurator.clone()));
+                }
+                if let Some(server_name) =  self.server_name.as_ref(){
+                    builder = builder.with_server_name(server_name.clone());
                 }
 
 
@@ -436,7 +445,7 @@ impl LocalityLbEndpointsBuilder {
                     .with_endpoint(e)
                     .with_cluster_name(cluster_name)
                     .with_connect_timeout(self.connection_timeout)
-                    .with_transport_socket(self.transport_socket.clone())
+                    .with_transport_socket(self.transport_socket.clone())                    
                     .with_server_name(server_name)
                     .with_http_protocol_options(self.http_protocol_options.clone())
                     .prepare()
@@ -675,7 +684,7 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
 #[cfg(test)]
 mod test {
     use http::uri::Authority;
-    use orion_configuration::config::{core::envoy_conversions::Address, transport::BindDeviceOptions};
+    use orion_configuration::config::{transport::BindDeviceOptions};
 
     use super::{EndpointAddressType, LbEndpoint};
     use crate::{
@@ -687,7 +696,6 @@ mod test {
         /// This function is used by unit tests in other modules
         pub fn new(
             authority: Authority,
-            address: Address,
             cluster_name: &'static str,
             bind_device_options: BindDeviceOptions,
             weight: u32,

@@ -329,7 +329,7 @@ async fn test_client_resilience() {
 
     let _ = subscription_manager.subscribe(String::new(), TypeUrl::Cluster).await;
     tokio::spawn(async move {
-        let status = worker.run().await;
+        let _status = worker.run().await;
     });
     let captured_count = AtomicUsize::new(0);
 
