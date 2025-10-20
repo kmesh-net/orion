@@ -62,10 +62,10 @@ pub struct Cluster {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterLoadAssignment {
-    #[serde(
-        serialize_with = "simplify_locality_lb_endpoints",
-        deserialize_with = "deser_through::<LocalityLbEndpointsDeser,_,_>"
-    )]
+    // #[serde(
+    //     serialize_with = "simplify_locality_lb_endpoints",
+    //     deserialize_with = "deser_through::<LocalityLbEndpointsDeser,_,_>"
+    // )]
     pub endpoints: Vec<LocalityLbEndpoints>,
     pub cluster_name: String,
 }
@@ -89,28 +89,28 @@ fn simplify_locality_lb_endpoints<S: Serializer>(
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-enum LocalityLbEndpointsDeser {
-    LocalityLbEndpoints(Vec<LocalityLbEndpoints>),
-    Simplified(LbEndpointVecDeser),
-}
+// #[derive(Serialize, Deserialize)]
+// #[serde(untagged)]
+// enum LocalityLbEndpointsDeser {
+//     LocalityLbEndpoints(Vec<LocalityLbEndpoints>),
+//     Simplified(LbEndpointVecDeser),
+// }
 
-impl From<LocalityLbEndpointsDeser> for Vec<LocalityLbEndpoints> {
-    fn from(value: LocalityLbEndpointsDeser) -> Self {
-        match value {
-            LocalityLbEndpointsDeser::Simplified(simple) => {
-                vec![LocalityLbEndpoints { priority: 0, lb_endpoints: simple.into() }]
-            },
-            LocalityLbEndpointsDeser::LocalityLbEndpoints(vec) => vec,
-        }
-    }
-}
+// impl From<LocalityLbEndpointsDeser> for Vec<LocalityLbEndpoints> {
+//     fn from(value: LocalityLbEndpointsDeser) -> Self {
+//         match value {
+//             LocalityLbEndpointsDeser::Simplified(simple) => {
+//                 vec![LocalityLbEndpoints { priority: 0, lb_endpoints: simple.into() }]
+//             },
+//             LocalityLbEndpointsDeser::LocalityLbEndpoints(vec) => vec,
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalityLbEndpoints {
     pub priority: u32,
-    #[serde(serialize_with = "simplify_lb_endpoints", deserialize_with = "deser_through::<LbEndpointVecDeser,_,_>")]
+    //#[serde(serialize_with = "simplify_lb_endpoints", deserialize_with = "deser_through::<LbEndpointVecDeser,_,_>")]
     pub lb_endpoints: Vec<LbEndpoint>,
 }
 
@@ -122,54 +122,54 @@ fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) 
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-enum LbEndpointVecDeser {
-    LbEndpoints(Vec<LbEndpoint>),
-    SocketAddr(Vec<SocketAddr>),
-    Address(Vec<Address>),
-}
+// #[derive(Serialize, Deserialize)]
+// #[serde(untagged)]
+// enum LbEndpointVecDeser {
+//     LbEndpoints(Vec<LbEndpoint>),
+//     SocketAddr(Vec<SocketAddr>),
+//     Address(Vec<Address>),
+// }
 
-impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
-    fn from(value: LbEndpointVecDeser) -> Self {
-        match value {
-            LbEndpointVecDeser::SocketAddr(socket_addrs) => socket_addrs
-                .into_iter()
-                .map(|socket_addr| LbEndpoint {
-                    address: EndpointAddress::Socket(socket_addr),
-                    health_status: HealthStatus::default(),
-                    load_balancing_weight: NonZeroU32::MIN,
-                })
-                .collect(),
-            LbEndpointVecDeser::Address(address) => address
-                .into_iter()
-                .filter_map(|address| match address {
-                    Address::Socket(socket_addr) => Some(LbEndpoint {
-                        address: EndpointAddress::Socket(socket_addr),
-                        health_status: HealthStatus::default(),
-                        load_balancing_weight: NonZeroU32::MIN,
-                    }),
-                    Address::Internal(internal_addr) => Some(LbEndpoint {
-                        address: EndpointAddress::Internal(InternalEndpointAddress {
-                            server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
-                        }),
-                        health_status: HealthStatus::default(),
-                        load_balancing_weight: NonZeroU32::MIN,
-                    }),
-                    Address::Pipe(_, _) => None, // Skip pipe addresses
-                })
-                .collect(),
-            LbEndpointVecDeser::LbEndpoints(vec) => vec,
-        }
-    }
-}
+// impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
+//     fn from(value: LbEndpointVecDeser) -> Self {
+//         match value {
+//             LbEndpointVecDeser::SocketAddr(socket_addrs) => socket_addrs
+//                 .into_iter()
+//                 .map(|socket_addr| LbEndpoint {
+//                     address: EndpointAddress::Socket(socket_addr),
+//                     health_status: HealthStatus::default(),
+//                     load_balancing_weight: NonZeroU32::MIN,
+//                 })
+//                 .collect(),
+//             LbEndpointVecDeser::Address(address) => address
+//                 .into_iter()
+//                 .filter_map(|address| match address {
+//                     Address::Socket(socket_addr) => Some(LbEndpoint {
+//                         address: EndpointAddress::Socket(socket_addr),
+//                         health_status: HealthStatus::default(),
+//                         load_balancing_weight: NonZeroU32::MIN,
+//                     }),
+//                     Address::Internal(internal_addr) => Some(LbEndpoint {
+//                         address: EndpointAddress::Internal(InternalEndpointAddress {
+//                             server_listener_name: internal_addr.server_listener_name.into(),
+//                             endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
+//                         }),
+//                         health_status: HealthStatus::default(),
+//                         load_balancing_weight: NonZeroU32::MIN,
+//                     }),
+//                     Address::Pipe(_, _) => None, // Skip pipe addresses
+//                 })
+//                 .collect(),
+//             LbEndpointVecDeser::LbEndpoints(vec) => vec,
+//         }
+//     }
+// }
 
-fn deser_through<'de, In: Deserialize<'de>, Out: From<In>, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Out, D::Error> {
-    In::deserialize(deserializer).map(Out::from)
-}
+// fn deser_through<'de, In: Deserialize<'de>, Out: From<In>, D: Deserializer<'de>>(
+//     deserializer: D,
+// ) -> Result<Out, D::Error> {
+//     In::deserialize(deserializer).map(Out::from)
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LbEndpoint {

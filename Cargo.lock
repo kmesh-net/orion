@@ -2128,6 +2128,7 @@ dependencies = [
  "humantime-serde",
  "ipnet",
  "itertools 0.14.0",
+ "num-traits",
  "num_cpus",
  "opentelemetry-otlp",
  "orion-data-plane-api",

@@ -86,9 +86,8 @@ pub struct Admin {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "name")]
+
 pub enum BootstrapExtension {
-    #[serde(rename = "internal_listener")]
     InternalListener(InternalListenerBootstrap),
 }
 
@@ -133,8 +132,12 @@ mod envoy_conversions {
             },
             extensions::bootstrap::internal_listener::v3::InternalListener as EnvoyInternalListener,
         },
+        google::protobuf::value::Kind,
         prost::Message,
+        udpa::r#type::v1::TypedStruct,
     };
+
+    use tracing::debug;
 
     impl Bootstrap {
         pub fn deserialize_from_envoy<R: std::io::Read>(rdr: R) -> Result<Self, GenericError> {
@@ -416,6 +419,7 @@ mod envoy_conversions {
         }
     }
 
+    use num_traits::cast::ToPrimitive;
     impl TryFrom<EnvoyTypedExtensionConfig> for BootstrapExtension {
         type Error = GenericError;
         fn try_from(value: EnvoyTypedExtensionConfig) -> Result<Self, Self::Error> {
@@ -424,13 +428,35 @@ mod envoy_conversions {
             let typed_config = required!(typed_config)?;
 
             match name.as_str() {
-                "internal_listener" => {
+                "internal_listener" | "envoy.bootstrap.internal_listener" => {
                     if typed_config.type_url
                         == "type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener"
                     {
                         let internal_listener = EnvoyInternalListener::decode(typed_config.value.as_slice())
                             .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalListener", e))?;
                         Ok(BootstrapExtension::InternalListener(internal_listener.try_into()?))
+                    } else if typed_config.type_url == "type.googleapis.com/udpa.type.v1.TypedStruct" {
+                        let typed_struct = TypedStruct::decode(typed_config.value.as_slice())
+                            .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalListener", e))?;
+                        debug!("Internal listener value {:?}", typed_struct);
+                        if let Some(internl_listener_struct) = typed_struct.value {
+                            if let Some(maybe_buffer_size) = internl_listener_struct.fields.get("buffer_size_kb") {
+                                match maybe_buffer_size.kind {
+                                    Some(Kind::NumberValue(number)) => {
+                                        Ok(BootstrapExtension::InternalListener(InternalListenerBootstrap {
+                                            buffer_size_kb: number.to_u32(),
+                                        }))
+                                    },
+                                    _ => Err(GenericError::from_msg(
+                                        "Can't parse internal listener value from typed struct ",
+                                    )),
+                                }
+                            } else {
+                                Err(GenericError::from_msg("Can't parse internal listener value from typed struct "))
+                            }
+                        } else {
+                            Err(GenericError::from_msg("Can't parse internal listener value from typed struct "))
+                        }
                     } else {
                         Err(GenericError::from_msg(format!(
                             "Unsupported bootstrap extension type: {}",
