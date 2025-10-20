@@ -15,7 +15,7 @@
 //
 //
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 
 use compact_str::CompactString;
 use http::uri::Authority;
@@ -25,7 +25,7 @@ use orion_configuration::config::{
         ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthStatus, HttpProtocolOptions,
         InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
         LocalityLbEndpoints as LocalityLbEndpointsConfig,
-    },    
+    },
     transport::BindDeviceOptions,
 };
 use tracing::debug;
@@ -38,13 +38,11 @@ use super::{
         ring::RingHashBalancer, wrr::WeightedRoundRobinBalancer, Balancer, DefaultBalancer, EndpointWithAuthority,
         EndpointWithLoad, WeightedEndpoint,
     },
-    // cluster::HyperService,
     health::{EndpointHealth, ValueUpdated},
 };
 use crate::{
     transport::{
-        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
-        UpstreamTransportSocketConfigurator,
+        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
     },
     Result,
 };
@@ -59,6 +57,12 @@ pub struct LbEndpoint {
 
     pub weight: u32,
     pub health_status: HealthStatus,
+}
+
+impl Display for LbEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!(" LbEndpoint  {}", self.address).as_str())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +84,22 @@ impl PartialEq for EndpointAddressType {
 
 impl Eq for EndpointAddressType {}
 
+impl Display for EndpointAddressType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EndpointAddressType::Socket(authority, _, _) => {
+                f.write_str(format!("EndpointAddressType::Socket {authority}").as_str())
+            },
+            EndpointAddressType::Pipe(name, options, _, _) => {
+                f.write_str(format!("EndpointAddressType::Pipe {name} {options}").as_str())
+            },
+            EndpointAddressType::Internal(internal_endpoint_address, _) => {
+                f.write_str(format!("EndpointAddressType::Internal {internal_endpoint_address:?}").as_str())
+            },
+        }
+    }
+}
+
 impl EndpointAddressType {
     pub fn to_endpoint_address(&self) -> EndpointAddress {
         match self {
@@ -88,11 +108,11 @@ impl EndpointAddressType {
                 if let Ok(socket_addr) = addr_str.parse::<std::net::SocketAddr>() {
                     EndpointAddress::Socket(socket_addr)
                 } else {
-                    panic!("Cannot convert authority back to socket address: {}", addr_str);
+                    panic!("Cannot convert authority back to socket address: {addr_str}");
                 }
             },
             EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),
-            EndpointAddressType::Pipe(name, flags,_, _) => EndpointAddress::Pipe(name.to_owned(), *flags),
+            EndpointAddressType::Pipe(name, flags, _, _) => EndpointAddress::Pipe(name.to_owned(), *flags),
         }
     }
 }
@@ -109,12 +129,10 @@ impl Ord for EndpointAddressType {
             (Self::Socket(a, _, _), Self::Socket(b, _, _)) => a.as_str().cmp(b.as_str()),
             (Self::Pipe(a, _, _, _), Self::Pipe(b, _, _, _)) => a.as_str().cmp(b.as_str()),
             (Self::Internal(a, _), Self::Internal(b, _)) => a.cmp(b),
-            (Self::Socket(_, _, _), Self::Internal(_, _)) => std::cmp::Ordering::Less,
-            (Self::Socket(_, _, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Less,
-            (Self::Pipe(_, _, _, _), Self::Internal(_, _)) => std::cmp::Ordering::Less,
-            (Self::Pipe(_, _, _, _), Self::Socket(_, _, _)) => std::cmp::Ordering::Greater,
-            (Self::Internal(_, _), Self::Socket(_, _, _)) => std::cmp::Ordering::Greater,
-            (Self::Internal(_, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Greater,
+            (Self::Socket(_, _, _) | Self::Pipe(_, _, _, _), Self::Internal(_, _))
+            | (Self::Socket(_, _, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Less,
+            (Self::Pipe(_, _, _, _) | Self::Internal(_, _), Self::Socket(_, _, _))
+            | (Self::Internal(_, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -133,13 +151,13 @@ impl PartialEq for LbEndpoint {
 
 impl LbEndpoint {
     pub fn authority(&self) -> &Authority {
-        (&self.address).into()        
+        (&self.address).into()
     }
 
     pub fn socket_authority(&self) -> Option<&Authority> {
         match &self.address {
             EndpointAddressType::Socket(authority, _, _) => Some(authority),
-            EndpointAddressType::Internal(_, _) | EndpointAddressType::Pipe(_, _,_,_)=> None,
+            EndpointAddressType::Internal(_, _) | EndpointAddressType::Pipe(_, _, _, _) => None,
         }
     }
 }
@@ -150,18 +168,18 @@ impl WeightedEndpoint for LbEndpoint {
     }
 }
 
-impl<'a> From<&'a EndpointAddressType> for &'a Authority{
+impl<'a> From<&'a EndpointAddressType> for &'a Authority {
     fn from(value: &'a EndpointAddressType) -> Self {
         match &value {
             EndpointAddressType::Socket(authority, _, _) => authority,
             EndpointAddressType::Internal(_, _) => {
-                // For internal endpoints, return a static dummy authority and log a warning                
+                // For internal endpoints, return a static dummy authority and log a warning
                 let authority = dummy_authority();
                 tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
                 authority
             },
-            EndpointAddressType::Pipe(_, _,_,_) => {
-                // For internal endpoints, return a static dummy authority and log a warning                
+            EndpointAddressType::Pipe(_, _, _, _) => {
+                // For internal endpoints, return a static dummy authority and log a warning
                 let authority = dummy_authority();
                 tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
                 authority
@@ -172,7 +190,7 @@ impl<'a> From<&'a EndpointAddressType> for &'a Authority{
 
 impl EndpointWithAuthority for LbEndpoint {
     fn authority(&self) -> &Authority {
-        (&self.address).into()        
+        (&self.address).into()
     }
 }
 
@@ -190,15 +208,21 @@ impl Ord for LbEndpoint {
             (EndpointAddressType::Internal(a, _), EndpointAddressType::Internal(b, _)) => {
                 a.server_listener_name.cmp(&b.server_listener_name)
             },
-            (EndpointAddressType::Pipe(a1,a2,_,_), EndpointAddressType::Pipe(o1, o2, _, _)) => {
-                (a1,a2).cmp(&(o1, o2))
+            (EndpointAddressType::Pipe(a1, a2, _, _), EndpointAddressType::Pipe(o1, o2, _, _)) => {
+                (a1, a2).cmp(&(o1, o2))
             },
-            (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Internal(_, _)) => std::cmp::Ordering::Less,
-            (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Pipe(_,_,_,_)) => std::cmp::Ordering::Less,
-            (EndpointAddressType::Pipe(_, _, _,_), EndpointAddressType::Socket(_,_,_)) => std::cmp::Ordering::Greater,
-            (EndpointAddressType::Pipe(_, _, _,_), EndpointAddressType::Internal(_,_)) => std::cmp::Ordering::Less,
-            (EndpointAddressType::Internal(_, _), EndpointAddressType::Socket(_, _, _)) => std::cmp::Ordering::Greater,
-            (EndpointAddressType::Internal(_, _), EndpointAddressType::Pipe(_, _,_, _)) => std::cmp::Ordering::Greater,
+            (
+                EndpointAddressType::Socket(_, _, _) | EndpointAddressType::Pipe(_, _, _, _),
+                EndpointAddressType::Internal(_, _),
+            )
+            | (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Pipe(_, _, _, _)) => std::cmp::Ordering::Less,
+            (EndpointAddressType::Pipe(_, _, _, _), EndpointAddressType::Socket(_, _, _)) => {
+                std::cmp::Ordering::Greater
+            },
+            (
+                EndpointAddressType::Internal(_, _),
+                EndpointAddressType::Socket(_, _, _) | EndpointAddressType::Pipe(_, _, _, _),
+            ) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -220,7 +244,7 @@ impl LbEndpoint {
                 GrpcService::try_new(http_channel.clone(), authority.clone())
             },
             EndpointAddressType::Pipe(_name, _, http_channel, __) => {
-                GrpcService::try_new(http_channel.clone(),dummy_authority().clone())
+                GrpcService::try_new(http_channel.clone(), dummy_authority().clone())
             },
             EndpointAddressType::Internal(_, _) => Err("Internal endpoints don't support gRPC service yet".into()),
         }
@@ -265,8 +289,9 @@ impl PartialLbEndpoint {
 impl EndpointWithLoad for LbEndpoint {
     fn http_load(&self) -> u32 {
         match &self.address {
-            EndpointAddressType::Socket(_, http_channel, _) => http_channel.load(),
-            EndpointAddressType::Pipe(_, _, http_channel, _) => http_channel.load(),
+            EndpointAddressType::Socket(_, http_channel, _) | EndpointAddressType::Pipe(_, _, http_channel, _) => {
+                http_channel.load()
+            },
             EndpointAddressType::Internal(_, _) => 0, // Internal endpoints don't have HTTP load tracking yet
         }
     }
@@ -278,7 +303,7 @@ struct LbEndpointBuilder {
     cluster_name: &'static str,
     endpoint: PartialLbEndpoint,
     http_protocol_options: HttpProtocolOptions,
-    transport_socket: UpstreamTransportSocketConfigurator,    
+    transport_socket: UpstreamTransportSocketConfigurator,
     #[builder(default)]
     server_name: Option<ServerName<'static>>,
     connect_timeout: Option<Duration>,
@@ -309,10 +334,9 @@ impl LbEndpointBuilder {
                 if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
                     builder = builder.with_tls(Some(tls_configurator.clone()))
                 }
-                if let Some(server_name) =  self.server_name.as_ref(){
+                if let Some(server_name) = self.server_name.as_ref() {
                     builder = builder.with_server_name(server_name.clone());
                 }
-
 
                 let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
                 let tcp_channel = TcpChannelConnector::new(
@@ -336,10 +360,9 @@ impl LbEndpointBuilder {
                 if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
                     builder = builder.with_tls(Some(tls_configurator.clone()));
                 }
-                if let Some(server_name) =  self.server_name.as_ref(){
+                if let Some(server_name) = self.server_name.as_ref() {
                     builder = builder.with_server_name(server_name.clone());
                 }
-
 
                 let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
                 let tcp_channel = TcpChannelConnector::new(
@@ -445,7 +468,7 @@ impl LocalityLbEndpointsBuilder {
                     .with_endpoint(e)
                     .with_cluster_name(cluster_name)
                     .with_connect_timeout(self.connection_timeout)
-                    .with_transport_socket(self.transport_socket.clone())                    
+                    .with_transport_socket(self.transport_socket.clone())
                     .with_server_name(server_name)
                     .with_http_protocol_options(self.http_protocol_options.clone())
                     .prepare()
@@ -684,7 +707,7 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
 #[cfg(test)]
 mod test {
     use http::uri::Authority;
-    use orion_configuration::config::{transport::BindDeviceOptions};
+    use orion_configuration::config::transport::BindDeviceOptions;
 
     use super::{EndpointAddressType, LbEndpoint};
     use crate::{
@@ -725,6 +748,6 @@ mod test {
     }
 }
 
-fn dummy_authority()->&'static Authority{
+fn dummy_authority() -> &'static Authority {
     DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("invalid.authority"))
 }

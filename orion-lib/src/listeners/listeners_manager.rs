@@ -125,7 +125,7 @@ impl ListenersManager {
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name().to_string();
+        let listener_name = listener.get_name().to_owned();
         if let Some((addr, dev)) = listener.get_socket() {
             info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
         } else {
@@ -175,7 +175,9 @@ mod tests {
     };
 
     use super::*;
-    use orion_configuration::config::{listener::ListenerAddress, transport::BindDeviceOptions, Listener as ListenerConfig};
+    use orion_configuration::config::{
+        listener::ListenerAddress, transport::BindDeviceOptions, Listener as ListenerConfig,
+    };
     use tracing_test::traced_test;
 
     #[traced_test]

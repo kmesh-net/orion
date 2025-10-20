@@ -242,9 +242,10 @@ pub mod envoy_conversions {
     use ipnet::IpNet;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
         config::core::v3::{
-            address::Address as EnvoyAddress, data_source::Specifier as EnvoySpecifier, socket_address::PortSpecifier,
-            Address as EnvoyOuterAddress, CidrRange as EnvoyCidrRange, DataSource as EnvoyDataSource,
-            EnvoyInternalAddress, Pipe as EnvoyPipe, SocketAddress as EnvoySocketAddress,
+            address::Address as EnvoyAddress, data_source::Specifier as EnvoySpecifier,
+            envoy_internal_address::AddressNameSpecifier, socket_address::PortSpecifier, Address as EnvoyOuterAddress,
+            CidrRange as EnvoyCidrRange, DataSource as EnvoyDataSource, EnvoyInternalAddress, Pipe as EnvoyPipe,
+            SocketAddress as EnvoySocketAddress,
         },
         r#type::matcher::v3::{
             string_matcher::MatchPattern as EnvoyStringMatcherPattern, RegexMatcher as EnvoyRegexMatcher,
@@ -296,8 +297,12 @@ pub mod envoy_conversions {
         pub fn into_addr(self) -> Result<SocketAddr, GenericError> {
             match self {
                 Self::Socket(addr) => Ok(addr),
-                Self::Internal(_) => Err(GenericError::from_msg("only socket addresses are supported at the moment")),
-                Self::Pipe(_, _) => Err(GenericError::from_msg("only socket addresses are supported at the moment")),
+                Self::Internal(_) => Err(GenericError::from_msg(
+                    "not supported for internal addresses, only socket addresses are supported at the moment",
+                )),
+                Self::Pipe(_, _) => Err(GenericError::from_msg(
+                    "not supported for pipe addreses, only socket addresses are supported at the moment",
+                )),
             }
         }
     }
@@ -305,7 +310,7 @@ pub mod envoy_conversions {
     impl std::fmt::Display for Address {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Socket(addr) => write!(f, "{}", addr),
+                Self::Socket(addr) => write!(f, "{addr}"),
                 Self::Internal(internal) => write!(f, "internal:{}", internal.server_listener_name),
                 Self::Pipe(path, _) => f.write_str(path),
             }
@@ -415,9 +420,8 @@ pub mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyInternalAddress) -> Result<Self, Self::Error> {
             let EnvoyInternalAddress { address_name_specifier, endpoint_id } = value;
-            let server_listener_name = match address_name_specifier {
-                Some(orion_data_plane_api::envoy_data_plane_api::envoy::config::core::v3::envoy_internal_address::AddressNameSpecifier::ServerListenerName(name)) => name,
-                None => return Err(GenericError::from_msg("server_listener_name is required for internal address")),
+            let Some(AddressNameSpecifier::ServerListenerName(server_listener_name)) = address_name_specifier else {
+                return Err(GenericError::from_msg("server_listener_name is required for internal address"));
             };
             Ok(Self {
                 server_listener_name,

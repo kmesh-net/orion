@@ -84,7 +84,7 @@ impl ProxyProtocolReader {
             },
             PolicyAction::TransparentPassthrough => {
                 return Ok((
-                    DownstreamConnectionMetadata::FromSocket {
+                    DownstreamConnectionMetadata::Socket {
                         peer_address,
                         local_address,
                         original_destination_address: None,
@@ -231,14 +231,14 @@ impl ProxyProtocolReader {
                         SocketAddr::new(IpAddr::V6(ip.destination_address), ip.destination_port),
                     ),
                     v1::Addresses::Unknown => {
-                        return Ok(DownstreamConnectionMetadata::FromSocket {
+                        return Ok(DownstreamConnectionMetadata::Socket {
                             peer_address,
                             local_address,
                             original_destination_address: None,
                         });
                     },
                 };
-                Ok(DownstreamConnectionMetadata::FromProxyProtocol {
+                Ok(DownstreamConnectionMetadata::ProxyProtocol {
                     original_peer_address,
                     original_destination_address,
                     protocol: ppp::v2::Protocol::Stream,
@@ -264,7 +264,7 @@ impl ProxyProtocolReader {
                         return Err(Error::new(format!("Unix socket addresses are not supported: {unix:?}")));
                     },
                     v2::Addresses::Unspecified => {
-                        return Ok(DownstreamConnectionMetadata::FromSocket {
+                        return Ok(DownstreamConnectionMetadata::Socket {
                             peer_address,
                             local_address,
                             original_destination_address: None,
@@ -287,7 +287,7 @@ impl ProxyProtocolReader {
                         }
                     }
                 }
-                Ok(DownstreamConnectionMetadata::FromProxyProtocol {
+                Ok(DownstreamConnectionMetadata::ProxyProtocol {
                     original_peer_address,
                     original_destination_address,
                     protocol: header.protocol,
@@ -375,7 +375,7 @@ impl ProxyProtocolConfigurator {
                 .write_tlv(tlv_type, &tlv_entry.value)
                 .map_err(|e| Error::new(format!("Failed to add configured TLV: {e}")))?;
         }
-        if let DownstreamConnectionMetadata::FromProxyProtocol { tlv_data, .. } = downstream_metadata {
+        if let DownstreamConnectionMetadata::ProxyProtocol { tlv_data, .. } = downstream_metadata {
             if let Some(pass_through_config) = &self.pass_through_tlvs {
                 for (tlv_type, value) in tlv_data {
                     let should_pass_through = match pass_through_config.match_type {
@@ -441,7 +441,7 @@ mod tests {
 
         let (metadata, _stream) = result.unwrap();
         match metadata {
-            DownstreamConnectionMetadata::FromProxyProtocol {
+            DownstreamConnectionMetadata::ProxyProtocol {
                 original_peer_address,
                 original_destination_address,
                 proxy_peer_address,
@@ -492,7 +492,7 @@ mod tests {
 
         let (metadata, _stream) = result.unwrap();
         match metadata {
-            DownstreamConnectionMetadata::FromProxyProtocol {
+            DownstreamConnectionMetadata::ProxyProtocol {
                 original_peer_address,
                 original_destination_address,
                 proxy_peer_address,
@@ -524,7 +524,7 @@ mod tests {
         incoming_tlv_data.insert(TlvType::Custom(0x02), b"custom_type_2".to_vec());
         incoming_tlv_data.insert(TlvType::Custom(0x03), b"should_be_filtered".to_vec());
 
-        let initial_metadata = DownstreamConnectionMetadata::FromProxyProtocol {
+        let initial_metadata = DownstreamConnectionMetadata::ProxyProtocol {
             original_peer_address: original_peer,
             original_destination_address: original_dest,
             protocol: ppp::v2::Protocol::Stream,
@@ -572,7 +572,7 @@ mod tests {
             reader.try_read_proxy_header(Box::new(read_side), proxy_local, proxy_peer).await.unwrap();
 
         match parsed_metadata {
-            DownstreamConnectionMetadata::FromProxyProtocol {
+            DownstreamConnectionMetadata::ProxyProtocol {
                 original_peer_address,
                 original_destination_address,
                 protocol,

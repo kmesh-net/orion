@@ -276,7 +276,11 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyExplicitHttpConfig) -> Result<Self, Self::Error> {
             let EnvoyExplicitHttpConfig { protocol_config } = value;
-            convert_opt!(protocol_config)
+            if let Some(protocol_config) = protocol_config {
+                Ok(ExplicitProtocolOptions::try_from(protocol_config)?)
+            } else {
+                Ok(ExplicitProtocolOptions::default())
+            }
         }
     }
 

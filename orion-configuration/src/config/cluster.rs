@@ -152,7 +152,7 @@ impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
                     Address::Internal(internal_addr) => Some(LbEndpoint {
                         address: EndpointAddress::Internal(InternalEndpointAddress {
                             server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
                         }),
                         health_status: HealthStatus::default(),
                         load_balancing_weight: NonZeroU32::MIN,
@@ -179,6 +179,12 @@ pub struct LbEndpoint {
     pub load_balancing_weight: NonZeroU32,
 }
 
+impl Display for LbEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!(" LbEndpoint  {}", self.address).as_str())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum EndpointAddress {    
@@ -191,8 +197,24 @@ impl EndpointAddress {
     pub fn into_addr(self) -> Result<SocketAddr, String> {
         match self {            
             EndpointAddress::Socket(addr) => Ok(addr),
-            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_string()),
-            EndpointAddress::Pipe(_,_) => Err("Cannot convert pipe to socket address".to_string()),
+            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_owned()),
+            EndpointAddress::Pipe(_,_) => Err("Cannot convert pipe to socket address".to_owned()),
+        }
+    }
+}
+
+impl Display for EndpointAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EndpointAddress::Socket(socket_addr) => {
+                f.write_str(format!("EndpointAddress::Socket {socket_addr:?}").as_str())
+            },
+            EndpointAddress::Pipe(name, options) => {
+                f.write_str(format!("EndpointAddress::Pipe {name} {options}").as_str())
+            },
+            EndpointAddress::Internal(internal_endpoint_address) => {
+                f.write_str(format!("EndpointAddress::Internal {internal_endpoint_address:?}").as_str())
+            },
         }
     }
 }
@@ -806,7 +828,7 @@ mod envoy_conversions {
                         Address::Socket(socket_addr) => Ok(EndpointAddress::Socket(socket_addr)),
                         Address::Internal(internal_addr) => Ok(EndpointAddress::Internal(InternalEndpointAddress {
                             server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(|id| id.into()),
+                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
                         })),
                         Address::Pipe(name, options,) => {
                             Ok(EndpointAddress::Pipe(name, options))
@@ -1094,9 +1116,9 @@ mod envoy_conversions {
             let EnvoyMetadataKind { kind } = value;
             match required!(kind)? {
                 EnvoyMetadataKindType::Host(_) => Ok(MetadataKind::Host),
-                EnvoyMetadataKindType::Route(_) => Ok(MetadataKind::Route),
+                EnvoyMetadataKindType::Route(_) | EnvoyMetadataKindType::Request(_) => Ok(MetadataKind::Route),
                 EnvoyMetadataKindType::Cluster(_) => Ok(MetadataKind::Cluster),
-                EnvoyMetadataKindType::Request(_) => Ok(MetadataKind::Route), // Map Request to Route for now
+                
             }
         }
     }

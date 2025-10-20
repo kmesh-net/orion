@@ -56,7 +56,7 @@ pub struct MatchedRequest<'a> {
     pub remote_address: SocketAddr,
     pub route_match: RouteMatchResult,
     pub websocket_enabled_by_default: bool,
-    pub original_destination_address: SocketAddr
+    pub original_destination_address: SocketAddr,
 }
 
 impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &RouteAction {
@@ -73,7 +73,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             remote_address,
             route_match,
             websocket_enabled_by_default,
-            original_destination_address
+            original_destination_address,
         } = request;
         let uri = downstream_request.uri().clone();
 
@@ -82,11 +82,15 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
         let hash_state = HashState::new(self.hash_policy.as_slice(), &downstream_request, remote_address);
-        let routing_context = RoutingContext::try_from((&routing_requirement, &downstream_request, hash_state, original_destination_address))?;
-        
-        
+        let routing_context = RoutingContext::try_from((
+            &routing_requirement,
+            &downstream_request,
+            hash_state,
+            original_destination_address,
+        ))?;
+
         info!("Handling request for {} {} {} routing req = {:?}", uri, cluster_id, remote_address, routing_requirement);
-        
+
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
 
         match maybe_channel {
@@ -203,7 +207,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                         let err = err.into_inner();
                         let event_error = EventError::try_infer_from(&err);
                         let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                        let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
+                        let event_kind = event_error.map_or(EventKind::ViaUpstream, EventKind::Error);
                         debug!(
                             "HttpConnectionManager Error processing response {:?}: {}({})",
                             err,
@@ -220,7 +224,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                 let err = err.into_inner();
                 let event_error = EventError::try_infer_from(&err);
                 let flags = event_error.clone().map(ResponseFlags::from).unwrap_or_default();
-                let event_kind = event_error.map_or(EventKind::ViaUpstream, |e| EventKind::Error(e));
+                let event_kind = event_error.map_or(EventKind::ViaUpstream, EventKind::Error);
                 debug!(
                     "Failed to get an HTTP connection: {:?}: {}({})",
                     err,

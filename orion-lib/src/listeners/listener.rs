@@ -518,8 +518,8 @@ impl Listener {
 
         let ssl = AtomicBool::new(false);
         defer! {
-                            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
-            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_string())]);
+                            with_metric!(listeners::DOWNSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("listener", listener_name.to_owned())]);
+            with_metric!(listeners::DOWNSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("listener", listener_name.to_owned())]);
             if ssl.load(Ordering::Relaxed) {
                 with_metric!(http::DOWNSTREAM_CX_SSL_ACTIVE, add, 1, shard_id, &[KeyValue::new("listener", listener_name)]);
             }
@@ -588,7 +588,7 @@ impl Listener {
             stream = new_stream;
             metadata
         } else {
-            DownstreamConnectionMetadata::FromSocket {
+            DownstreamConnectionMetadata::Socket {
                 peer_address: peer_addr,
                 local_address,
                 original_destination_address,
@@ -809,7 +809,7 @@ socket_options:
             (FilterChainMatch::default(), 1),
         ];
         let hashmap: HashMap<_, _> = fcm.iter().cloned().collect();
-        let metadata = DownstreamConnectionMetadata::FromSocket {
+        let metadata = DownstreamConnectionMetadata::Socket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
             original_destination_address: None,
@@ -873,7 +873,7 @@ filter_chains:
         )
         .unwrap();
         let m = std::iter::once((m.try_into().unwrap(), ())).collect();
-        let metadata = DownstreamConnectionMetadata::FromSocket {
+        let metadata = DownstreamConnectionMetadata::Socket {
             peer_address: (Ipv4Addr::LOCALHOST, 3300).into(),
             local_address: (Ipv4Addr::LOCALHOST, 443).into(),
             original_destination_address: None,
@@ -923,7 +923,7 @@ filter_chains:
             })
             .collect::<std::result::Result<HashMap<_, _>, _>>()
             .unwrap();
-        let metadata = DownstreamConnectionMetadata::FromSocket {
+        let metadata = DownstreamConnectionMetadata::Socket {
             peer_address: (Ipv4Addr::LOCALHOST, 33000).into(),
             local_address: (Ipv4Addr::LOCALHOST, 8443).into(),
             original_destination_address: None,

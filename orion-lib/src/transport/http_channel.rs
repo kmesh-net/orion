@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
-    clusters::{retry_policy::RetryCondition},
+    clusters::retry_policy::RetryCondition,
     event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
         http_connection_manager::{RequestHandler, TransactionHandler},
@@ -45,7 +45,10 @@ use hyper_util::{
 use hyperlocal::UnixConnector;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
-    cluster::{http_protocol_options::{Codec, HttpProtocolOptions}, EndpointAddress},    
+    cluster::{
+        http_protocol_options::{Codec, HttpProtocolOptions},
+        EndpointAddress,
+    },
     network_filters::http_connection_manager::RetryPolicy,
     transport::BindDeviceOptions,
 };
@@ -258,7 +261,7 @@ impl HttpChannelBuilder {
                 timeout: self.connection_timeout,
             };
 
-            let tls_connector = match self.http_protocol_options.codec {
+            let http_connector = match self.http_protocol_options.codec {
                 Codec::Http2 => builder.enable_http2().wrap_connector(connector),
                 Codec::Http1 => builder.enable_http1().wrap_connector(connector),
             };
@@ -266,7 +269,7 @@ impl HttpChannelBuilder {
             Ok(HttpChannel {
                 client: HttpChannelClient::Tls(ClientContext::new(
                     self.http_protocol_options.codec,
-                    Arc::new(LocalObject::new(client_builder, tls_connector)),
+                    Arc::new(LocalObject::new(client_builder, http_connector)),
                 )),
                 http_version: self.http_protocol_options.codec,
                 upstream_authority: authority,
@@ -295,21 +298,14 @@ impl HttpChannelBuilder {
 
         match &self.address {
             Some(EndpointAddress::Pipe(name, _)) => {
-                let _client_builder = self.configure_hyper_client();
+                let client_builder = self.configure_hyper_client();
                 warn!("Building address from a pipe {name}");
                 let uri: hyper::Uri = Uri::new(name.clone(), "").into();
                 let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
                 warn!("Building address from a pipe {uri:?}");
                 Ok(HttpChannel {
                     //client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
-                    client: HttpChannelClient::Unix(
-                        uri,
-                        Arc::new(
-                            hyper_util::client::legacy::Client::builder(TokioExecutor::new())
-                                .http2_only(true)
-                                .build(UnixConnector),
-                        ),
-                    ),
+                    client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
                     http_version: self.http_protocol_options.codec,
                     upstream_authority: authority,
                     cluster_name: self.cluster_name.unwrap_or_default(),

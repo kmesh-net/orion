@@ -21,12 +21,12 @@ use std::{collections::HashMap, net::SocketAddr};
 
 #[derive(Debug, Clone)]
 pub enum DownstreamConnectionMetadata {
-    FromSocket {
+    Socket {
         peer_address: SocketAddr,
         local_address: SocketAddr,
         original_destination_address: Option<SocketAddr>,
     },
-    FromProxyProtocol {
+    ProxyProtocol {
         original_peer_address: SocketAddr,
         original_destination_address: SocketAddr,
         protocol: ppp::v2::Protocol,
@@ -34,7 +34,7 @@ pub enum DownstreamConnectionMetadata {
         proxy_peer_address: SocketAddr,
         proxy_local_address: SocketAddr,
     },
-    FromTlv {
+    Tlv {
         original_destination_address: SocketAddr,
         tlv_data: HashMap<u8, Vec<u8>>,
         proxy_peer_address: SocketAddr,
@@ -45,24 +45,24 @@ pub enum DownstreamConnectionMetadata {
 impl DownstreamConnectionMetadata {
     pub fn peer_address(&self) -> SocketAddr {
         match self {
-            Self::FromSocket { peer_address, .. } => *peer_address,
-            Self::FromProxyProtocol { original_peer_address, .. } => *original_peer_address,
-            Self::FromTlv { proxy_peer_address, .. } => *proxy_peer_address,
+            Self::Socket { peer_address, .. } => *peer_address,
+            Self::ProxyProtocol { original_peer_address, .. } => *original_peer_address,
+            Self::Tlv { proxy_peer_address, .. } => *proxy_peer_address,
         }
     }
     pub fn local_address(&self) -> SocketAddr {
         match self {
-            Self::FromSocket { local_address, .. } => *local_address,
-            Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
-            Self::FromTlv { original_destination_address, .. } => *original_destination_address,
+            Self::Socket { local_address, .. } => *local_address,
+            Self::ProxyProtocol { original_destination_address, .. }
+            | Self::Tlv { original_destination_address, .. } => *original_destination_address,
         }
     }
     pub fn original_destination_address(&self) -> SocketAddr {
         match self {
-            Self::FromSocket { original_destination_address: Some(dst_address), .. } => *dst_address,
-            Self::FromSocket { local_address, original_destination_address: None, .. } => *local_address,
-            Self::FromProxyProtocol { original_destination_address, .. } => *original_destination_address,
-            Self::FromTlv { original_destination_address, .. } => *original_destination_address,
+            Self::Socket { original_destination_address: Some(dst_address), .. } => *dst_address,
+            Self::Socket { local_address, original_destination_address: None, .. } => *local_address,
+            Self::ProxyProtocol { original_destination_address, .. }
+            | Self::Tlv { original_destination_address, .. } => *original_destination_address,
         }
     }
 }

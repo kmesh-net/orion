@@ -143,9 +143,7 @@ impl AuthorityRewriteSpecifier {
             AuthorityRewriteSpecifier::Authority(authority) => Some(authority.clone()),
 
             AuthorityRewriteSpecifier::Header(header_name) => {
-                let Some(header_value) = headers.get(header_name.as_str()) else {
-                    return None;
-                };
+                let header_value = headers.get(header_name.as_str())?;
                 let Ok(header_str) = header_value.to_str() else {
                     return None;
                 };
