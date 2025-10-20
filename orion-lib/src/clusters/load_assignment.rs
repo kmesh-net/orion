@@ -50,6 +50,8 @@ use crate::{
     Result,
 };
 
+static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
+
 #[derive(Debug, Clone)]
 pub struct LbEndpoint {
     pub name: CompactString,
@@ -91,6 +93,7 @@ impl EndpointAddressType {
                 }
             },
             EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),
+            EndpointAddressType::Pipe(name, flags,_, _) => EndpointAddress::Pipe(name.to_owned(), *flags),
         }
     }
 }
@@ -131,22 +134,13 @@ impl PartialEq for LbEndpoint {
 
 impl LbEndpoint {
     pub fn authority(&self) -> &Authority {
-        match &self.address {
-            EndpointAddressType::Socket(authority, _, _) => authority,
-            EndpointAddressType::Internal(_, _) => {
-                // For internal endpoints, return a static dummy authority and log a warning
-                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
-                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
-                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
-                authority
-            },
-        }
+        (&self.address).into()        
     }
 
     pub fn socket_authority(&self) -> Option<&Authority> {
         match &self.address {
             EndpointAddressType::Socket(authority, _, _) => Some(authority),
-            EndpointAddressType::Internal(_, _) => None,
+            EndpointAddressType::Internal(_, _) | EndpointAddressType::Pipe(_, _,_,_)=> None,
         }
     }
 }
@@ -157,18 +151,29 @@ impl WeightedEndpoint for LbEndpoint {
     }
 }
 
-impl EndpointWithAuthority for LbEndpoint {
-    fn authority(&self) -> &Authority {
-        match &self.address {
+impl<'a> From<&'a EndpointAddressType> for &'a Authority{
+    fn from(value: &'a EndpointAddressType) -> Self {
+        match &value {
             EndpointAddressType::Socket(authority, _, _) => authority,
             EndpointAddressType::Internal(_, _) => {
-                // For internal endpoints, return a static dummy authority and log a warning
-                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
-                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
+                // For internal endpoints, return a static dummy authority and log a warning                
+                let authority = dummy_authority();
+                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
+                authority
+            },
+            EndpointAddressType::Pipe(_, _,_,_) => {
+                // For internal endpoints, return a static dummy authority and log a warning                
+                let authority = dummy_authority();
                 tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
                 authority
             },
         }
+    }
+}
+
+impl EndpointWithAuthority for LbEndpoint {
+    fn authority(&self) -> &Authority {
+        (&self.address).into()        
     }
 }
 
@@ -186,8 +191,15 @@ impl Ord for LbEndpoint {
             (EndpointAddressType::Internal(a, _), EndpointAddressType::Internal(b, _)) => {
                 a.server_listener_name.cmp(&b.server_listener_name)
             },
+            (EndpointAddressType::Pipe(a1,a2,_,_), EndpointAddressType::Pipe(o1, o2, _, _)) => {
+                (a1,a2).cmp(&(o1, o2))
+            },
             (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Internal(_, _)) => std::cmp::Ordering::Less,
+            (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Pipe(_,_,_,_)) => std::cmp::Ordering::Less,
+            (EndpointAddressType::Pipe(_, _, _,_), EndpointAddressType::Socket(_,_,_)) => std::cmp::Ordering::Greater,
+            (EndpointAddressType::Pipe(_, _, _,_), EndpointAddressType::Internal(_,_)) => std::cmp::Ordering::Less,
             (EndpointAddressType::Internal(_, _), EndpointAddressType::Socket(_, _, _)) => std::cmp::Ordering::Greater,
+            (EndpointAddressType::Internal(_, _), EndpointAddressType::Pipe(_, _,_, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -209,7 +221,7 @@ impl LbEndpoint {
                 GrpcService::try_new(http_channel.clone(), authority.clone())
             },
             EndpointAddressType::Pipe(name, _, http_channel, __) => {
-                GrpcService::try_new(http_channel.clone(), authority.clone())
+                GrpcService::try_new(http_channel.clone(),dummy_authority().clone())
             },
             EndpointAddressType::Internal(_, _) => Err("Internal endpoints don't support gRPC service yet".into()),
         }
@@ -297,7 +309,7 @@ impl LbEndpointBuilder {
                     builder = builder.with_tls(Some(tls_configurator.clone()));
                 }
 
-                let builder = if let Some(_bind_device) = &bind_device_options { builder } else { builder };
+
                 let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
                 let tcp_channel = TcpChannelConnector::new(
                     &authority,
@@ -309,7 +321,7 @@ impl LbEndpointBuilder {
                 EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
             EndpointAddress::Pipe(name, options) => {
-                let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
+                let authority = dummy_authority().clone();
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
                     .with_authority(authority.clone());
@@ -319,7 +331,7 @@ impl LbEndpointBuilder {
                     builder = builder.with_tls(Some(tls_configurator.clone()));
                 }
 
-                let builder = if let Some(_bind_device) = &bind_device_options { builder } else { builder };
+
                 let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
                 let tcp_channel = TcpChannelConnector::new(
                     &authority,
@@ -703,4 +715,8 @@ mod test {
             }
         }
     }
+}
+
+fn dummy_authority()->&'static Authority{
+    DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("invalid.authority"))
 }

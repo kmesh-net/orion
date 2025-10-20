@@ -42,17 +42,9 @@ pub fn run() -> Result<()> {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
     }
 
-<<<<<<< HEAD
-    if let Err(e) = proxy::run_orion(bootstrap, access_logging) {
-        warn!("Can't start orion {e:?}");
-        Err(e)
-    } else {
-        Ok(())
-    }
-=======
     proxy::run_orion(bootstrap, access_logging);
     Ok(())
->>>>>>> origin/main
+
 }
 
 mod proxy_tracing {

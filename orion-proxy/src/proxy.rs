@@ -48,14 +48,8 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-<<<<<<< HEAD
-pub fn run_orion(
-    bootstrap: Bootstrap,
-    access_log_config: Option<AccessLogConfig>,
-) -> Result<Vec<ConfigurationSenders>> {
-=======
+
 pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
->>>>>>> origin/main
     debug!("Starting on thread {:?}", std::thread::current().name());
 
     let ct = tokio_util::sync::CancellationToken::new();
@@ -116,12 +110,8 @@ struct ProxyConfiguration {
 fn launch_runtimes(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
-<<<<<<< HEAD
-) -> Result<Vec<ConfigurationSenders>> {
-=======
     ct: tokio_util::sync::CancellationToken,
-) -> Result<()> {
->>>>>>> origin/main
+) -> Result<Vec<ConfigurationSenders>> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
