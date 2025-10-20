@@ -51,10 +51,8 @@ pub enum Type {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub enum ValidationContext {
     TrustedCA(DataSource),
-    None
+    None,
 }
-
-
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct TlsCertificate {
@@ -162,7 +160,7 @@ mod envoy_conversions {
                 verify_certificate_spki,
                 verify_certificate_hash,
                 match_typed_subject_alt_names,
-                match_subject_alt_names:_,
+                match_subject_alt_names: _,
                 require_signed_certificate_timestamp,
                 crl,
                 allow_expired_certificate,
@@ -190,12 +188,11 @@ mod envoy_conversions {
                 system_root_certs
             )?;
             //let trusted_ca = convert_opt!(trusted_ca)?;
-            if let Some(trusted_ca) = trusted_ca{
+            if let Some(trusted_ca) = trusted_ca {
                 Ok(Self::TrustedCA(trusted_ca.try_into()?))
-            }else{
+            } else {
                 Ok(Self::None)
             }
-             
         }
     }
 }

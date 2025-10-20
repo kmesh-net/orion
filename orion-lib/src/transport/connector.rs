@@ -33,7 +33,7 @@ use orion_format::types::ResponseFlags;
 use pingora_timeout::fast_timeout::fast_timeout;
 use tokio::net::{TcpSocket, TcpStream};
 use tower::Service;
-use tracing::{debug};
+use tracing::debug;
 
 use crate::event_error::{elapsed, EventError};
 

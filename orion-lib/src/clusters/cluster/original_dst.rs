@@ -15,11 +15,7 @@
 //
 //
 
-use std::{    
-    net::{SocketAddr},
-    str::FromStr,
-    time::{Duration},
-};
+use std::{net::SocketAddr, str::FromStr, time::Duration};
 
 use lru_time_cache::LruCache;
 

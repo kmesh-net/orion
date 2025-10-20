@@ -278,7 +278,7 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                 }
             },
             SubscriptionEvent::Unsubscribe(type_url, resource_id) => {
-                debug!("processing unsubscribe type_url={} {resource_id}", type_url.to_string());                
+                debug!("processing unsubscribe type_url={} {resource_id}", type_url.to_string());
                 let was_subscribed = state.subscriptions.entry(type_url).or_default().remove(resource_id.as_str());
                 if was_subscribed {
                     if let Err(err) = discovery_requests_tx
@@ -345,8 +345,8 @@ impl<C: bindings::TypedXdsBinding> DeltaClientBackgroundWorker<C> {
                                     warn!(type_url = type_url.to_string(), error_msg, nonce, "rejecting configs with nack response");
                                     Some(StatusBuilder::invalid_argument().with_message(error_msg).build())
                                 };
-                                                                
-                                let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)                                                                    
+
+                                let upstream_response = DeltaDiscoveryRequestBuilder::for_resource(type_url)
                                     .with_nonce(nonce.clone())
                                     .with_error_detail(maybe_error)
                                     .build();

@@ -23,7 +23,7 @@ use orion_configuration::config::{
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
     core::envoy_conversions::Address,
-    transport::{BindDeviceOptions},
+    transport::BindDeviceOptions,
 };
 
 use crate::{
@@ -51,8 +51,14 @@ pub struct DynamicClusterBuilder {
 
 impl DynamicClusterBuilder {
     pub fn build(self) -> ClusterType {
-        let DynamicClusterBuilder { name, transport_socket, health_check, load_balancing_policy, bind_device_options, config } =
-            self;
+        let DynamicClusterBuilder {
+            name,
+            transport_socket,
+            health_check,
+            load_balancing_policy,
+            bind_device_options,
+            config,
+        } = self;
         ClusterType::Dynamic(DynamicCluster {
             name,
             load_assignment: None,

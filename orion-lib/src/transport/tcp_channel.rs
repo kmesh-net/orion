@@ -17,9 +17,7 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use super::{
-    connector::LocalConnectorWithDNSResolver, AsyncStream, UpstreamTransportSocketConfigurator,
-};
+use super::{connector::LocalConnectorWithDNSResolver, AsyncStream, UpstreamTransportSocketConfigurator};
 use crate::{
     listeners::filter_state::DownstreamConnectionMetadata,
     secrets::{TlsConfigurator, WantsToBuildClient},
@@ -54,7 +52,12 @@ impl TcpChannelConnector {
         transport_socket: UpstreamTransportSocketConfigurator,
     ) -> Self {
         Self {
-            connector: LocalConnectorWithDNSResolver { addr: authority.clone(), cluster_name, bind_device_options, timeout },
+            connector: LocalConnectorWithDNSResolver {
+                addr: authority.clone(),
+                cluster_name,
+                bind_device_options,
+                timeout,
+            },
             transport_socket,
         }
     }

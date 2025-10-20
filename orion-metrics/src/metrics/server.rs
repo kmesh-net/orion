@@ -30,7 +30,6 @@ pub static MEMORY_HEAP_SIZE: OnceLock<Metric<ShardedU64<ThreadId>>> = OnceLock::
 pub static MEMORY_PHYSICAL_SIZE: OnceLock<Metric<ShardedU64<ThreadId>>> = OnceLock::new();
 pub static MEMORY_ALLOCATED: OnceLock<Metric<ShardedU64<ThreadId>>> = OnceLock::new();
 
-
 #[cfg(feature = "metrics")]
 const SERVER_PREFIX: &str = "orion.server";
 

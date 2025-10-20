@@ -74,7 +74,6 @@ fn build_admin_router(admin_state: AdminState) -> Router {
         router = router.route("/stats", get(stats_handler));
     }
 
-
     router = router.route("/ready", get(get_ready));
 
     router.with_state(admin_state)

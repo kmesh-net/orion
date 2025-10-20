@@ -56,7 +56,7 @@ pub struct StaticCluster {
     pub config: orion_configuration::config::cluster::Cluster,
 }
 
-impl StaticCluster{
+impl StaticCluster {
     pub fn change_load_assignment(&mut self, cluster_load_assignment: ClusterLoadAssignment) {
         self.load_assignment = cluster_load_assignment;
     }
@@ -118,5 +118,4 @@ impl ClusterOps for StaticCluster {
             _ => RoutingRequirement::None,
         }
     }
-    
 }
