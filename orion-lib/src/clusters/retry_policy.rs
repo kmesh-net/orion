@@ -22,7 +22,6 @@ use crate::event_error::EventError;
 use orion_configuration::config::network_filters::http_connection_manager::{RetryOn, RetryPolicy};
 use tracing::warn;
 
-
 use orion_http_header::{X_ENVOY_RATELIMITED, X_ORION_RATELIMITED};
 
 #[derive(Debug)]

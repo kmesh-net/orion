@@ -48,7 +48,6 @@ use std::{
 use tokio::{sync::mpsc::Sender, task::JoinSet};
 use tracing::{debug, info, warn};
 
-
 pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig>) {
     debug!("Starting on thread {:?}", std::thread::current().name());
 

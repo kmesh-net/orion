@@ -22,7 +22,6 @@ pub use http_protocol_options::HttpProtocolOptions;
 pub mod cluster_specifier;
 pub use cluster_specifier::ClusterSpecifier;
 
-
 use crate::config::{core::Address, transport::BindDeviceOptions, ConfigSource};
 
 use super::{
@@ -32,7 +31,7 @@ use super::{
 };
 
 use compact_str::CompactString;
-use http::{HeaderName};
+use http::HeaderName;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt::Display, net::SocketAddr, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -70,12 +69,10 @@ pub struct ClusterLoadAssignment {
     pub cluster_name: String,
 }
 
-
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct EdsClusterConfig {        
-    pub service_name: String,    
-    pub config_source: Option<ConfigSource>,     
+pub struct EdsClusterConfig {
+    pub service_name: String,
+    pub config_source: Option<ConfigSource>,
 }
 
 fn simplify_locality_lb_endpoints<S: Serializer>(
@@ -187,7 +184,7 @@ impl Display for LbEndpoint {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
-pub enum EndpointAddress {    
+pub enum EndpointAddress {
     Socket(SocketAddr),
     Internal(InternalEndpointAddress),
     Pipe(String, u32),
@@ -195,10 +192,10 @@ pub enum EndpointAddress {
 
 impl EndpointAddress {
     pub fn into_addr(self) -> Result<SocketAddr, String> {
-        match self {            
+        match self {
             EndpointAddress::Socket(addr) => Ok(addr),
             EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_owned()),
-            EndpointAddress::Pipe(_,_) => Err("Cannot convert pipe to socket address".to_owned()),
+            EndpointAddress::Pipe(_, _) => Err("Cannot convert pipe to socket address".to_owned()),
         }
     }
 }
@@ -364,9 +361,15 @@ mod envoy_conversions {
         MetadataValueSource, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
     };
     use crate::config::{
-        cluster::EdsClusterConfig, common::*, core::{Address, SocketAddressWrapper}, transport::{
-            BindAddress, BindDeviceOptions, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket, UpstreamTransportSocketConfig
-        }, util::duration_from_envoy, ConfigSource
+        cluster::EdsClusterConfig,
+        common::*,
+        core::{Address, SocketAddressWrapper},
+        transport::{
+            BindAddress, BindDeviceOptions, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket,
+            UpstreamTransportSocketConfig,
+        },
+        util::duration_from_envoy,
+        ConfigSource,
     };
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
@@ -374,12 +377,15 @@ mod envoy_conversions {
             config::{
                 cluster::v3::{
                     cluster::{
-                        ClusterDiscoveryType as EnvoyClusterDiscoveryType, DiscoveryType as EnvoyDiscoveryType, EdsClusterConfig as EnvoyEdsClusterConfig , LbConfig as EnvoyLbConfig, LbPolicy as EnvoyLbPolicy
+                        ClusterDiscoveryType as EnvoyClusterDiscoveryType, DiscoveryType as EnvoyDiscoveryType,
+                        EdsClusterConfig as EnvoyEdsClusterConfig, LbConfig as EnvoyLbConfig,
+                        LbPolicy as EnvoyLbPolicy,
                     },
                     Cluster as EnvoyCluster,
                 },
                 core::v3::{
-                    BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus, TransportSocket as EnvoyTransportSocket
+                    BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus,
+                    TransportSocket as EnvoyTransportSocket,
                 },
                 endpoint::v3::{
                     lb_endpoint::HostIdentifier as EnvoyHostIdentifier,
@@ -404,8 +410,8 @@ mod envoy_conversions {
     };
 
     use http::HeaderName;
-    use tracing::warn;
     use std::{collections::BTreeSet, num::NonZeroU32};
+    use tracing::warn;
 
     impl TryFrom<EnvoyCluster> for Cluster {
         type Error = GenericError;
@@ -599,7 +605,7 @@ mod envoy_conversions {
                 };
 
                 cla.cluster_name = name.to_string();
-                
+
                 let discovery_settings = ClusterDiscoveryType::try_from((
                     discovery_type,
                     Some(cla),
@@ -607,14 +613,13 @@ mod envoy_conversions {
                     eds_cluster_config
                 ))
                 .with_node("cluster_discovery_type")?;
-                
+
                 let bind_device_options = if let Some(config) = upstream_bind_config{
                     bind_device_from_bind_config(config)?
                 }else{
                     BindDeviceOptions::default()
                 };
-                
-                    
+
                 let (upstream_transport_socket_config, transport_socket_config) = if let Some(ts) = transport_socket {
                     if let Ok(internal_socket) = TransportSocket::try_from(ts.clone()) {
                         // It's an internal transport socket
@@ -753,13 +758,13 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyLocalityLbEndpoints) -> Result<Self, Self::Error> {
             let EnvoyLocalityLbEndpoints {
-                locality:_,
+                locality: _,
                 lb_endpoints,
-                load_balancing_weight:_,
+                load_balancing_weight: _,
                 priority,
                 proximity,
                 lb_config,
-                metadata:_,
+                metadata: _,
             } = value;
             unsupported_field!(proximity, lb_config)?;
             let lb_endpoints: Vec<LbEndpoint> = convert_non_empty_vec!(lb_endpoints)?;
@@ -794,27 +799,21 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<EnvoyEdsClusterConfig> for EdsClusterConfig{
+    impl TryFrom<EnvoyEdsClusterConfig> for EdsClusterConfig {
         type Error = GenericError;
-    
+
         fn try_from(value: EnvoyEdsClusterConfig) -> Result<Self, Self::Error> {
-            let config_source = if let Some(c) = value.eds_config{
-                Some(ConfigSource::try_from(c)?)
-            }else{
-                None
-            };            
-            Ok(EdsClusterConfig{
-                service_name: value.service_name,
-                config_source,
-            })
+            let config_source = if let Some(c) = value.eds_config { Some(ConfigSource::try_from(c)?) } else { None };
+            Ok(EdsClusterConfig { service_name: value.service_name, config_source })
         }
     }
 
     impl TryFrom<EnvoyLbEndpoint> for LbEndpoint {
         type Error = GenericError;
         fn try_from(value: EnvoyLbEndpoint) -> Result<Self, Self::Error> {
-            let EnvoyLbEndpoint { health_status, metadata: _istio_ignore, load_balancing_weight, host_identifier } = value;
-            
+            let EnvoyLbEndpoint { health_status, metadata: _istio_ignore, load_balancing_weight, host_identifier } =
+                value;
+
             let address = match required!(host_identifier)? {
                 EnvoyHostIdentifier::Endpoint(EnvoyEndpoint {
                     address,
@@ -830,9 +829,7 @@ mod envoy_conversions {
                             server_listener_name: internal_addr.server_listener_name.into(),
                             endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
                         })),
-                        Address::Pipe(name, options,) => {
-                            Ok(EndpointAddress::Pipe(name, options))
-                        },
+                        Address::Pipe(name, options) => Ok(EndpointAddress::Pipe(name, options)),
                     }
                 })(),
                 EnvoyHostIdentifier::EndpointName(_) => Err(GenericError::unsupported_variant("EndpointName")),
@@ -847,10 +844,22 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<(EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>, Option<EnvoyEdsClusterConfig>)> for ClusterDiscoveryType {
+    impl
+        TryFrom<(
+            EnvoyDiscoveryType,
+            Option<ClusterLoadAssignment>,
+            Option<OriginalDstConfig>,
+            Option<EnvoyEdsClusterConfig>,
+        )> for ClusterDiscoveryType
+    {
         type Error = GenericError;
         fn try_from(
-            (discovery, cla, odc, ecc): (EnvoyDiscoveryType, Option<ClusterLoadAssignment>, Option<OriginalDstConfig>, Option<EnvoyEdsClusterConfig>),
+            (discovery, cla, odc, ecc): (
+                EnvoyDiscoveryType,
+                Option<ClusterLoadAssignment>,
+                Option<OriginalDstConfig>,
+                Option<EnvoyEdsClusterConfig>,
+            ),
         ) -> Result<Self, Self::Error> {
             match (discovery, cla) {
                 (EnvoyDiscoveryType::Static, Some(cla)) => {
@@ -879,19 +888,18 @@ mod envoy_conversions {
                     }
                 },
                 (EnvoyDiscoveryType::Static, None) => Err(GenericError::from_msg(
-                    "Static clusters are required to have a cluster load assignment configured")),
-                                
-                (EnvoyDiscoveryType::Eds, cla) => {
-                    if let Some(cla) = cla{
-                        warn!("Creating EDS cluster and skippint static endpoints {cla:?}");    
-                    }
-                    if let Some(ecc) = ecc{
-                        Ok(Self::Eds(None, Some(EdsClusterConfig::try_from(ecc)?)))                                            
-                    }else{
-                        Ok(Self::Eds(None, None))                                            
-                    }
-                    
+                    "Static clusters are required to have a cluster load assignment configured",
+                )),
 
+                (EnvoyDiscoveryType::Eds, cla) => {
+                    if let Some(cla) = cla {
+                        warn!("Creating EDS cluster and skippint static endpoints {cla:?}");
+                    }
+                    if let Some(ecc) = ecc {
+                        Ok(Self::Eds(None, Some(EdsClusterConfig::try_from(ecc)?)))
+                    } else {
+                        Ok(Self::Eds(None, None))
+                    }
                 },
                 (EnvoyDiscoveryType::LogicalDns, _) => Err(GenericError::unsupported_variant("LogicalDns")),
                 (EnvoyDiscoveryType::StrictDns, Some(cla)) => Ok(ClusterDiscoveryType::StrictDns(cla)),
@@ -931,18 +939,18 @@ mod envoy_conversions {
         )?;
         let bind_device = convert_vec!(socket_options)?;
 
-        let address = if let Some(address) = source_address{        
+        let address = if let Some(address) = source_address {
             Some(Address::Socket(SocketAddressWrapper::try_from(address)?.0))
-        }else{
+        } else {
             None
         };
-        let bind_address = address.map(|a| BindAddress{address:a});
+        let bind_address = address.map(|a| BindAddress { address: a });
 
         if bind_device.len() > 1 {
             return Err(GenericError::from_msg("at most one bind device is supported")).with_node("socket_options");
         }
-        let bind_device = bind_device.into_iter().next();        
-        Ok(BindDeviceOptions{bind_device,bind_address,..Default::default()})
+        let bind_device = bind_device.into_iter().next();
+        Ok(BindDeviceOptions { bind_device, bind_address, ..Default::default() })
     }
 
     impl TryFrom<Any> for UpstreamTransportSocketConfig {
@@ -1118,7 +1126,6 @@ mod envoy_conversions {
                 EnvoyMetadataKindType::Host(_) => Ok(MetadataKind::Host),
                 EnvoyMetadataKindType::Route(_) | EnvoyMetadataKindType::Request(_) => Ok(MetadataKind::Route),
                 EnvoyMetadataKindType::Cluster(_) => Ok(MetadataKind::Cluster),
-                
             }
         }
     }

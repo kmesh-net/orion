@@ -365,7 +365,7 @@ impl FromStr for RetryOn {
             "deadline-exceeded" => Ok(RetryOn::GRPCDeadlineExceeded),
             "internal" => Ok(RetryOn::GRPCInternal),
             "resource-exhausted" => Ok(RetryOn::GRPCResourceExhausted),
-            "unavailable" => Ok(RetryOn::GRPCUnavailable),                                    
+            "unavailable" => Ok(RetryOn::GRPCUnavailable),
             s => Err(GenericError::from_msg(format!("Invalid RetryOn value \"{s}\""))),
         }
     }

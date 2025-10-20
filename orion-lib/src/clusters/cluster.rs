@@ -239,7 +239,7 @@ mod tests {
 
         let cla = match c {
             ClusterType::Static(s) => Some(&s.load_assignment),
-            ClusterType::Dynamic(d) => {                
+            ClusterType::Dynamic(d) => {
                 assert_eq!(d.bind_device_options.bind_device, expected_bind_device);
                 d.load_assignment.as_ref()
             },

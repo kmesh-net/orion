@@ -20,7 +20,7 @@ pub use orion_configuration::config::transport::BindDevice;
 #[cfg(target_os = "linux")]
 pub(crate) fn bind_device(s: &tokio::net::TcpSocket, binddev: &BindDevice) -> std::io::Result<()> {
     let name = binddev.interface();
-    tracing::trace!("binding socket to dev {:?}", name);    
+    tracing::trace!("binding socket to dev {:?}", name);
     s.bind_device(Some(name.to_bytes_with_nul()))
 }
 

@@ -242,24 +242,28 @@ impl TlsContextBuilder<WantsSni> {
 impl TlsContextBuilder<WantsToBuildServer> {
     pub fn build(&self) -> Result<ServerConfig> {
         let builder = ServerConfig::builder_with_protocol_versions(&self.state.supported_versions.clone());
-        warn!("TLS Server Context Builder {} {:?}",self.state.require_client_cert, self.state.certificate_store.as_ref().map(|s| s.len()));
+        warn!(
+            "TLS Server Context Builder {} {:?}",
+            self.state.require_client_cert,
+            self.state.certificate_store.as_ref().map(|s| s.len())
+        );
         let verifier = match (self.state.require_client_cert, &self.state.certificate_store) {
             (true, None) => {
                 return Err("requireClientCertificate is true but no validation_context is configured".into());
             },
             (true, Some(certificate_store)) => {
                 warn!("Certificate store is empty and require_client_cert is true");
-                if certificate_store.is_empty(){
-                    None                    
-                }else{
+                if certificate_store.is_empty() {
+                    None
+                } else {
                     Some(WebPkiClientVerifier::builder(Arc::clone(certificate_store)).build()?)
                 }
             },
             (false, Some(certificate_store)) => {
                 warn!("Certificate store is empty and require_client_cert is false");
-                if certificate_store.is_empty(){
+                if certificate_store.is_empty() {
                     None
-                }else{
+                } else {
                     Some(WebPkiClientVerifier::builder(Arc::clone(certificate_store)).allow_unauthenticated().build()?)
                 }
             },
@@ -317,15 +321,14 @@ impl TlsContextBuilder<WantsToBuildServer> {
 impl TlsContextBuilder<WantsToBuildClient> {
     pub fn build(&self) -> Result<ClientConfig> {
         let builder = ClientConfig::builder_with_protocol_versions(&self.state.supported_versions.clone());
-        warn!("TLS Client Context Builder {}",self.state.certificate_store.len());
-        let builder =  if self.state.certificate_store.is_empty(){
+        warn!("TLS Client Context Builder {}", self.state.certificate_store.len());
+        let builder = if self.state.certificate_store.is_empty() {
             let verifier = WebPkiServerVerifier::builder(Arc::clone(&self.state.certificate_store)).build()?;
             builder.with_webpki_verifier(verifier)
-        }else{            
+        } else {
             warn!("TLS Client Context Builder using dangerous configuration to ignore server certificates");
             builder.dangerous().with_custom_certificate_verifier(Arc::new(IgnoreCertVerifier(Verifier::new())))
         };
-        
 
         if let Some(ClientCert { key, certs: auth_certs }) = self.state.client_certificate.as_deref() {
             debug!("UpstreamContext :  Selected Client Cert");

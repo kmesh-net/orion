@@ -199,8 +199,7 @@ pub(crate) async fn stats_handler(
         let _ = writeln!(&mut response, "cluster_manager.cds.update_rejected: {}", 0);
         let _ = writeln!(&mut response, "listener_manager.lds.update_success: {}", 10);
         let _ = writeln!(&mut response, "listener_manager.lds.update_rejected: {}", 0);
-        
-        
+
         let mut headers = HeaderMap::new();
         headers.insert(::http::header::CONTENT_TYPE, HeaderValue::from_static("text/plain;utf-8"));
         Ok((headers, response))

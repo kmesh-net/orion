@@ -160,7 +160,11 @@ impl XdsConfigurationHandler {
         Ok(())
     }
 
-    async fn process_updates(&mut self, updates: Vec<XdsResourceUpdate>, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Vec<RejectedConfig> {
+    async fn process_updates(
+        &mut self,
+        updates: Vec<XdsResourceUpdate>,
+        subscibtion_manager: &DeltaDiscoverySubscriptionManager,
+    ) -> Vec<RejectedConfig> {
         let mut rejected_updates = Vec::new();
         for update in updates {
             match update {
@@ -179,10 +183,16 @@ impl XdsConfigurationHandler {
         rejected_updates
     }
 
-    async fn process_remove_event(&mut self, id: &str, resource: TypeUrl, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Result<()> {
+    async fn process_remove_event(
+        &mut self,
+        id: &str,
+        resource: TypeUrl,
+        subscibtion_manager: &DeltaDiscoverySubscriptionManager,
+    ) -> Result<()> {
         match resource {
             orion_xds::xds::model::TypeUrl::Cluster => {
-                let maybe_unsubscribed = subscibtion_manager.subscribe(id.to_owned(), TypeUrl::ClusterLoadAssignment).await;
+                let maybe_unsubscribed =
+                    subscibtion_manager.subscribe(id.to_owned(), TypeUrl::ClusterLoadAssignment).await;
                 debug!("Updating unsubscribed for {id} {} {maybe_unsubscribed:?} ", TypeUrl::ClusterLoadAssignment);
                 orion_lib::clusters::remove_cluster(id)?;
                 self.health_manager.stop_cluster(id).await;
@@ -217,7 +227,12 @@ impl XdsConfigurationHandler {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn process_update_event(&mut self, _: &str, resource: XdsResourcePayload, subscibtion_manager: &DeltaDiscoverySubscriptionManager) -> Result<()> {
+    async fn process_update_event(
+        &mut self,
+        _: &str,
+        resource: XdsResourcePayload,
+        subscibtion_manager: &DeltaDiscoverySubscriptionManager,
+    ) -> Result<()> {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
                 debug!("Got update for listener {id} {:?}", listener);
@@ -243,7 +258,7 @@ impl XdsConfigurationHandler {
                         ).collect::<Vec<_>>();
 
                         let _res = join_all(subscriptions).await;
-                            
+
                         let _ = send_change_to_runtimes(&self.listeners_senders, change).await;
                         // update access logs configuration...
                         self.access_log_listener_update(&id, &listener).await;
@@ -264,10 +279,13 @@ impl XdsConfigurationHandler {
                 let cluster_builder = PartialClusterType::try_from((cluster, &*self.secret_manager.read()));
                 match cluster_builder {
                     Ok(cluster) => {
-                        let maybe_subscribed = subscibtion_manager.subscribe(id.clone(), TypeUrl::ClusterLoadAssignment).await;
-                        debug!("Updating subscription for {id} {} {maybe_subscribed:?} ", TypeUrl::ClusterLoadAssignment);
+                        let maybe_subscribed =
+                            subscibtion_manager.subscribe(id.clone(), TypeUrl::ClusterLoadAssignment).await;
+                        debug!(
+                            "Updating subscription for {id} {} {maybe_subscribed:?} ",
+                            TypeUrl::ClusterLoadAssignment
+                        );
                         self.add_cluster(cluster).await
-                        
                     },
                     Err(err) => {
                         warn!("Got invalid update for cluster {id}");

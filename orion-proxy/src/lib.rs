@@ -18,7 +18,6 @@
 use orion_configuration::{config::Config, options::Options};
 use orion_lib::{Result, RUNTIME_CONFIG};
 
-
 #[macro_use]
 mod admin;
 mod core_affinity;
@@ -44,7 +43,6 @@ pub fn run() -> Result<()> {
 
     proxy::run_orion(bootstrap, access_logging);
     Ok(())
-
 }
 
 mod proxy_tracing {

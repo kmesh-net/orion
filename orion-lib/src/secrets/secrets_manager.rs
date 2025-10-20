@@ -48,7 +48,7 @@ impl TryFrom<&ValidationContext> for CertStore {
     type Error = crate::Error;
 
     fn try_from(validation_context: &ValidationContext) -> Result<Self> {
-        match validation_context{
+        match validation_context {
             ValidationContext::TrustedCA(data_source) => {
                 let mut ca_reader = data_source.into_buf_read()?;
                 let mut root_store = rustls::RootCertStore::empty();
@@ -73,7 +73,6 @@ impl TryFrom<&ValidationContext> for CertStore {
                 Ok(CertStore { store: Arc::new(root_store), config: validation_context.clone() })
             },
         }
-        
     }
 }
 
