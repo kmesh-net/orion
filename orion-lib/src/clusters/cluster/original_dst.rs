@@ -130,7 +130,7 @@ pub struct OriginalDstCluster {
     http_config: HttpChannelConfig,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     bind_device_options: BindDeviceOptions,
-    endpoints: LruCache<EndpointAddress, Endpoint>,
+    endpoints: LruCache<ClusterDstEndpointAddress, Endpoint>,
     routing_requirements: RoutingRequirement,
     upstream_port_override: Option<u16>,
     pub config: orion_configuration::config::cluster::Cluster,
@@ -224,7 +224,7 @@ impl OriginalDstCluster {
     pub fn get_grpc_connection_by_authority(&mut self, authority: Authority) -> Result<GrpcService> {
         let authority = self.apply_port_override(authority)?;
 
-        let endpoint_addr = EndpointAddress(authority.clone());
+        let endpoint_addr = ClusterDstEndpointAddress(authority.clone());
         if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return endpoint.grpc_service();
         }
@@ -256,7 +256,9 @@ impl OriginalDstCluster {
             authority
         };
 
-        let endpoint_addr = EndpointAddress(authority.clone());
+        let authority = self.apply_port_override(authority)?;
+
+        let endpoint_addr = ClusterDstEndpointAddress(authority.clone());
         if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return Ok(endpoint.tcp_channel.clone());
         }
@@ -298,7 +300,7 @@ impl OriginalDstCluster {
 
         let authority = self.apply_port_override(authority)?;
 
-        let endpoint_addr = EndpointAddress(authority.clone());
+        let endpoint_addr = ClusterDstEndpointAddress(authority.clone());
         if let Some(endpoint) = self.endpoints.get(&endpoint_addr) {
             return Ok(endpoint.http_channel.clone());
         }
@@ -318,15 +320,15 @@ impl OriginalDstCluster {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct EndpointAddress(Authority);
+struct ClusterDstEndpointAddress(Authority);
 
-impl PartialOrd for EndpointAddress {
+impl PartialOrd for ClusterDstEndpointAddress {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for EndpointAddress {
+impl Ord for ClusterDstEndpointAddress {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.as_str().cmp(other.0.as_str())
     }
@@ -584,7 +586,7 @@ mod tests {
         let config = create_test_cluster_config("test-cluster", OriginalDstRoutingMethod::Default, Some(50002), None);
         let mut cluster = build_original_dst_cluster(config);
 
-        let authority = Authority::from_str("localhost:52000").unwrap();
+        let authority = Authority::from_str("127.0.0.1:52000").unwrap();
         let _tcp_future = cluster
             .get_tcp_connection(RoutingContext::Authority(
                 authority,
@@ -594,7 +596,7 @@ mod tests {
 
         let endpoints = cluster.all_tcp_channels();
         assert_eq!(endpoints.len(), 1);
-        assert_eq!(endpoints[0].0.as_str(), "localhost:50002");
+        assert_eq!(endpoints[0].0.as_str(), "127.0.0.1:50002");
 
         let tcp_no_dest = cluster.get_tcp_connection(RoutingContext::None);
         assert!(tcp_no_dest.is_err());

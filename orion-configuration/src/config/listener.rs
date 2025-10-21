@@ -483,7 +483,9 @@ mod envoy_conversions {
 
                 let address_result = convert_opt!(address)?;
                 let address = match address_result {
-                    Address::Socket(socket_addr) => crate::config::listener::ListenerAddress::Socket(socket_addr),
+                    Address::Socket(_, _) => {
+                        crate::config::listener::ListenerAddress::Socket(address_result.into_socket_addr()?)
+                    },
                     Address::Internal(_internal_addr) => {
                         crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
                             buffer_size_kb: None, // Default buffer size, can be configured via bootstrap extension

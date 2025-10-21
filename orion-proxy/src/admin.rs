@@ -93,7 +93,7 @@ pub async fn start_admin_server(
     };
     let app = build_admin_router(admin_state);
     let address =
-        bootstrap.admin.ok_or(Error::from("Missing admin configuration in bootstrap"))?.address.into_addr()?;
+        bootstrap.admin.ok_or(Error::from("Missing admin configuration in bootstrap"))?.address.into_socket_addr()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     axum::serve(listener, app).await?;

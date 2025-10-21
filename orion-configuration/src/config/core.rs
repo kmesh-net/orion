@@ -238,6 +238,7 @@ pub mod envoy_conversions {
     #![allow(deprecated)]
     use super::{DataSource, StringMatcher, StringMatcherPattern};
     use crate::config::common::*;
+    use compact_str::CompactString;
     use http::uri::Authority;
     use ipnet::IpNet;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
@@ -264,23 +265,25 @@ pub mod envoy_conversions {
         }
     }
 
-    #[derive(Debug, Eq, PartialEq, Serialize, Deserialize, Clone, Hash)]
+    #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, Clone, Hash)]
     pub enum Address {
-        Socket(SocketAddr),
-        Internal(InternalAddress),
+        Socket(String, u16),
         Pipe(String, u32),
+        Internal(InternalAddress),
     }
 
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+    #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Serialize, Deserialize, Hash)]
     pub struct InternalAddress {
-        pub server_listener_name: String,
-        pub endpoint_id: Option<String>,
+        pub server_listener_name: CompactString,
+        pub endpoint_id: Option<CompactString>,
     }
 
     impl Address {
         pub fn into_socket_addr(self) -> Result<SocketAddr, GenericError> {
             match self {
-                Self::Socket(addr) => Ok(addr),
+                Self::Socket(hostname, port) => format!("{hostname}:{port}")
+                    .parse()
+                    .map_err(|e| GenericError::from_msg_with_cause("Cannot convert pipe address to socket address", e)),
                 Self::Internal(_) => Err(GenericError::from_msg("Cannot convert internal address to socket address")),
                 Self::Pipe(_, _) => Err(GenericError::from_msg("Cannot convert pipe address to socket address")),
             }
@@ -289,20 +292,8 @@ pub mod envoy_conversions {
         pub fn into_internal_address(self) -> Result<InternalAddress, GenericError> {
             match self {
                 Self::Internal(addr) => Ok(addr),
-                Self::Socket(_) => Err(GenericError::from_msg("Cannot convert socket address to internal address")),
+                Self::Socket(_, _) => Err(GenericError::from_msg("Cannot convert socket address to internal address")),
                 Self::Pipe(_, _) => Err(GenericError::from_msg("Cannot convert pipe address to internal address")),
-            }
-        }
-
-        pub fn into_addr(self) -> Result<SocketAddr, GenericError> {
-            match self {
-                Self::Socket(addr) => Ok(addr),
-                Self::Internal(_) => Err(GenericError::from_msg(
-                    "not supported for internal addresses, only socket addresses are supported at the moment",
-                )),
-                Self::Pipe(_, _) => Err(GenericError::from_msg(
-                    "not supported for pipe addreses, only socket addresses are supported at the moment",
-                )),
             }
         }
     }
@@ -310,7 +301,7 @@ pub mod envoy_conversions {
     impl std::fmt::Display for Address {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             match self {
-                Self::Socket(addr) => write!(f, "{addr}"),
+                Self::Socket(hostname, port) => write!(f, "{hostname}:{port}"),
                 Self::Internal(internal) => write!(f, "internal:{}", internal.server_listener_name),
                 Self::Pipe(path, _) => f.write_str(path),
             }
@@ -355,10 +346,7 @@ pub mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyAddress) -> Result<Self, Self::Error> {
             match value {
-                EnvoyAddress::SocketAddress(sock) => {
-                    let wrapper: SocketAddressWrapper = sock.try_into()?;
-                    Ok(Self::Socket(wrapper.0))
-                },
+                EnvoyAddress::SocketAddress(sock) => sock.try_into(),
                 EnvoyAddress::Pipe(pipe) => pipe.try_into(),
                 EnvoyAddress::EnvoyInternalAddress(internal) => Ok(Self::Internal(internal.try_into()?)),
             }
@@ -378,16 +366,11 @@ pub mod envoy_conversions {
         fn try_from(value: &Authority) -> Result<Self, Self::Error> {
             let port =
                 value.port_u16().ok_or(GenericError::from_msg(format!("Authority doesn't have port {value}")))?;
-            let ip = value.host().parse::<std::net::IpAddr>().map_err(|e| {
-                GenericError::from_msg_with_cause(format!("failed to parse \"{}\" as an ip address", value.host()), e)
-            })?;
-            Ok(Address::Socket(SocketAddr::new(ip, port)))
+            Ok(Address::Socket(value.host().to_owned(), port))
         }
     }
 
-    pub struct SocketAddressWrapper(pub SocketAddr);
-
-    impl TryFrom<EnvoySocketAddress> for SocketAddressWrapper {
+    impl TryFrom<EnvoySocketAddress> for Address {
         type Error = GenericError;
         fn try_from(value: EnvoySocketAddress) -> Result<Self, Self::Error> {
             let EnvoySocketAddress {
@@ -408,11 +391,7 @@ pub mod envoy_conversions {
                 GenericError::from_msg(format!("failed to convert {port_specifier} to a port number"))
                     .with_node("port_specifier")
             })?;
-            let ip = address.parse::<std::net::IpAddr>().map_err(|e| {
-                GenericError::from_msg_with_cause(format!("failed to parse \"{address}\" as an ip adress"), e)
-                    .with_node("address")
-            })?;
-            Ok(SocketAddressWrapper(SocketAddr::new(ip, port)))
+            Ok(Address::Socket(address, port))
         }
     }
 
@@ -424,8 +403,8 @@ pub mod envoy_conversions {
                 return Err(GenericError::from_msg("server_listener_name is required for internal address"));
             };
             Ok(Self {
-                server_listener_name,
-                endpoint_id: if endpoint_id.is_empty() { None } else { Some(endpoint_id) },
+                server_listener_name: server_listener_name.into(),
+                endpoint_id: if endpoint_id.is_empty() { None } else { Some(endpoint_id.into()) },
             })
         }
     }

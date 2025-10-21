@@ -22,7 +22,11 @@ pub use http_protocol_options::HttpProtocolOptions;
 pub mod cluster_specifier;
 pub use cluster_specifier::ClusterSpecifier;
 
-use crate::config::{core::Address, transport::BindDeviceOptions, ConfigSource};
+use crate::config::{
+    core::{Address, InternalAddress},
+    transport::BindDeviceOptions,
+    ConfigSource,
+};
 
 use super::{
     common::{is_default, MetadataKey},
@@ -32,8 +36,8 @@ use super::{
 
 use compact_str::CompactString;
 use http::HeaderName;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt::Display, net::SocketAddr, num::NonZeroU32, time::Duration};
+use serde::{Deserialize, Serialize};
+use std::{fmt::Display, num::NonZeroU32, time::Duration};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Cluster {
     pub name: CompactString,
@@ -75,35 +79,6 @@ pub struct EdsClusterConfig {
     pub config_source: Option<ConfigSource>,
 }
 
-fn simplify_locality_lb_endpoints<S: Serializer>(
-    value: &Vec<LocalityLbEndpoints>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    if value.len() == 1 && value[0].priority == 0 {
-        simplify_lb_endpoints(&value[0].lb_endpoints, serializer)
-    } else {
-        value.serialize(serializer)
-    }
-}
-
-// #[derive(Serialize, Deserialize)]
-// #[serde(untagged)]
-// enum LocalityLbEndpointsDeser {
-//     LocalityLbEndpoints(Vec<LocalityLbEndpoints>),
-//     Simplified(LbEndpointVecDeser),
-// }
-
-// impl From<LocalityLbEndpointsDeser> for Vec<LocalityLbEndpoints> {
-//     fn from(value: LocalityLbEndpointsDeser) -> Self {
-//         match value {
-//             LocalityLbEndpointsDeser::Simplified(simple) => {
-//                 vec![LocalityLbEndpoints { priority: 0, lb_endpoints: simple.into() }]
-//             },
-//             LocalityLbEndpointsDeser::LocalityLbEndpoints(vec) => vec,
-//         }
-//     }
-// }
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalityLbEndpoints {
     pub priority: u32,
@@ -111,66 +86,9 @@ pub struct LocalityLbEndpoints {
     pub lb_endpoints: Vec<LbEndpoint>,
 }
 
-fn simplify_lb_endpoints<S: Serializer>(value: &Vec<LbEndpoint>, serializer: S) -> Result<S::Ok, S::Error> {
-    if value.iter().all(|s| is_default(&s.health_status) && s.load_balancing_weight == NonZeroU32::MIN) {
-        value.iter().map(|endpoint| endpoint.address.clone()).collect::<Vec<_>>().serialize(serializer)
-    } else {
-        value.serialize(serializer)
-    }
-}
-
-// #[derive(Serialize, Deserialize)]
-// #[serde(untagged)]
-// enum LbEndpointVecDeser {
-//     LbEndpoints(Vec<LbEndpoint>),
-//     SocketAddr(Vec<SocketAddr>),
-//     Address(Vec<Address>),
-// }
-
-// impl From<LbEndpointVecDeser> for Vec<LbEndpoint> {
-//     fn from(value: LbEndpointVecDeser) -> Self {
-//         match value {
-//             LbEndpointVecDeser::SocketAddr(socket_addrs) => socket_addrs
-//                 .into_iter()
-//                 .map(|socket_addr| LbEndpoint {
-//                     address: EndpointAddress::Socket(socket_addr),
-//                     health_status: HealthStatus::default(),
-//                     load_balancing_weight: NonZeroU32::MIN,
-//                 })
-//                 .collect(),
-//             LbEndpointVecDeser::Address(address) => address
-//                 .into_iter()
-//                 .filter_map(|address| match address {
-//                     Address::Socket(socket_addr) => Some(LbEndpoint {
-//                         address: EndpointAddress::Socket(socket_addr),
-//                         health_status: HealthStatus::default(),
-//                         load_balancing_weight: NonZeroU32::MIN,
-//                     }),
-//                     Address::Internal(internal_addr) => Some(LbEndpoint {
-//                         address: EndpointAddress::Internal(InternalEndpointAddress {
-//                             server_listener_name: internal_addr.server_listener_name.into(),
-//                             endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
-//                         }),
-//                         health_status: HealthStatus::default(),
-//                         load_balancing_weight: NonZeroU32::MIN,
-//                     }),
-//                     Address::Pipe(_, _) => None, // Skip pipe addresses
-//                 })
-//                 .collect(),
-//             LbEndpointVecDeser::LbEndpoints(vec) => vec,
-//         }
-//     }
-// }
-
-// fn deser_through<'de, In: Deserialize<'de>, Out: From<In>, D: Deserializer<'de>>(
-//     deserializer: D,
-// ) -> Result<Out, D::Error> {
-//     In::deserialize(deserializer).map(Out::from)
-// }
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LbEndpoint {
-    pub address: EndpointAddress,
+    pub address: Address,
     #[serde(skip_serializing_if = "is_default", default)]
     pub health_status: HealthStatus,
     pub load_balancing_weight: NonZeroU32,
@@ -182,44 +100,16 @@ impl Display for LbEndpoint {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum EndpointAddress {
-    Socket(SocketAddr),
-    Internal(InternalEndpointAddress),
-    Pipe(String, u32),
-}
-
-impl EndpointAddress {
-    pub fn into_addr(self) -> Result<SocketAddr, String> {
-        match self {
-            EndpointAddress::Socket(addr) => Ok(addr),
-            EndpointAddress::Internal(_) => Err("Cannot convert internal address to socket address".to_owned()),
-            EndpointAddress::Pipe(_, _) => Err("Cannot convert pipe to socket address".to_owned()),
-        }
-    }
-}
-
-impl Display for EndpointAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EndpointAddress::Socket(socket_addr) => {
-                f.write_str(format!("EndpointAddress::Socket {socket_addr:?}").as_str())
-            },
-            EndpointAddress::Pipe(name, options) => {
-                f.write_str(format!("EndpointAddress::Pipe {name} {options}").as_str())
-            },
-            EndpointAddress::Internal(internal_endpoint_address) => {
-                f.write_str(format!("EndpointAddress::Internal {internal_endpoint_address:?}").as_str())
-            },
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct InternalEndpointAddress {
     pub server_listener_name: CompactString,
     pub endpoint_id: Option<CompactString>,
+}
+
+impl From<InternalAddress> for InternalEndpointAddress {
+    fn from(value: InternalAddress) -> Self {
+        InternalEndpointAddress { server_listener_name: value.server_listener_name, endpoint_id: value.endpoint_id }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -356,14 +246,14 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
         health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
-        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
-        InternalEndpointAddress, InternalUpstreamTransport, LbEndpoint, LbPolicy, LocalityLbEndpoints, MetadataKind,
-        MetadataValueSource, OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
+        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions,
+        InternalUpstreamTransport, LbEndpoint, LbPolicy, LocalityLbEndpoints, MetadataKind, MetadataValueSource,
+        OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
     };
     use crate::config::{
         cluster::EdsClusterConfig,
         common::*,
-        core::{Address, SocketAddressWrapper},
+        core::Address,
         transport::{
             BindAddress, BindDeviceOptions, CommonTlsContext, Secrets, SupportedEnvoyTransportSocket,
             UpstreamTransportSocketConfig,
@@ -820,17 +710,9 @@ mod envoy_conversions {
                     health_check_config,
                     hostname,
                     additional_addresses,
-                }) => (|| -> Result<EndpointAddress, GenericError> {
+                }) => (|| -> Result<Address, GenericError> {
                     unsupported_field!(health_check_config, hostname, additional_addresses)?;
-                    let address: Address = convert_opt!(address)?;
-                    match address {
-                        Address::Socket(socket_addr) => Ok(EndpointAddress::Socket(socket_addr)),
-                        Address::Internal(internal_addr) => Ok(EndpointAddress::Internal(InternalEndpointAddress {
-                            server_listener_name: internal_addr.server_listener_name.into(),
-                            endpoint_id: internal_addr.endpoint_id.map(std::convert::Into::into),
-                        })),
-                        Address::Pipe(name, options) => Ok(EndpointAddress::Pipe(name, options)),
-                    }
+                    convert_opt!(address)
                 })(),
                 EnvoyHostIdentifier::EndpointName(_) => Err(GenericError::unsupported_variant("EndpointName")),
             }
@@ -870,9 +752,11 @@ mod envoy_conversions {
                             e.lb_endpoints
                                 .iter()
                                 .map(|e| match e.address {
-                                    EndpointAddress::Socket(_) => e.address.clone().into_addr().and(Ok(())),
-                                    EndpointAddress::Pipe(_, _) => Ok(()),
-                                    EndpointAddress::Internal(_) => Err("Internal not supported yet".to_owned()),
+                                    Address::Socket(_, _) => e.address.clone().into_socket_addr().and(Ok(())),
+                                    Address::Pipe(_, _) => Ok(()),
+                                    Address::Internal(_) => {
+                                        Err(GenericError::from_msg("Internal not supported yet".to_owned()))
+                                    },
                                 })
                                 .collect::<Vec<_>>()
                         })
@@ -939,11 +823,7 @@ mod envoy_conversions {
         )?;
         let bind_device = convert_vec!(socket_options)?;
 
-        let address = if let Some(address) = source_address {
-            Some(Address::Socket(SocketAddressWrapper::try_from(address)?.0))
-        } else {
-            None
-        };
+        let address = if let Some(address) = source_address { Some(TryFrom::try_from(address)?) } else { None };
         let bind_address = address.map(|a| BindAddress { address: a });
 
         if bind_device.len() > 1 {

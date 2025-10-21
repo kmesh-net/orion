@@ -86,8 +86,9 @@ pub struct Admin {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-
+#[serde(tag = "name")]
 pub enum BootstrapExtension {
+    #[serde(rename = "internal_listener")]
     InternalListener(InternalListenerBootstrap),
 }
 
@@ -113,7 +114,7 @@ mod envoy_conversions {
     use super::{
         Admin, Bootstrap, BootstrapExtension, DynamicResources, InternalListenerBootstrap, Node, StaticResources,
     };
-    use crate::config::{common::*, core::envoy_conversions::SocketAddressWrapper, grpc::Duration, metrics::StatsSink};
+    use crate::config::{common::*, grpc::Duration, metrics::StatsSink};
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
@@ -405,17 +406,14 @@ mod envoy_conversions {
                 .address
                 .ok_or(GenericError::MissingField("address is mandatory to setup admin interface"))?
             {
-                address::Address::SocketAddress(sa) => {
-                    let wrapper: SocketAddressWrapper = sa.try_into()?;
-                    wrapper.0
-                },
+                address::Address::SocketAddress(sa) => sa.try_into()?,
                 _ => {
                     return Err(GenericError::UnsupportedVariant(std::borrow::Cow::Borrowed(
                         "Only SocketAddress is supported",
                     )));
                 },
             };
-            Ok(Self { address: crate::config::core::Address::Socket(address) })
+            Ok(Self { address })
         }
     }
 

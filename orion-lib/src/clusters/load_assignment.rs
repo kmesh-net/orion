@@ -22,10 +22,11 @@ use http::uri::Authority;
 
 use orion_configuration::config::{
     cluster::{
-        ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthStatus, HttpProtocolOptions,
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthStatus, HttpProtocolOptions,
         InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
         LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
+    core::envoy_conversions::{Address, InternalAddress},
     transport::BindDeviceOptions,
 };
 use tracing::debug;
@@ -101,18 +102,16 @@ impl Display for EndpointAddressType {
 }
 
 impl EndpointAddressType {
-    pub fn to_endpoint_address(&self) -> EndpointAddress {
+    pub fn to_address(&self) -> Address {
         match self {
             EndpointAddressType::Socket(authority, _, _) => {
-                let addr_str = authority.as_str();
-                if let Ok(socket_addr) = addr_str.parse::<std::net::SocketAddr>() {
-                    EndpointAddress::Socket(socket_addr)
-                } else {
-                    panic!("Cannot convert authority back to socket address: {addr_str}");
-                }
+                Address::Socket(authority.host().to_owned(), authority.port().map(|p| p.as_u16()).unwrap_or_default())
             },
-            EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),
-            EndpointAddressType::Pipe(name, flags, _, _) => EndpointAddress::Pipe(name.to_owned(), *flags),
+            EndpointAddressType::Internal(internal_addr, _) => Address::Internal(InternalAddress {
+                server_listener_name: internal_addr.server_listener_name.clone(),
+                endpoint_id: internal_addr.endpoint_id.clone(),
+            }),
+            EndpointAddressType::Pipe(name, flags, _, _) => Address::Pipe(name.to_owned(), *flags),
         }
     }
 }
@@ -269,7 +268,7 @@ impl LbEndpoint {
 
 #[derive(Debug, Clone)]
 pub struct PartialLbEndpoint {
-    pub address: EndpointAddress,
+    pub address: Address,
     pub bind_device_options: BindDeviceOptions,
     pub weight: u32,
     pub health_status: HealthStatus,
@@ -278,7 +277,7 @@ pub struct PartialLbEndpoint {
 impl PartialLbEndpoint {
     fn new(value: &LbEndpoint) -> Self {
         PartialLbEndpoint {
-            address: value.address.to_endpoint_address(),
+            address: value.address.to_address(),
             bind_device_options: value.bind_device_options.clone(),
             weight: value.weight,
             health_status: value.health_status,
@@ -322,8 +321,8 @@ impl LbEndpointBuilder {
         let PartialLbEndpoint { ref address, bind_device_options, weight, health_status } = self.endpoint;
 
         let address = match address {
-            EndpointAddress::Socket(socket_addr) => {
-                let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
+            Address::Socket(hostname, port) => {
+                let authority = http::uri::Authority::try_from(format!("{hostname}:{port}"))?;
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
                     .with_address(address.clone())
@@ -348,7 +347,7 @@ impl LbEndpointBuilder {
                 );
                 EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
-            EndpointAddress::Pipe(_, _) => {
+            Address::Pipe(_, _) => {
                 let authority = dummy_authority().clone();
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
@@ -374,8 +373,8 @@ impl LbEndpointBuilder {
                 );
                 EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
-            EndpointAddress::Internal(internal_addr) => EndpointAddressType::Internal(
-                internal_addr.clone(),
+            Address::Internal(internal_addr) => EndpointAddressType::Internal(
+                InternalEndpointAddress::from(internal_addr.clone()),
                 InternalConnection {
                     server_listener_name: internal_addr.server_listener_name.clone(),
                     endpoint_id: internal_addr.endpoint_id.clone(),
@@ -706,14 +705,13 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
 
 #[cfg(test)]
 mod test {
-    use http::uri::Authority;
-    use orion_configuration::config::transport::BindDeviceOptions;
-
     use super::{EndpointAddressType, LbEndpoint};
     use crate::{
         clusters::health::HealthStatus,
         transport::{HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     };
+    use http::uri::Authority;
+    use orion_configuration::config::{core::envoy_conversions::Address, transport::BindDeviceOptions};
 
     impl LbEndpoint {
         /// This function is used by unit tests in other modules
@@ -726,6 +724,7 @@ mod test {
         ) -> Self {
             let http_channel = HttpChannelBuilder::new(bind_device_options.clone())
                 .with_authority(authority.clone())
+                .with_address(Address::Socket(authority.host().to_owned(), authority.port_u16().unwrap_or_default()))
                 .with_cluster_name(cluster_name)
                 .build()
                 .unwrap();

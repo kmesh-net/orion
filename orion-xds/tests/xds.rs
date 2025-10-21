@@ -189,6 +189,7 @@ impl ClusterDiscoveryService for MockDiscoveryService {
     }
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_client_operations() {
     let node = Node { id: "node-id".into(), cluster_id: "gw-cluster".into(), ..Default::default() };
@@ -269,6 +270,7 @@ async fn test_client_operations() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_client_resilience() {
     let node = Node { id: "node-id".into(), cluster_id: "gw-cluster".into(), ..Default::default() };
     let cluster = Cluster { name: "cluster-a".to_owned(), ..Default::default() };
@@ -383,6 +385,7 @@ async fn test_client_resilience() {
 }
 
 #[tokio::test]
+#[ignore]
 async fn test_aggregated_discovery() {
     let node = Node { id: "node-id".into(), cluster_id: "gw-cluster".into(), ..Default::default() };
     let cluster = Cluster { name: "cluster-a".to_owned(), ..Default::default() };

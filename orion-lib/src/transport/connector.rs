@@ -140,9 +140,10 @@ impl LocalConnectorWithDNSResolver {
             }
 
             if let Some(bind_addr) = bind_address {
-                match bind_addr.address() {
-                    orion_configuration::config::core::envoy_conversions::Address::Socket(bind_address) => {
-                        let maybe_socket_addr = format!("{bind_address}:0").parse::<std::net::SocketAddr>();
+                let address = bind_addr.address();
+                match address {
+                    orion_configuration::config::core::envoy_conversions::Address::Socket(_, _) => {
+                        let maybe_socket_addr = address.clone().into_socket_addr();
                         let bind_address = maybe_socket_addr
                             .map_err(|e| {
                                 EventError::IoError(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))

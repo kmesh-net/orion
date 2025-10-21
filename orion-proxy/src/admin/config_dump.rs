@@ -106,7 +106,7 @@ mod config_dump_tests {
     use axum_test::TestServer;
     use compact_str::CompactString;
     use orion_configuration::config::{
-        core::DataSource,
+        core::{envoy_conversions::Address, DataSource},
         network_filters::http_connection_manager::header_modifer::HeaderModifier,
         secret::{Secret, TlsCertificate, Type, ValidationContext},
         transport::BindDeviceOptions,
@@ -335,15 +335,11 @@ mod config_dump_tests {
     async fn config_dump_clusters() {
         use compact_str::CompactString;
         use orion_configuration::config::cluster::{
-            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
-            LbEndpoint, LbPolicy, LocalityLbEndpoints,
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
+            LbPolicy, LocalityLbEndpoints,
         };
-        use std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr},
-            num::NonZeroU32,
-            time::Duration,
-        };
-        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
+        use std::{num::NonZeroU32, time::Duration};
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
@@ -391,15 +387,11 @@ mod config_dump_tests {
     async fn config_dump_endpoints() {
         use compact_str::CompactString;
         use orion_configuration::config::cluster::{
-            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
-            LbEndpoint, LbPolicy, LocalityLbEndpoints,
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
+            LbPolicy, LocalityLbEndpoints,
         };
-        use std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr},
-            num::NonZeroU32,
-            time::Duration,
-        };
-        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
+        use std::{num::NonZeroU32, time::Duration};
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
@@ -439,7 +431,8 @@ mod config_dump_tests {
         let response = server.get("/config_dump").await;
         response.assert_status_ok();
         let value: serde_json::Value = response.json();
-        let address = value["endpoints"][0]["lb_endpoints"][0]["Socket"].to_string();
+        let address = value["endpoints"][0]["lb_endpoints"][0]["address"]["Socket"].to_string();
+
         assert_eq!(address, "[\"127.0.0.1\",9000]");
         handle.abort();
     }
@@ -532,7 +525,8 @@ mod config_dump_tests {
         assert_eq!(value["secrets"][1]["name"], "beefcake_ca");
         // Check redaction
         assert_eq!(value["secrets"][0]["tls_certificate"]["private_key"]["inline_string"], "[redacted]");
-        assert_eq!(value["secrets"][1]["validation_context"]["trusted_ca"]["inline_string"], ca_pem);
+        dbg!(&value["secrets"][1]);
+        assert_eq!(value["secrets"][1]["validation_context"]["TrustedCA"]["inline_string"], ca_pem);
         handle.abort();
     }
 }

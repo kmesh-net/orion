@@ -43,7 +43,6 @@ use orion_data_plane_api::envoy_data_plane_api::{
 
 use orion_format::{LogFormatter, DEFAULT_ACCESS_LOG_FORMAT};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 
 use crate::config::{common::*, core::DataSource};
 
