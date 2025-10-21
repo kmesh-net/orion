@@ -471,7 +471,10 @@ impl RouteMatch {
     pub fn match_request<B>(&self, request: &Request<B>) -> RouteMatchResult {
         let path_match = self.path_matcher.as_ref().map(|path_matcher| {
             //todo(hayley): how do we treat empty paths here?
-            path_matcher.matches(request.uri().path_and_query().unwrap_or(&PathAndQuery::from_static("")))
+            path_matcher.matches(
+                request.uri().path_and_query().unwrap_or(&PathAndQuery::from_static("")),
+                Some(request.method()),
+            )
         });
         //short circuit if path match fails
         let headers_matched = if path_match.as_ref().map(PathMatcherResult::matched).unwrap_or(true) {
@@ -512,9 +515,9 @@ impl PathMatcherResult {
 }
 
 impl PathMatcher {
-    pub fn matches(&self, path: &PathAndQuery) -> PathMatcherResult {
-        let path = path.path();
-        let case_matcher = CaseSensitive(!self.ignore_case, path);
+    pub fn matches(&self, path: &PathAndQuery, method: Option<&http::Method>) -> PathMatcherResult {
+        let path_str = path.path();
+        let case_matcher = CaseSensitive(!self.ignore_case, path_str);
         let inner = match &self.specifier {
             PathSpecifier::Exact(s) => case_matcher.equals(s).then_some(s.len()),
             PathSpecifier::Prefix(p) => case_matcher.starts_with(p).then_some(p.len()),
@@ -527,7 +530,11 @@ impl PathMatcher {
                     None
                 }
             },
-            PathSpecifier::Regex(r) => r.matches_full(path).then_some(path.len()),
+            PathSpecifier::Regex(r) => r.matches_full(path_str).then_some(path_str.len()),
+            PathSpecifier::ConnectMatcher => {
+                // ConnectMatcher matches all CONNECT method requests regardless of path
+                method.map(|m| (m == http::Method::CONNECT).then_some(path_str.len())).flatten()
+            },
         };
         PathMatcherResult { inner }
     }
@@ -540,6 +547,7 @@ pub enum PathSpecifier {
     Exact(CompactString),
     Regex(#[serde(with = "serde_regex")] Regex),
     PathSeparatedPrefix(CompactString),
+    ConnectMatcher,
 }
 
 impl PartialEq for PathSpecifier {
@@ -549,6 +557,7 @@ impl PartialEq for PathSpecifier {
             (Self::Prefix(s1), Self::Prefix(s2))
             | (Self::Exact(s1), Self::Exact(s2))
             | (Self::PathSeparatedPrefix(s1), Self::PathSeparatedPrefix(s2)) => s1.eq(s2),
+            (Self::ConnectMatcher, Self::ConnectMatcher) => true,
             _ => false,
         }
     }
@@ -558,8 +567,17 @@ impl Eq for PathSpecifier {}
 impl Hash for PathSpecifier {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Self::Regex(r) => r.as_str().hash(state),
-            Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => s.hash(state),
+            Self::Regex(r) => {
+                core::mem::discriminant(self).hash(state);
+                r.as_str().hash(state);
+            },
+            Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => {
+                core::mem::discriminant(self).hash(state);
+                s.hash(state);
+            },
+            Self::ConnectMatcher => {
+                core::mem::discriminant(self).hash(state);
+            },
         }
     }
 }
@@ -1116,7 +1134,10 @@ mod envoy_conversions {
                     (WEBSOCKET, _) => upgrade_config.websocket = Some(Websocket::Enabled),
                     (CONNECT, Some(BoolValue { value: false })) => upgrade_config.connect = Some(Connect::Disabled),
                     (CONNECT, _) => {
-                        return Err(GenericError::from_msg("Http CONNECT upgrades are not currently supported"));
+                        // CONNECT upgrades are not fully supported yet, but we accept the config
+                        // and mark it as disabled to avoid rejecting waypoint configurations
+                        tracing::warn!("Http CONNECT upgrades are not fully implemented, treating as disabled");
+                        upgrade_config.connect = Some(Connect::Disabled);
                     },
                     (unknown, _) => {
                         return Err(GenericError::from_msg(format!("Unsupported upgrade type [{unknown}]")));
@@ -1220,7 +1241,7 @@ mod envoy_conversions {
                         Ok(Self::PathSeparatedPrefix(s.into()))
                     }
                 },
-                EnvoyPathSpecifier::ConnectMatcher(_) => Err(GenericError::unsupported_variant("ConnectMatcher")),
+                EnvoyPathSpecifier::ConnectMatcher(_) => Ok(Self::ConnectMatcher),
                 EnvoyPathSpecifier::PathMatchPolicy(_) => Err(GenericError::unsupported_variant("PathMatchPolicy")),
             }
         }
@@ -1245,20 +1266,44 @@ mod envoy_conversions {
             let pm =
                 PathMatcher { specifier: PathSpecifier::PathSeparatedPrefix("/api/dev/".into()), ignore_case: true };
             let pq = PathAndQuery::from_static("/api/dev");
-            let res = pm.matches(&pq);
+            let res = pm.matches(&pq, None);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/dev/");
-            let res = pm.matches(&pq);
+            let res = pm.matches(&pq, None);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/dev/blah");
-            let res = pm.matches(&pq);
+            let res = pm.matches(&pq, None);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/devdfdffd/");
-            let res = pm.matches(&pq);
+            let res = pm.matches(&pq, None);
             assert!(!res.matched());
+        }
+
+        #[test]
+        fn test_connect_matcher() {
+            let connect_matcher = PathSpecifier::try_from(EnvoyPathSpecifier::ConnectMatcher(
+                orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::ConnectMatcher {},
+            ))
+            .unwrap();
+            assert_eq!(connect_matcher, PathSpecifier::ConnectMatcher);
+
+            let pm = PathMatcher { specifier: PathSpecifier::ConnectMatcher, ignore_case: false };
+            let pq = PathAndQuery::from_static("/any/path");
+
+            let res = pm.matches(&pq, Some(&http::Method::CONNECT));
+            assert!(res.matched(), "ConnectMatcher should match CONNECT method");
+
+            let res = pm.matches(&pq, Some(&http::Method::GET));
+            assert!(!res.matched(), "ConnectMatcher should not match GET method");
+
+            let res = pm.matches(&pq, Some(&http::Method::POST));
+            assert!(!res.matched(), "ConnectMatcher should not match POST method");
+
+            let res = pm.matches(&pq, None);
+            assert!(!res.matched(), "ConnectMatcher should not match without method");
         }
     }
 }

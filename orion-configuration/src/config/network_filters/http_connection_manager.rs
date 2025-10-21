@@ -853,7 +853,11 @@ mod envoy_conversions {
         fn try_from(s: String) -> Result<Self, Self::Error> {
             match s.to_lowercase().as_str() {
                 "websocket" => Ok(UpgradeType::Websocket),
-                "connect" => Err(GenericError::from_msg("Http CONNECT upgrades are not currently supported")),
+                "connect" => {
+                    // CONNECT upgrades are not fully implemented yet, but we accept the config
+                    tracing::warn!("Http CONNECT upgrade type accepted but not fully implemented");
+                    Ok(UpgradeType::Connect)
+                },
                 s => Err(GenericError::from_msg(format!("Unsupported upgrade type [{s}]"))),
             }
         }
