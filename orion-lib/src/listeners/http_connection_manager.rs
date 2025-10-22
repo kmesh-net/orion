@@ -184,6 +184,10 @@ pub enum HttpFilterValue {
     // while Rbac uses a configuration type - we might want to revisit this
     RateLimit(LocalRateLimit),
     Rbac(HttpRbac),
+    /// Istio peer metadata filter - parsed but not executed (metadata/telemetry only)
+    PeerMetadata,
+    /// Envoy set filter state - parsed but not executed (metadata only)
+    SetFilterState,
 }
 
 impl From<HttpFilterConfig> for HttpFilter {
@@ -192,6 +196,9 @@ impl From<HttpFilterConfig> for HttpFilter {
         let filter = match filter {
             HttpFilterType::RateLimit(r) => HttpFilterValue::RateLimit(r.into()),
             HttpFilterType::Rbac(rbac) => HttpFilterValue::Rbac(rbac),
+            // Istio-specific filters: parsed but not executed (metadata/telemetry only)
+            HttpFilterType::PeerMetadata(_) => HttpFilterValue::PeerMetadata,
+            HttpFilterType::SetFilterState(_) => HttpFilterValue::SetFilterState,
         };
         Self { name, disabled, filter: Some(filter) }
     }
@@ -202,12 +209,16 @@ impl HttpFilterValue {
         match self {
             HttpFilterValue::Rbac(rbac) => apply_authorization_rules(rbac, request),
             HttpFilterValue::RateLimit(rl) => rl.run(request),
+            // Istio-specific filters: no-op execution (metadata/telemetry only)
+            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
         }
     }
     pub fn apply_response(&self, _response: &mut Response<PolyBody>) -> FilterDecision {
         match self {
             // RBAC and RateLimit do not apply on the response path
             HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) => FilterDecision::Continue,
+            // Istio-specific filters: no-op on response path
+            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
         }
     }
     fn from_filter_override(value: &FilterOverride) -> Option<Self> {

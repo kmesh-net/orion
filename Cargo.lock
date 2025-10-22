@@ -2113,6 +2113,7 @@ dependencies = [
  "orion-format",
  "orion-interner",
  "prost",
+ "prost-types",
  "regex",
  "serde",
  "serde_json",
