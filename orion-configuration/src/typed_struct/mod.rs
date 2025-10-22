@@ -57,7 +57,7 @@
 mod parser;
 mod converter;
 
-pub use parser::TypedStructParser;
+pub use parser::{TypedStructParser, TypedStruct};
 pub use converter::JsonConverter;
 
 use crate::config::common::GenericError;
