@@ -33,6 +33,7 @@ orion-error.workspace = true
 orion-format.workspace = true
 orion-interner.workspace = true
 prost = "0.13.0"
+prost-types = "0.13.0"
 regex.workspace = true
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
