@@ -1,28 +1,36 @@
+// Copyright 2025 The kmesh Authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
 use crate::config::common::GenericError;
 use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum TypedStructError {
     DecodeFailed(String),
-    
-    InvalidTypeUrl {
-        expected: String,
-        actual: String,
-    },
-    
+
+    InvalidTypeUrl { expected: String, actual: String },
+
     MissingValue,
-    
+
     JsonConversionFailed(String),
-    
-    UnsupportedFilter {
-        type_url: String,
-        available: Vec<String>,
-    },
-    
-    InvalidConfiguration {
-        type_url: String,
-        reason: String,
-    },
+
+    UnsupportedFilter { type_url: String, available: Vec<String> },
+
+    InvalidConfiguration { type_url: String, reason: String },
 }
 
 impl fmt::Display for TypedStructError {
@@ -30,20 +38,16 @@ impl fmt::Display for TypedStructError {
         match self {
             Self::DecodeFailed(msg) => {
                 write!(f, "Failed to decode TypedStruct: {}", msg)
-            }
+            },
             Self::InvalidTypeUrl { expected, actual } => {
-                write!(
-                    f,
-                    "TypedStruct type URL mismatch: expected '{}', got '{}'",
-                    expected, actual
-                )
-            }
+                write!(f, "TypedStruct type URL mismatch: expected '{}', got '{}'", expected, actual)
+            },
             Self::MissingValue => {
                 write!(f, "TypedStruct is missing value field")
-            }
+            },
             Self::JsonConversionFailed(msg) => {
                 write!(f, "Failed to convert TypedStruct value to JSON: {}", msg)
-            }
+            },
             Self::UnsupportedFilter { type_url, available } => {
                 write!(
                     f,
@@ -51,14 +55,10 @@ impl fmt::Display for TypedStructError {
                     type_url,
                     available.join(", ")
                 )
-            }
+            },
             Self::InvalidConfiguration { type_url, reason } => {
-                write!(
-                    f,
-                    "Invalid configuration for TypedStruct filter '{}': {}",
-                    type_url, reason
-                )
-            }
+                write!(f, "Invalid configuration for TypedStruct filter '{}': {}", type_url, reason)
+            },
         }
     }
 }
@@ -81,7 +81,7 @@ mod tests {
             expected: "type.googleapis.com/test.Config".to_string(),
             actual: "type.googleapis.com/wrong.Config".to_string(),
         };
-        
+
         let display = format!("{}", err);
         assert!(display.contains("expected"));
         assert!(display.contains("test.Config"));
@@ -94,7 +94,7 @@ mod tests {
             type_url: "unknown.filter".to_string(),
             available: vec!["filter1".to_string(), "filter2".to_string()],
         };
-        
+
         let display = format!("{}", err);
         assert!(display.contains("unknown.filter"));
         assert!(display.contains("filter1"));
@@ -105,7 +105,7 @@ mod tests {
     fn test_convert_to_generic_error() {
         let typed_err = TypedStructError::MissingValue;
         let generic_err: GenericError = typed_err.into();
-        
+
         let msg = format!("{:?}", generic_err);
         assert!(msg.contains("missing value"));
     }

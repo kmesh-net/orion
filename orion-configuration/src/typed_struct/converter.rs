@@ -18,8 +18,8 @@
 //! Converter between google.protobuf.Struct and serde_json::Value
 
 use crate::config::common::GenericError;
-use prost_types::{Struct, Value, ListValue, value::Kind};
-use serde_json::{Value as JsonValue, Map as JsonMap};
+use prost_types::{value::Kind, ListValue, Struct, Value};
+use serde_json::{Map as JsonMap, Value as JsonValue};
 
 /// Converter for google.protobuf.Struct ↔ serde_json::Value
 pub struct JsonConverter;
@@ -28,14 +28,14 @@ impl JsonConverter {
     /// Convert google.protobuf.Struct to serde_json::Value
     pub fn struct_to_json(proto_struct: &Struct) -> Result<JsonValue, GenericError> {
         let mut map = JsonMap::new();
-        
+
         for (key, value) in &proto_struct.fields {
             map.insert(key.clone(), Self::value_to_json(value)?);
         }
-        
+
         Ok(JsonValue::Object(map))
     }
-    
+
     /// Convert google.protobuf.Value to serde_json::Value
     pub fn value_to_json(proto_value: &Value) -> Result<JsonValue, GenericError> {
         match &proto_value.kind {
@@ -43,7 +43,7 @@ impl JsonConverter {
             Some(Kind::NullValue(_)) => Ok(JsonValue::Null),
             Some(Kind::NumberValue(n)) => Ok(JsonValue::Number(
                 serde_json::Number::from_f64(*n)
-                    .ok_or_else(|| GenericError::from_msg(format!("Invalid number: {}", n)))?
+                    .ok_or_else(|| GenericError::from_msg(format!("Invalid number: {}", n)))?,
             )),
             Some(Kind::StringValue(s)) => Ok(JsonValue::String(s.clone())),
             Some(Kind::BoolValue(b)) => Ok(JsonValue::Bool(*b)),
@@ -51,15 +51,15 @@ impl JsonConverter {
             Some(Kind::ListValue(l)) => Self::list_to_json(l),
         }
     }
-    
+
     /// Convert google.protobuf.ListValue to serde_json::Value
     pub fn list_to_json(proto_list: &ListValue) -> Result<JsonValue, GenericError> {
         let mut arr = Vec::new();
-        
+
         for value in &proto_list.values {
             arr.push(Self::value_to_json(value)?);
         }
-        
+
         Ok(JsonValue::Array(arr))
     }
 }
@@ -109,16 +109,12 @@ mod tests {
     #[test]
     fn test_struct_value() {
         let mut fields = BTreeMap::new();
-        fields.insert("name".to_string(), Value {
-            kind: Some(Kind::StringValue("test".to_string())),
-        });
-        fields.insert("count".to_string(), Value {
-            kind: Some(Kind::NumberValue(5.0)),
-        });
-        
+        fields.insert("name".to_string(), Value { kind: Some(Kind::StringValue("test".to_string())) });
+        fields.insert("count".to_string(), Value { kind: Some(Kind::NumberValue(5.0)) });
+
         let proto_struct = Struct { fields };
         let json = JsonConverter::struct_to_json(&proto_struct).unwrap();
-        
+
         assert_eq!(json["name"], serde_json::json!("test"));
         assert_eq!(json["count"], serde_json::json!(5.0));
     }
@@ -126,18 +122,15 @@ mod tests {
     #[test]
     fn test_nested_struct() {
         let mut inner_fields = BTreeMap::new();
-        inner_fields.insert("enabled".to_string(), Value {
-            kind: Some(Kind::BoolValue(true)),
-        });
-        
+        inner_fields.insert("enabled".to_string(), Value { kind: Some(Kind::BoolValue(true)) });
+
         let mut outer_fields = BTreeMap::new();
-        outer_fields.insert("config".to_string(), Value {
-            kind: Some(Kind::StructValue(Struct { fields: inner_fields })),
-        });
-        
+        outer_fields
+            .insert("config".to_string(), Value { kind: Some(Kind::StructValue(Struct { fields: inner_fields })) });
+
         let proto_struct = Struct { fields: outer_fields };
         let json = JsonConverter::struct_to_json(&proto_struct).unwrap();
-        
+
         assert_eq!(json["config"]["enabled"], serde_json::json!(true));
     }
 }
