@@ -56,9 +56,13 @@
 
 mod parser;
 mod converter;
+mod registry;
+mod error;
 
 pub use parser::{TypedStructParser, TypedStruct};
 pub use converter::JsonConverter;
+pub use registry::TypedStructRegistry;
+pub use error::TypedStructError;
 
 use crate::config::common::GenericError;
 use serde_json::Value as JsonValue;
@@ -72,6 +76,10 @@ pub struct ParsedTypedStruct {
     /// JSON representation of the configuration
     pub value: JsonValue,
 }
+
+
+
+
 
 /// Trait for filters that can be constructed from TypedStruct
 pub trait TypedStructFilter: Sized {
