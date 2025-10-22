@@ -23,6 +23,7 @@ pub(crate) type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 #[allow(clippy::wildcard_imports, clippy::too_many_lines)]
 pub mod config;
 pub mod options;
+pub mod typed_struct;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
