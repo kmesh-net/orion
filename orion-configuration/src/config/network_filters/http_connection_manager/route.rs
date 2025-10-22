@@ -405,11 +405,52 @@ pub struct QueryParameterMatcher {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub enum MethodSpecifier {
+    Connect,
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+    Options,
+}
+
+impl MethodSpecifier {
+    pub fn matches(&self, method: &http::Method) -> bool {
+        match self {
+            Self::Connect => method == http::Method::CONNECT,
+            Self::Get => method == http::Method::GET,
+            Self::Post => method == http::Method::POST,
+            Self::Put => method == http::Method::PUT,
+            Self::Delete => method == http::Method::DELETE,
+            Self::Patch => method == http::Method::PATCH,
+            Self::Head => method == http::Method::HEAD,
+            Self::Options => method == http::Method::OPTIONS,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub struct MethodMatcher {
+    pub specifier: MethodSpecifier,
+}
+
+impl MethodMatcher {
+    pub fn matches(&self, method: Option<&http::Method>) -> RouteMatchResult {
+        let matched = method.map(|m| self.specifier.matches(m)).unwrap_or(false);
+        RouteMatchResult { path_match: None, headers_matched: matched, query_parameters_matched: matched }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct RouteMatch {
     // todo(hayley): can't be none?
     #[serde(flatten)]
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
     pub path_matcher: Option<PathMatcher>,
+    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
+    pub method_matcher: Option<MethodMatcher>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub headers: Vec<HeaderMatcher>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
@@ -420,6 +461,7 @@ impl Default for RouteMatch {
     fn default() -> Self {
         Self {
             path_matcher: Some(PathMatcher { specifier: PathSpecifier::Prefix("".into()), ignore_case: false }),
+            method_matcher: None,
             headers: Vec::new(),
             query_parameters: Vec::new(),
         }
@@ -469,12 +511,16 @@ impl QueryParameterMatcher {
 
 impl RouteMatch {
     pub fn match_request<B>(&self, request: &Request<B>) -> RouteMatchResult {
+        if let Some(method_matcher) = &self.method_matcher {
+            let method_result = method_matcher.matches(Some(request.method()));
+            if !method_result.matched() {
+                return method_result;
+            }
+        }
+
         let path_match = self.path_matcher.as_ref().map(|path_matcher| {
             //todo(hayley): how do we treat empty paths here?
-            path_matcher.matches(
-                request.uri().path_and_query().unwrap_or(&PathAndQuery::from_static("")),
-                Some(request.method()),
-            )
+            path_matcher.matches(request.uri().path_and_query().unwrap_or(&PathAndQuery::from_static("")))
         });
         //short circuit if path match fails
         let headers_matched = if path_match.as_ref().map(PathMatcherResult::matched).unwrap_or(true) {
@@ -515,9 +561,9 @@ impl PathMatcherResult {
 }
 
 impl PathMatcher {
-    pub fn matches(&self, path: &PathAndQuery, method: Option<&http::Method>) -> PathMatcherResult {
-        let path_str = path.path();
-        let case_matcher = CaseSensitive(!self.ignore_case, path_str);
+    pub fn matches(&self, path: &PathAndQuery) -> PathMatcherResult {
+        let path = path.path();
+        let case_matcher = CaseSensitive(!self.ignore_case, path);
         let inner = match &self.specifier {
             PathSpecifier::Exact(s) => case_matcher.equals(s).then_some(s.len()),
             PathSpecifier::Prefix(p) => case_matcher.starts_with(p).then_some(p.len()),
@@ -530,11 +576,7 @@ impl PathMatcher {
                     None
                 }
             },
-            PathSpecifier::Regex(r) => r.matches_full(path_str).then_some(path_str.len()),
-            PathSpecifier::ConnectMatcher => {
-                // ConnectMatcher matches all CONNECT method requests regardless of path
-                method.map(|m| (m == http::Method::CONNECT).then_some(path_str.len())).flatten()
-            },
+            PathSpecifier::Regex(r) => r.matches_full(path).then_some(path.len()),
         };
         PathMatcherResult { inner }
     }
@@ -547,7 +589,6 @@ pub enum PathSpecifier {
     Exact(CompactString),
     Regex(#[serde(with = "serde_regex")] Regex),
     PathSeparatedPrefix(CompactString),
-    ConnectMatcher,
 }
 
 impl PartialEq for PathSpecifier {
@@ -557,7 +598,6 @@ impl PartialEq for PathSpecifier {
             (Self::Prefix(s1), Self::Prefix(s2))
             | (Self::Exact(s1), Self::Exact(s2))
             | (Self::PathSeparatedPrefix(s1), Self::PathSeparatedPrefix(s2)) => s1.eq(s2),
-            (Self::ConnectMatcher, Self::ConnectMatcher) => true,
             _ => false,
         }
     }
@@ -574,9 +614,6 @@ impl Hash for PathSpecifier {
             Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => {
                 core::mem::discriminant(self).hash(state);
                 s.hash(state);
-            },
-            Self::ConnectMatcher => {
-                core::mem::discriminant(self).hash(state);
             },
         }
     }
@@ -630,6 +667,7 @@ mod tests {
     fn test_query_parameter_matching() {
         let route_match = RouteMatch {
             path_matcher: None,
+            method_matcher: None,
             headers: vec![],
             query_parameters: vec![QueryParameterMatcher {
                 name: "version".into(),
@@ -648,6 +686,7 @@ mod tests {
 
         let route_match = RouteMatch {
             path_matcher: None,
+            method_matcher: None,
             headers: vec![],
             query_parameters: vec![QueryParameterMatcher {
                 name: "x".into(),
@@ -666,6 +705,7 @@ mod tests {
 
         let route_match = RouteMatch {
             path_matcher: None,
+            method_matcher: None,
             headers: vec![],
             query_parameters: vec![QueryParameterMatcher {
                 name: "y".into(),
@@ -681,6 +721,7 @@ mod tests {
 
         let route_match = RouteMatch {
             path_matcher: None,
+            method_matcher: None,
             headers: vec![],
             query_parameters: vec![
                 QueryParameterMatcher {
@@ -795,9 +836,9 @@ mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
         Action, AuthorityRedirect, AuthorityRewriteSpecifier, Connect, DirectResponseAction, DirectResponseBody,
-        HashPolicy, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier, QueryParameterMatchSpecifier,
-        QueryParameterMatcher, RedirectAction, RedirectResponseCode, RegexMatchAndSubstitute, RouteAction, RouteMatch,
-        UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
+        HashPolicy, MethodMatcher, MethodSpecifier, PathMatcher, PathRewriteSpecifier, PathSpecifier, PolicySpecifier,
+        QueryParameterMatchSpecifier, QueryParameterMatcher, RedirectAction, RedirectResponseCode,
+        RegexMatchAndSubstitute, RouteAction, RouteMatch, UpgradeConfig, Websocket, DEFAULT_TIMEOUT,
     };
     use crate::config::{
         common::*,
@@ -1216,11 +1257,21 @@ mod envoy_conversions {
                 filter_state
             )?;
             let ignore_case = !case_sensitive.map(|v| v.value).unwrap_or(true);
-            let path_specifier = path_specifier.map(PathSpecifier::try_from).transpose().with_node("path_specifier")?;
+
+            let (path_matcher, method_matcher) = match path_specifier {
+                Some(EnvoyPathSpecifier::ConnectMatcher(_)) => {
+                    (None, Some(MethodMatcher { specifier: MethodSpecifier::Connect }))
+                },
+                Some(other) => {
+                    let specifier = PathSpecifier::try_from(other).with_node("path_specifier")?;
+                    (Some(PathMatcher { specifier, ignore_case }), None)
+                },
+                None => (None, None),
+            };
+
             let headers = convert_vec!(headers)?;
             let query_parameters = convert_vec!(query_parameters)?;
-            let path_matcher = path_specifier.map(|specifier| PathMatcher { specifier, ignore_case });
-            Ok(Self { path_matcher, headers, query_parameters })
+            Ok(Self { path_matcher, method_matcher, headers, query_parameters })
         }
     }
 
@@ -1241,16 +1292,19 @@ mod envoy_conversions {
                         Ok(Self::PathSeparatedPrefix(s.into()))
                     }
                 },
-                EnvoyPathSpecifier::ConnectMatcher(_) => Ok(Self::ConnectMatcher),
+                EnvoyPathSpecifier::ConnectMatcher(_) => {
+                    Err(GenericError::from_msg("ConnectMatcher should be converted to MethodMatcher in RouteMatch"))
+                },
                 EnvoyPathSpecifier::PathMatchPolicy(_) => Err(GenericError::unsupported_variant("PathMatchPolicy")),
             }
         }
     }
     #[cfg(test)]
     mod tests {
+        use http::Request;
         use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::PathSpecifier as EnvoyPathSpecifier;
 
-        use super::*;
+        use super::super::*;
 
         #[test]
         fn test_path_specifier() {
@@ -1266,44 +1320,64 @@ mod envoy_conversions {
             let pm =
                 PathMatcher { specifier: PathSpecifier::PathSeparatedPrefix("/api/dev/".into()), ignore_case: true };
             let pq = PathAndQuery::from_static("/api/dev");
-            let res = pm.matches(&pq, None);
+            let res = pm.matches(&pq);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/dev/");
-            let res = pm.matches(&pq, None);
+            let res = pm.matches(&pq);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/dev/blah");
-            let res = pm.matches(&pq, None);
+            let res = pm.matches(&pq);
             assert!(res.matched());
 
             let pq = PathAndQuery::from_static("/api/devdfdffd/");
-            let res = pm.matches(&pq, None);
+            let res = pm.matches(&pq);
             assert!(!res.matched());
         }
 
         #[test]
-        fn test_connect_matcher() {
-            let connect_matcher = PathSpecifier::try_from(EnvoyPathSpecifier::ConnectMatcher(
-                orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::ConnectMatcher {},
-            ))
-            .unwrap();
-            assert_eq!(connect_matcher, PathSpecifier::ConnectMatcher);
+        fn test_method_matcher() {
+            use orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::RouteMatch as EnvoyRouteMatch;
 
-            let pm = PathMatcher { specifier: PathSpecifier::ConnectMatcher, ignore_case: false };
-            let pq = PathAndQuery::from_static("/any/path");
+            let envoy_route_match = EnvoyRouteMatch {
+                path_specifier: Some(EnvoyPathSpecifier::ConnectMatcher(
+                    orion_data_plane_api::envoy_data_plane_api::envoy::config::route::v3::route_match::ConnectMatcher {},
+                )),
+                ..Default::default()
+            };
 
-            let res = pm.matches(&pq, Some(&http::Method::CONNECT));
-            assert!(res.matched(), "ConnectMatcher should match CONNECT method");
+            let route_match = RouteMatch::try_from(envoy_route_match).unwrap();
+            assert!(route_match.method_matcher.is_some(), "ConnectMatcher should create MethodMatcher");
+            assert!(route_match.path_matcher.is_none(), "ConnectMatcher should not create PathMatcher");
 
-            let res = pm.matches(&pq, Some(&http::Method::GET));
-            assert!(!res.matched(), "ConnectMatcher should not match GET method");
+            let method_matcher = MethodMatcher { specifier: MethodSpecifier::Connect };
+            let result = method_matcher.matches(Some(&http::Method::CONNECT));
+            assert!(result.matched(), "MethodMatcher should match CONNECT method");
 
-            let res = pm.matches(&pq, Some(&http::Method::POST));
-            assert!(!res.matched(), "ConnectMatcher should not match POST method");
+            let result = method_matcher.matches(Some(&http::Method::GET));
+            assert!(!result.matched(), "MethodMatcher should not match GET method");
 
-            let res = pm.matches(&pq, None);
-            assert!(!res.matched(), "ConnectMatcher should not match without method");
+            let result = method_matcher.matches(None);
+            assert!(!result.matched(), "MethodMatcher should not match without method");
+        }
+
+        #[test]
+        fn test_route_match_with_method() {
+            let route_match = RouteMatch {
+                method_matcher: Some(MethodMatcher { specifier: MethodSpecifier::Connect }),
+                path_matcher: Some(PathMatcher { specifier: PathSpecifier::Prefix("/api".into()), ignore_case: false }),
+                headers: Vec::new(),
+                query_parameters: Vec::new(),
+            };
+
+            let req = Request::builder().method(http::Method::CONNECT).uri("/api/test").body(()).unwrap();
+            let result = route_match.match_request(&req);
+            assert!(result.matched(), "Should match CONNECT with matching path");
+
+            let req = Request::builder().method(http::Method::GET).uri("/api/test").body(()).unwrap();
+            let result = route_match.match_request(&req);
+            assert!(!result.matched(), "Should not match GET even with matching path");
         }
     }
 }
