@@ -20,6 +20,7 @@ use compact_str::CompactString;
 use http_rbac::HttpRbac;
 pub mod local_rate_limit;
 use local_rate_limit::LocalRateLimit;
+pub mod filter_registry;
 pub mod peer_metadata;
 pub mod router;
 pub mod set_filter_state;
@@ -77,6 +78,7 @@ use super::is_default;
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
+    use super::filter_registry::ensure_filters_registered;
     use super::{FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, HttpRbac};
     use crate::config::common::*;
     use compact_str::CompactString;
@@ -162,37 +164,36 @@ mod envoy_conversions {
     impl TryFrom<Any> for SupportedEnvoyFilter {
         type Error = GenericError;
         fn try_from(typed_config: Any) -> Result<Self, Self::Error> {
-            use crate::typed_struct::{TypedStructParser, TypedStructFilter};
-            
-            // Check if this is a TypedStruct wrapper
+            use crate::typed_struct::{global_registry, TypedStructFilter, TypedStructParser};
+
+            ensure_filters_registered();
+
             if TypedStructParser::is_typed_struct_url(&typed_config.type_url) {
-                // Parse the TypedStruct wrapper
                 let parsed = TypedStructParser::parse(&typed_config.value)
-                    .map_err(|e| GenericError::from_msg_with_cause(
-                        "Failed to parse TypedStruct wrapper",
-                        e
-                    ))?;
-                
-                // Match on the inner type URL and parse accordingly
-                match parsed.type_url.as_str() {
-                    url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
-                        super::peer_metadata::PeerMetadataConfig::from_typed_struct(&parsed)
-                            .map(Self::PeerMetadata)
-                    },
-                    url if url == super::set_filter_state::SetFilterStateConfig::TYPE_URL => {
-                        super::set_filter_state::SetFilterStateConfig::from_typed_struct(&parsed)
-                            .map(Self::SetFilterState)
-                    },
-                    _ => {
-                        // Unknown TypedStruct inner type - return error
-                        Err(GenericError::unsupported_variant(format!(
+                    .map_err(|e| GenericError::from_msg_with_cause("Failed to parse TypedStruct wrapper", e))?;
+
+                let registry = global_registry();
+                if registry.is_supported(&parsed.type_url) {
+                    match parsed.type_url.as_str() {
+                        url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
+                            super::peer_metadata::PeerMetadataConfig::from_typed_struct(&parsed).map(Self::PeerMetadata)
+                        },
+                        url if url == super::set_filter_state::SetFilterStateConfig::TYPE_URL => {
+                            super::set_filter_state::SetFilterStateConfig::from_typed_struct(&parsed)
+                                .map(Self::SetFilterState)
+                        },
+                        _ => Err(GenericError::unsupported_variant(format!(
                             "TypedStruct with inner type: {}",
                             parsed.type_url
-                        )))
+                        ))),
                     }
+                } else {
+                    Err(GenericError::unsupported_variant(format!(
+                        "Unregistered TypedStruct filter: {}. Use global_registry().register_dynamic() to add support.",
+                        parsed.type_url
+                    )))
                 }
             } else {
-                // Not a TypedStruct - parse as direct protobuf type
                 match typed_config.type_url.as_str() {
                     "type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit" => {
                         EnvoyLocalRateLimit::decode(typed_config.value.as_slice()).map(Self::LocalRateLimit)
@@ -336,9 +337,9 @@ mod envoy_conversions {
 mod typed_struct_integration_tests {
     use super::*;
     use crate::typed_struct::{TypedStruct, TypedStructFilter};
-    use prost::Message;
     use orion_data_plane_api::envoy_data_plane_api::google::protobuf::Any;
-    use prost_types::{Struct, Value, value::Kind, ListValue};
+    use prost::Message;
+    use prost_types::{value::Kind, ListValue, Struct, Value};
     use std::collections::BTreeMap;
 
     #[test]
@@ -347,20 +348,19 @@ mod typed_struct_integration_tests {
         let mut discovery_obj = BTreeMap::new();
         discovery_obj.insert(
             "workload_discovery".to_string(),
-            Value { kind: Some(Kind::StructValue(Struct { fields: BTreeMap::new() })) }
+            Value { kind: Some(Kind::StructValue(Struct { fields: BTreeMap::new() })) },
         );
-        
+
         let mut fields = BTreeMap::new();
         fields.insert(
             "downstream_discovery".to_string(),
-            Value { kind: Some(Kind::ListValue(ListValue { values: vec![
-                Value { kind: Some(Kind::StructValue(Struct { fields: discovery_obj })) }
-            ] })) }
+            Value {
+                kind: Some(Kind::ListValue(ListValue {
+                    values: vec![Value { kind: Some(Kind::StructValue(Struct { fields: discovery_obj })) }],
+                })),
+            },
         );
-        fields.insert(
-            "shared_with_upstream".to_string(),
-            Value { kind: Some(Kind::BoolValue(true)) }
-        );
+        fields.insert("shared_with_upstream".to_string(), Value { kind: Some(Kind::BoolValue(true)) });
 
         let typed_struct = TypedStruct {
             type_url: super::peer_metadata::PeerMetadataConfig::TYPE_URL.to_string(),
@@ -378,7 +378,7 @@ mod typed_struct_integration_tests {
             SupportedEnvoyFilter::PeerMetadata(cfg) => {
                 assert_eq!(cfg.shared_with_upstream, Some(true));
                 assert!(cfg.downstream_discovery.is_some());
-            }
+            },
             _ => panic!("expected PeerMetadata variant"),
         }
     }
@@ -396,7 +396,10 @@ mod typed_struct_integration_tests {
         list_values.push(action_struct);
 
         let mut fields = BTreeMap::new();
-        fields.insert("on_request_headers".to_string(), Value { kind: Some(Kind::ListValue(ListValue { values: list_values })) });
+        fields.insert(
+            "on_request_headers".to_string(),
+            Value { kind: Some(Kind::ListValue(ListValue { values: list_values })) },
+        );
 
         let typed_struct = TypedStruct {
             type_url: super::set_filter_state::SetFilterStateConfig::TYPE_URL.to_string(),
@@ -415,7 +418,7 @@ mod typed_struct_integration_tests {
                 let actions = cfg.on_request_headers.unwrap();
                 assert_eq!(actions.len(), 1);
                 assert_eq!(actions[0].object_key, "test_key");
-            }
+            },
             _ => panic!("expected SetFilterState variant"),
         }
     }
