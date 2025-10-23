@@ -19,10 +19,9 @@ logging:
 runtime:
   num_cpus: 1
   num_runtimes: 1
-  event_interval: 31          # estimated optimal value
-  global_queue_interval: null   # default
-  max_io_events_per_tick: null  # default
-
+  event_interval: 31 # estimated optimal value
+  global_queue_interval: null # default
+  max_io_events_per_tick: null # default
 
 envoy_bootstrap:
   static_resources:
@@ -59,12 +58,12 @@ envoy_bootstrap:
                             route:
                               weighted_clusters:
                                 clusters:
-                                - name: cluster_http
-                                  weight: "1"
-                                - name: cluster_http
-                                  weight: "2"
-                                - name: cluster_http
-                                  weight: "3"
+                                  - name: cluster_http
+                                    weight: "1"
+                                  - name: cluster_http
+                                    weight: "2"
+                                  - name: cluster_http
+                                    weight: "3"
                           - match:
                               prefix: "/"
                             route:
@@ -121,6 +120,3 @@ envoy_bootstrap:
                       socket_address:
                         address: 127.0.0.1
                         port_value: 4004
-
-
-

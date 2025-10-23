@@ -1,36 +1,37 @@
 [package]
-edition.workspace      = true
+edition.workspace = true
 license-file.workspace = true
-name                   = "orion-xds"
+name = "orion-xds"
 rust-version.workspace = true
-version.workspace      = true
+version.workspace = true
 
 [dependencies]
-bytes.workspace               = true
-futures.workspace             = true
+bytes.workspace = true
+futures.workspace = true
 orion-configuration.workspace = true
 
 orion-data-plane-api.workspace = true
-orion-error.workspace          = true
+orion-error.workspace = true
 
-http.workspace    = true
-serde.workspace   = true
-tokio.workspace   = true
-tower.workspace   = true
+http.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tower.workspace = true
 tracing.workspace = true
 
 async-stream = "0.3"
-atomic-take  = "1.1.0"
+atomic-take = "1.1.0"
 
-thiserror              = "2.0.11"
+thiserror = "2.0.11"
 tokio-stream.workspace = true
-uuid                   = { version = "1.7.0", features = ["v4"] }
+uuid = { version = "1.7.0", features = ["v4"] }
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true
 serde_yaml.workspace = true
-tokio.workspace      = true
-tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
+tokio.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hyper-util.workspace = true
 
 [lints]
 workspace = true

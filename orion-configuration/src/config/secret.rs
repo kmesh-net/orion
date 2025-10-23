@@ -49,14 +49,9 @@ pub enum Type {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ValidationContext {
-    trusted_ca: DataSource,
-}
-
-impl ValidationContext {
-    pub fn trusted_ca(&self) -> &DataSource {
-        &self.trusted_ca
-    }
+pub enum ValidationContext {
+    TrustedCA(DataSource),
+    None,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -165,7 +160,7 @@ mod envoy_conversions {
                 verify_certificate_spki,
                 verify_certificate_hash,
                 match_typed_subject_alt_names,
-                match_subject_alt_names,
+                match_subject_alt_names: _,
                 require_signed_certificate_timestamp,
                 crl,
                 allow_expired_certificate,
@@ -182,7 +177,7 @@ mod envoy_conversions {
                 verify_certificate_spki,
                 verify_certificate_hash,
                 match_typed_subject_alt_names,
-                match_subject_alt_names,
+                //match_subject_alt_names,
                 require_signed_certificate_timestamp,
                 crl,
                 allow_expired_certificate,
@@ -192,8 +187,12 @@ mod envoy_conversions {
                 max_verify_depth,
                 system_root_certs
             )?;
-            let trusted_ca = convert_opt!(trusted_ca)?;
-            Ok(Self { trusted_ca })
+            //let trusted_ca = convert_opt!(trusted_ca)?;
+            if let Some(trusted_ca) = trusted_ca {
+                Ok(Self::TrustedCA(trusted_ca.try_into()?))
+            } else {
+                Ok(Self::None)
+            }
         }
     }
 }

@@ -47,6 +47,9 @@ impl Priority {
     pub fn calculate_priority_loads<T>(endpoints: &HashMap<u32, PriorityInfo<T>>) -> Vec<(u32, u32)> {
         let mut priority_health = vec![];
         let mut sorted_endpoints = endpoints.iter().collect::<Vec<_>>();
+        if sorted_endpoints.is_empty() {
+            return vec![];
+        }
         sorted_endpoints.sort_by(|a, b| a.0.cmp(b.0));
         for (k, v) in &sorted_endpoints {
             priority_health.push((*k, Self::calculate_priority_health(v.healthy, v.total)));

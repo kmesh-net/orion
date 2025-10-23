@@ -20,7 +20,7 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
 use orion_configuration::config::{
-    listener::ListenerAddress, network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
+    network_filters::http_connection_manager::RouteConfiguration, Listener as ListenerConfig,
 };
 
 use super::listener::{Listener, ListenerFactory};
@@ -125,7 +125,7 @@ impl ListenersManager {
     }
 
     pub fn start_listener(&mut self, listener: Listener, listener_conf: ListenerConfig) -> Result<()> {
-        let listener_name = listener.get_name().to_string();
+        let listener_name = listener.get_name().to_owned();
         if let Some((addr, dev)) = listener.get_socket() {
             info!("Listener {} at {addr} (device bind:{})", listener_name, dev.is_some());
         } else {
@@ -175,7 +175,9 @@ mod tests {
     };
 
     use super::*;
-    use orion_configuration::config::Listener as ListenerConfig;
+    use orion_configuration::config::{
+        listener::ListenerAddress, transport::BindDeviceOptions, Listener as ListenerConfig,
+    };
     use tracing_test::traced_test;
 
     #[traced_test]
@@ -198,7 +200,7 @@ mod tests {
                 1234,
             )),
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
             with_tlv_listener_filter: false,
@@ -244,7 +246,7 @@ mod tests {
                 1234,
             )),
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
             with_tlv_listener_filter: false,
@@ -286,7 +288,7 @@ mod tests {
             name: name.into(),
             address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234)),
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
             with_tlv_listener_filter: false,
@@ -303,7 +305,7 @@ mod tests {
             name: name.into(),
             address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1235)), // Different port
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
             with_tlv_listener_filter: false,
@@ -320,7 +322,7 @@ mod tests {
             name: name.into(),
             address: ListenerAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1236)), // Different port
             filter_chains: HashMap::default(),
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             with_tls_inspector: false,
             proxy_protocol_config: None,
             with_tlv_listener_filter: false,

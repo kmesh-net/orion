@@ -19,11 +19,11 @@ use http::uri::Authority;
 
 use orion_configuration::config::{
     cluster::{
-        ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthCheck, HealthStatus,
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck, HealthStatus,
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
     core::envoy_conversions::Address,
-    transport::BindDevice,
+    transport::BindDeviceOptions,
 };
 
 use crate::{
@@ -42,7 +42,7 @@ use super::{ClusterOps, ClusterType};
 #[derive(Debug, Clone)]
 pub struct DynamicClusterBuilder {
     pub name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     pub health_check: Option<HealthCheck>,
     pub load_balancing_policy: LbPolicy,
@@ -51,15 +51,21 @@ pub struct DynamicClusterBuilder {
 
 impl DynamicClusterBuilder {
     pub fn build(self) -> ClusterType {
-        let DynamicClusterBuilder { name, transport_socket, health_check, load_balancing_policy, bind_device, config } =
-            self;
+        let DynamicClusterBuilder {
+            name,
+            transport_socket,
+            health_check,
+            load_balancing_policy,
+            bind_device_options,
+            config,
+        } = self;
         ClusterType::Dynamic(DynamicCluster {
             name,
             load_assignment: None,
             transport_socket,
             health_check,
             load_balancing_policy,
-            bind_device,
+            bind_device_options,
             config,
         })
     }
@@ -68,7 +74,7 @@ impl DynamicClusterBuilder {
 #[derive(Debug, Clone)]
 pub struct DynamicCluster {
     pub name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub(super) load_assignment: Option<ClusterLoadAssignment>,
     pub transport_socket: UpstreamTransportSocketConfigurator,
     pub health_check: Option<HealthCheck>,
@@ -171,7 +177,7 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
                         let load_balancing_weight = std::num::NonZeroU32::new(ep.weight)
                             .ok_or_else(|| format!("Invalid load balancing weight: {}", ep.weight))?;
                         Ok(LbEndpointConfig {
-                            address: EndpointAddress::Socket(Address::try_from(ep.authority())?.into_socket_addr()?),
+                            address: ep.address.to_address(),
                             health_status: ep.health_status,
                             load_balancing_weight,
                         })
@@ -180,6 +186,6 @@ impl TryFrom<&DynamicCluster> for ClusterLoadAssignmentConfig {
                 Ok(LocalityLbEndpointsConfig { priority: lep.priority, lb_endpoints })
             })
             .collect::<crate::Result<Vec<_>>>()?;
-        Ok(ClusterLoadAssignmentConfig { endpoints })
+        Ok(ClusterLoadAssignmentConfig { cluster_name: cluster.name.to_owned(), endpoints })
     }
 }

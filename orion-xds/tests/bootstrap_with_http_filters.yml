@@ -1,0 +1,76 @@
+admin:
+  address:
+    socket_address: { address: 127.0.0.1, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 10000 }
+    - filters:
+        - name: sending-to-server
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            stat_prefix: http_traffic
+            route_config:
+              name: local_route
+              virtual_hosts:
+                - name: backend
+                  domains:
+                    - "*"
+                  routes:
+                    - match:
+                        prefix: "/books/"
+                      route:
+                        prefix_rewrite: "/"
+                        cluster: some_service
+                    - match:
+                        prefix: "/"
+                      direct_response:
+                        status: 403
+                        body:
+                          inline_string: "Page does not exist!"
+            http_filters:
+              - name: sample customized filter
+                typed_config:
+                  "@type": type.googleapis.com/sample.SampleFilter
+                  key: DATA
+                  val: "123"
+              - name: bandwidth_limit_filter
+                typed_config:
+                  "@type": "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router"
+                  stat_prefix: bandwidth_limit
+                  enable_mode: REQUEST_AND_RESPONSE
+                  limit_kbps: 1000
+              - name: health_check_filter
+                ## https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/health_checking
+                typed_config:
+                  "@type":"type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck"
+                  pass_through_mode: true
+                  headers:
+                    - name: ":path"
+                      exact_match: "/healthz"
+                  cache_time: 30000
+
+
+
+  clusters:
+    - name: some_service
+      connect_timeout: 0.25s
+      type: STATIC
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: some_service
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 1200
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 1201
+

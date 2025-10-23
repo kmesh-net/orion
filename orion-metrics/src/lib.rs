@@ -19,7 +19,6 @@
 pub mod macros;
 pub mod metrics;
 pub mod sharded;
-
 use orion_configuration::config::{metrics::StatsSink, Bootstrap};
 use serde::{Deserialize, Serialize};
 

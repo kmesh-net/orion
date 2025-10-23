@@ -16,7 +16,6 @@
 //
 
 use super::{
-    bind_device::BindDevice,
     connector::LocalConnectorWithDNSResolver,
     policy::{RequestContext, RequestExt},
 };
@@ -43,10 +42,13 @@ use hyper_util::{
     client::legacy::{connect::Connect, Builder, Client},
     rt::tokio::{TokioExecutor, TokioTimer},
 };
+use hyperlocal::UnixConnector;
 use opentelemetry::KeyValue;
 use orion_configuration::config::{
     cluster::http_protocol_options::{Codec, HttpProtocolOptions},
+    core::envoy_conversions::Address,
     network_filters::http_connection_manager::RetryPolicy,
+    transport::BindDeviceOptions,
 };
 use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
 use orion_metrics::{metrics::clusters, with_metric};
@@ -63,7 +65,7 @@ use std::{
     thread::ThreadId,
     time::{Duration, Instant},
 };
-use tracing::debug;
+use tracing::{debug, info, warn};
 use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
@@ -108,6 +110,7 @@ pub struct HttpChannel {
 pub enum HttpChannelClient {
     Plain(Arc<LocalObject<Arc<HttpClient>, Builder, LocalConnectorWithDNSResolver>>),
     Tls(ClientContext),
+    Unix(hyper::Uri, Arc<Client<UnixConnector, BodyWithMetrics<PolyBody>>>),
 }
 
 impl HttpChannelClient {
@@ -119,8 +122,9 @@ impl HttpChannelClient {
 #[derive(Default)]
 pub struct HttpChannelBuilder {
     tls: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>,
+    address: Option<Address>,
     authority: Option<Authority>,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     server_name: Option<ServerName<'static>>,
     http_protocol_options: HttpProtocolOptions,
     connection_timeout: Option<Duration>,
@@ -140,8 +144,8 @@ impl LocalBuilder<HttpsConnector<LocalConnectorWithDNSResolver>, Arc<HttpsClient
 }
 
 impl HttpChannelBuilder {
-    pub fn new(bind_device: Option<BindDevice>) -> Self {
-        Self { bind_device, ..Default::default() }
+    pub fn new(bind_device_options: BindDeviceOptions) -> Self {
+        Self { bind_device_options, ..Default::default() }
     }
 
     pub fn with_tls(self, tls_configurator: Option<TlsConfigurator<ClientConfig, WantsToBuildClient>>) -> Self {
@@ -154,6 +158,10 @@ impl HttpChannelBuilder {
 
     pub fn with_authority(self, authority: Authority) -> Self {
         Self { authority: Some(authority), ..self }
+    }
+
+    pub fn with_address(self, address: Address) -> Self {
+        Self { address: Some(address), ..self }
     }
 
     pub fn with_cluster_name(self, cluster_name: &'static str) -> Self {
@@ -170,59 +178,17 @@ impl HttpChannelBuilder {
 
     #[allow(clippy::cast_sign_loss)]
     pub fn build(self) -> crate::Result<HttpChannel> {
-        let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
-        let client_builder = self.configure_hyper_client();
-
-        if let Some(tls_context) = self.tls {
-            // Build TLS client inline to avoid ownership issues
-            let mut builder =
-                hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls_context.into_inner()).https_or_http();
-
-            builder = if let Some(server_name) = self.server_name {
-                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
-            } else {
-                let server_name = ServerName::try_from(authority.host().to_owned())?;
-                debug!("Server name is not configured in bootstrap.. using endpoint authority {:?}", server_name);
-                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
-            };
-
-            let connector = LocalConnectorWithDNSResolver {
-                addr: authority.clone(),
-                cluster_name: self.cluster_name.unwrap_or_default(),
-                bind_device: self.bind_device,
-                timeout: self.connection_timeout,
-            };
-
-            let tls_connector = match self.http_protocol_options.codec {
-                Codec::Http2 => builder.enable_http2().wrap_connector(connector),
-                Codec::Http1 => builder.enable_http1().wrap_connector(connector),
-            };
-
-            Ok(HttpChannel {
-                client: HttpChannelClient::Tls(ClientContext::new(
-                    self.http_protocol_options.codec,
-                    Arc::new(LocalObject::new(client_builder, tls_connector)),
-                )),
-                http_version: self.http_protocol_options.codec,
-                upstream_authority: authority,
-                cluster_name: self.cluster_name.unwrap_or_default(),
-            })
-        } else {
-            // Build plain client inline
-            let connector = LocalConnectorWithDNSResolver {
-                addr: authority.clone(),
-                bind_device: self.bind_device,
-                timeout: self.connection_timeout,
-                cluster_name: self.cluster_name.unwrap_or_default(),
-            };
-
-            Ok(HttpChannel {
-                client: HttpChannelClient::Plain(Arc::new(LocalObject::new(client_builder, connector))),
-                http_version: self.http_protocol_options.codec,
-                upstream_authority: authority,
-                cluster_name: self.cluster_name.unwrap_or_default(),
-            })
+        match self.address {
+            Some(Address::Socket(_, _)) => self.build_channel_from_authority(),
+            Some(Address::Pipe(_, _)) => self.build_channel_from_pipe(),
+            Some(Address::Internal(_)) => Err(Error::from("Internal not supported yet")),
+            None => Err(Error::from("Address is mandatory")),
         }
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub fn build_with_no_address(self) -> crate::Result<HttpChannel> {
+        self.build_channel_from_authority()
     }
 
     fn configure_hyper_client(&self) -> Builder {
@@ -266,6 +232,84 @@ impl HttpChannelBuilder {
             if let Some(max) = http2_options.max_concurrent_streams() {
                 client_builder.http2_max_concurrent_reset_streams(max);
             }
+        }
+    }
+
+    fn build_channel_from_authority(self) -> crate::Result<HttpChannel> {
+        let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
+        let client_builder = self.configure_hyper_client();
+
+        if let Some(tls_context) = self.tls {
+            // Build TLS client inline to avoid ownership issues
+            let mut builder =
+                hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls_context.into_inner()).https_or_http();
+
+            builder = if let Some(server_name) = self.server_name {
+                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
+            } else {
+                let server_name = ServerName::try_from(authority.host().to_owned())?;
+                debug!("Server name is not configured in bootstrap.. using endpoint authority {:?}", server_name);
+                builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
+            };
+
+            let connector = LocalConnectorWithDNSResolver {
+                addr: authority.clone(),
+                cluster_name: self.cluster_name.unwrap_or_default(),
+                bind_device_options: self.bind_device_options,
+                timeout: self.connection_timeout,
+            };
+
+            let http_connector = match self.http_protocol_options.codec {
+                Codec::Http2 => builder.enable_http2().wrap_connector(connector),
+                Codec::Http1 => builder.enable_http1().wrap_connector(connector),
+            };
+
+            Ok(HttpChannel {
+                client: HttpChannelClient::Tls(ClientContext::new(
+                    self.http_protocol_options.codec,
+                    Arc::new(LocalObject::new(client_builder, http_connector)),
+                )),
+                http_version: self.http_protocol_options.codec,
+                upstream_authority: authority,
+                cluster_name: self.cluster_name.unwrap_or_default(),
+            })
+        } else {
+            // Build plain client inline
+            let connector = LocalConnectorWithDNSResolver {
+                addr: authority.clone(),
+                bind_device_options: self.bind_device_options,
+                timeout: self.connection_timeout,
+                cluster_name: self.cluster_name.unwrap_or_default(),
+            };
+
+            Ok(HttpChannel {
+                client: HttpChannelClient::Plain(Arc::new(LocalObject::new(client_builder, connector))),
+                http_version: self.http_protocol_options.codec,
+                upstream_authority: authority,
+                cluster_name: self.cluster_name.unwrap_or_default(),
+            })
+        }
+    }
+
+    fn build_channel_from_pipe(self) -> crate::Result<HttpChannel> {
+        use hyperlocal::Uri;
+
+        match &self.address {
+            Some(Address::Pipe(name, _)) => {
+                let client_builder = self.configure_hyper_client();
+                warn!("Building address from a pipe {name}");
+                let uri: hyper::Uri = Uri::new(name.clone(), "").into();
+                let authority = uri.authority().cloned().unwrap_or(Authority::from_static("none"));
+                warn!("Building address from a pipe {uri:?}");
+                Ok(HttpChannel {
+                    //client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
+                    client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
+                    http_version: self.http_protocol_options.codec,
+                    upstream_authority: authority,
+                    cluster_name: self.cluster_name.unwrap_or_default(),
+                })
+            },
+            _ => Err(Error::from("Trying to build a pipe address from invalid address")),
         }
     }
 }
@@ -364,6 +408,26 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
                     self.send_request(retry_policy, client, req, cluster_name).await
                 };
 
+                HttpChannel::handle_response(result, route_timeout, version)
+            },
+            HttpChannelClient::Unix(uri, sender) => {
+                let RequestContext { route_timeout, retry_policy } = request.ctx.clone();
+                let client = sender;
+                let mut req = request.req;
+                let path_and_query = req.uri().path_and_query().cloned();
+                info!("Using UNIX channel and rewriting uris {} {}", req.uri(), uri);
+                let mut parts = uri.clone().into_parts();
+                parts.path_and_query = path_and_query;
+                *req.uri_mut() = Uri::from_parts(parts).expect("We do expect this to work");
+
+                let result = if let Some(t) = route_timeout {
+                    match fast_timeout(t, self.send_request(retry_policy, client, req, cluster_name)).await {
+                        Ok(result) => result,
+                        Err(_) => (Err(EventError::RouteTimeout.into()), t),
+                    }
+                } else {
+                    self.send_request(retry_policy, client, req, cluster_name).await
+                };
                 HttpChannel::handle_response(result, route_timeout, version)
             },
         }
@@ -552,6 +616,7 @@ impl HttpChannel {
     pub fn is_https(&self) -> bool {
         match &self.client {
             HttpChannelClient::Plain(_) => false,
+            HttpChannelClient::Unix(_, _) => false,
             HttpChannelClient::Tls(_) => true,
         }
     }
@@ -563,6 +628,7 @@ impl HttpChannel {
     pub fn load(&self) -> u32 {
         let load = match &self.client {
             HttpChannelClient::Plain(sender) => Arc::strong_count(sender.get_or_build()),
+            HttpChannelClient::Unix(_, sender) => Arc::strong_count(sender),
             HttpChannelClient::Tls(sender) => Arc::strong_count(sender.client.get_or_build()),
         };
         u32::try_from(load).unwrap_or(u32::MAX)

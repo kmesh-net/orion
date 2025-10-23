@@ -16,7 +16,7 @@
 //
 
 use super::secret::{TlsCertificate, ValidationContext};
-use crate::config::{cluster, common::*};
+use crate::config::{cluster, common::*, core::Address};
 use base64::Engine as _;
 use compact_str::CompactString;
 use serde::{
@@ -29,10 +29,27 @@ use std::{
     str::FromStr,
 };
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub struct BindDeviceOptions {
+    pub bind_device: Option<BindDevice>,
+    pub bind_address: Option<BindAddress>,
+    pub bind_to_port: Option<bool>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BindDevice {
     /// A interface name as defined by linux `SO_BINDTODEVICE`
     interface: CString,
+}
+
+#[derive(Clone, Debug, Eq, Serialize, Deserialize, PartialEq, Hash)]
+pub struct BindAddress {
+    pub(crate) address: Address,
+}
+impl BindAddress {
+    pub fn address(&self) -> &Address {
+        &self.address
+    }
 }
 
 impl BindDevice {
@@ -354,7 +371,7 @@ mod envoy_conversions {
             let EnvoyTlsParameters {
                 tls_minimum_protocol_version,
                 tls_maximum_protocol_version,
-                cipher_suites,
+                cipher_suites: _,
                 ecdh_curves,
                 signature_algorithms,
                 compliance_policies,
@@ -362,7 +379,7 @@ mod envoy_conversions {
             unsupported_field!(
                 // tls_minimum_protocol_version,
                 // tls_maximum_protocol_version,
-                cipher_suites,
+                //cipher_suites,
                 ecdh_curves,
                 signature_algorithms,
                 compliance_policies
@@ -420,7 +437,7 @@ mod envoy_conversions {
                 tls_certificate_provider_instance,
                 tls_certificate_certificate_provider,
                 tls_certificate_certificate_provider_instance,
-                alpn_protocols,
+                alpn_protocols: _,
                 custom_handshaker,
                 key_log,
                 validation_context_type,
@@ -433,7 +450,7 @@ mod envoy_conversions {
                 tls_certificate_provider_instance,
                 tls_certificate_certificate_provider,
                 tls_certificate_certificate_provider_instance,
-                alpn_protocols,
+                //alpn_protocols,
                 custom_handshaker,
                 key_log, // validation_context_type
                 custom_tls_certificate_selector
@@ -458,9 +475,9 @@ mod envoy_conversions {
     impl TryFrom<EnvoySdsSecretConfig> for SdsConfig {
         type Error = GenericError;
         fn try_from(value: EnvoySdsSecretConfig) -> Result<Self, Self::Error> {
-            let EnvoySdsSecretConfig { name, sds_config } = value;
+            let EnvoySdsSecretConfig { name, sds_config: _ } = value;
             let name: CompactString = required!(name)?.into();
-            unsupported_field!(sds_config).with_name(name.clone())?;
+            //unsupported_field!(sds_config).with_name(name.clone())?;
             Ok(Self { name })
         }
     }
@@ -475,8 +492,16 @@ mod envoy_conversions {
                 EnvoyValidationContextType::ValidationContextSdsSecretConfig(x) => {
                     SdsConfig::try_from(x).map(|sds| Self::SdsConfig(sds.name))
                 },
-                EnvoyValidationContextType::CombinedValidationContext(_) => {
-                    Err(GenericError::unsupported_variant("CombinedValidationContext"))
+                EnvoyValidationContextType::CombinedValidationContext(combined_context) => {
+                    if let Some(context) = combined_context.default_validation_context {
+                        context.try_into().map(Self::ValidationContext)
+                    } else if let Some(context) = combined_context.validation_context_sds_secret_config {
+                        SdsConfig::try_from(context).map(|sds| Self::SdsConfig(sds.name))
+                    } else {
+                        Err(GenericError::Message(
+                            "CombinedValidationContext at least one validation method needs to be set".into(),
+                        ))
+                    }
                 },
                 EnvoyValidationContextType::ValidationContextCertificateProvider(_) => {
                     Err(GenericError::unsupported_variant("ValidationContextCertificateProvider"))

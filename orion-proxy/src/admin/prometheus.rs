@@ -18,18 +18,19 @@
 use std::collections::{HashMap, HashSet};
 
 //use ::http::{header, StatusCode};
-use axum::extract::State;
+use axum::extract::{Query, State};
 use orion_metrics::{
     metrics::{clusters, http, listeners, server, server::update_server_metrics, tcp, tls},
     sharded::ShardedU64,
 };
 use prometheus::{Encoder, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder};
+use serde::Deserialize;
 
 use crate::admin::AdminState;
-use ::http::{header::HeaderMap, StatusCode};
+use ::http::{header::HeaderMap, HeaderValue, StatusCode};
 use opentelemetry::KeyValue;
 use std::hash::Hash;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Populates a Prometheus `IntCounterVec` by reading from a `ShardedU64`.
 fn populate_counter_vec<S: Eq + Hash>(
@@ -176,4 +177,33 @@ pub(crate) async fn prometheus_handler(
     headers.insert(::http::header::CONTENT_TYPE, content_type);
 
     Ok((headers, body))
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct QueryParams {
+    usedonly: Option<String>,
+}
+
+use std::fmt::Write;
+pub(crate) async fn stats_handler(
+    Query(params): Query<QueryParams>,
+    State(_state): State<AdminState>,
+) -> Result<(HeaderMap, String), (StatusCode, String)> {
+    let mut response = String::new();
+    debug!("Query params {params:?}");
+    if params.usedonly.is_some() {
+        let _ = writeln!(&mut response, "server.uptime: {}", orion_metrics::metrics::server::util::server_uptime());
+        let _ = writeln!(&mut response, "server.state: {}\n", 0);
+        let _ = writeln!(&mut response, "listener_manager.workers_started: {}", 1);
+        let _ = writeln!(&mut response, "cluster_manager.cds.update_success: {}", 10);
+        let _ = writeln!(&mut response, "cluster_manager.cds.update_rejected: {}", 0);
+        let _ = writeln!(&mut response, "listener_manager.lds.update_success: {}", 10);
+        let _ = writeln!(&mut response, "listener_manager.lds.update_rejected: {}", 0);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(::http::header::CONTENT_TYPE, HeaderValue::from_static("text/plain;utf-8"));
+        Ok((headers, response))
+    } else {
+        Err((StatusCode::NOT_FOUND, "Something wrong".to_owned()))
+    }
 }

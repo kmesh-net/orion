@@ -25,3 +25,6 @@
 [submodule "envoy-data-plane-api/protobuf"]
 	path = envoy-data-plane-api/protobuf
 	url = https://github.com/protocolbuffers/protobuf.git
+[submodule "envoy-data-plane-api/udpa"]
+	path = envoy-data-plane-api/udpa
+	url = https://github.com/cncf/udpa.git

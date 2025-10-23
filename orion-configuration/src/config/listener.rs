@@ -20,11 +20,11 @@ use super::{
         access_log::{AccessLog, AccessLogConf},
         HttpConnectionManager, NetworkRbac, TcpProxy,
     },
-    transport::{BindDevice, CommonTlsContext},
+    transport::CommonTlsContext,
     GenericError,
 };
-use crate::config::listener;
 use crate::config::network_filters::tracing::{TracingConfig, TracingKey};
+use crate::config::{listener, transport::BindDeviceOptions};
 use compact_str::CompactString;
 use ipnet::IpNet;
 use orion_interner::StringInterner;
@@ -44,8 +44,8 @@ pub struct Listener {
     pub address: ListenerAddress,
     #[serde(with = "serde_filterchains")]
     pub filter_chains: HashMap<FilterChainMatch, FilterChain>,
-    #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
-    pub bind_device: Option<BindDevice>,
+    #[serde(default = "Default::default")]
+    pub bind_device_options: BindDeviceOptions,
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub with_tls_inspector: bool,
     #[serde(skip_serializing_if = "Option::is_none", default = "Default::default")]
@@ -194,6 +194,27 @@ pub struct FilterChainMatch {
     pub source_prefix_ranges: Vec<IpNet>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Default::default")]
     pub source_ports: Vec<u16>,
+
+    pub transport_protocol: String,
+    pub application_protocols: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum DetectedTransportProtocol {
+    RawBuffer,
+    Ssl,
+}
+
+impl TryFrom<&str> for DetectedTransportProtocol {
+    type Error = GenericError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "raw_buffer" => Ok(Self::RawBuffer),
+            "ssl" => Ok(Self::Ssl),
+            _ => Err(GenericError::Message("Invalid value for DetectedTransportProtocol".into())),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -280,6 +301,23 @@ impl FilterChainMatch {
             .unwrap_or(MatchResult::NoRule)
     }
 
+    pub fn matches_detected_transport_protocol(
+        &self,
+        detected_transport_protocol: DetectedTransportProtocol,
+    ) -> MatchResult {
+        if self.transport_protocol.is_empty() {
+            MatchResult::NoRule
+        } else if let Ok(transport_protocol) = DetectedTransportProtocol::try_from(self.transport_protocol.as_str()) {
+            if transport_protocol == detected_transport_protocol {
+                MatchResult::Matched(0)
+            } else {
+                MatchResult::FailedMatch
+            }
+        } else {
+            MatchResult::FailedMatch
+        }
+    }
+
     pub fn matches_source_port(&self, source_port: u16) -> MatchResult {
         if self.source_ports.is_empty() {
             MatchResult::NoRule
@@ -334,6 +372,7 @@ mod envoy_conversions {
     use std::str::FromStr;
 
     use super::{FilterChain, FilterChainMatch, Listener, MainFilter, ServerNameMatch, TlsConfig};
+    use crate::config::transport::BindDeviceOptions;
     use crate::config::{
         common::*,
         core::{Address, CidrRange},
@@ -362,6 +401,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use tracing::warn;
 
     impl TryFrom<EnvoyListener> for Listener {
         type Error = GenericError;
@@ -371,35 +411,35 @@ mod envoy_conversions {
                 address,
                 additional_addresses,
                 stat_prefix,
-                filter_chains,
+                filter_chains: envoy_filter_chains,
                 filter_chain_matcher,
-                use_original_dst,
-                default_filter_chain,
+                use_original_dst: _,
+                default_filter_chain: _,
                 per_connection_buffer_limit_bytes,
                 metadata,
                 deprecated_v1,
                 drain_type,
                 listener_filters,
-                listener_filters_timeout,
-                continue_on_listener_filters_timeout,
+                listener_filters_timeout: _,
+                continue_on_listener_filters_timeout: _,
                 transparent,
                 freebind,
                 socket_options,
                 tcp_fast_open_queue_length,
-                traffic_direction,
+                traffic_direction: _,
                 udp_listener_config,
                 api_listener,
                 connection_balance_config,
                 reuse_port,
                 enable_reuse_port,
-                access_log,
+                access_log: _,
                 tcp_backlog_size,
-                max_connections_to_accept_per_socket_event,
+                max_connections_to_accept_per_socket_event: _,
                 bind_to_port,
                 enable_mptcp,
-                ignore_global_conn_limit,
+                ignore_global_conn_limit: _,
                 listener_specifier,
-                bypass_overload_manager,
+                bypass_overload_manager: _,
                 fcds_config,
             } = envoy;
             unsupported_field!(
@@ -409,41 +449,43 @@ mod envoy_conversions {
                 stat_prefix,
                 // filter_chains,
                 filter_chain_matcher,
-                use_original_dst,
-                default_filter_chain,
+                //use_original_dst,
+                //default_filter_chain,
                 per_connection_buffer_limit_bytes,
                 metadata,
                 deprecated_v1,
                 drain_type,
                 // listener_filters,
-                listener_filters_timeout,
-                continue_on_listener_filters_timeout,
+                //  listener_filters_timeout,
+                //continue_on_listener_filters_timeout,
                 transparent,
                 freebind,
                 // socket_options,
                 tcp_fast_open_queue_length,
-                traffic_direction,
+                //traffic_direction,
                 udp_listener_config,
                 api_listener,
                 connection_balance_config,
                 reuse_port,
                 enable_reuse_port,
-                access_log,
+                //access_log,
                 tcp_backlog_size,
-                max_connections_to_accept_per_socket_event,
-                bind_to_port,
+                //max_connections_to_accept_per_socket_event,
                 enable_mptcp,
-                ignore_global_conn_limit,
+                //                ignore_global_conn_limit,
                 listener_specifier,
-                bypass_overload_manager,
+                //bypass_overload_manager,
                 fcds_config
             )?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
+
                 let address_result = convert_opt!(address)?;
                 let address = match address_result {
-                    Address::Socket(socket_addr) => crate::config::listener::ListenerAddress::Socket(socket_addr),
+                    Address::Socket(_, _) => {
+                        crate::config::listener::ListenerAddress::Socket(address_result.into_socket_addr()?)
+                    },
                     Address::Internal(_internal_addr) => {
                         crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
                             buffer_size_kb: None, // Default buffer size, can be configured via bootstrap extension
@@ -453,12 +495,14 @@ mod envoy_conversions {
                         return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
                     },
                 };
+                let filter_chains = envoy_filter_chains.clone();
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();
 
                 // This is a hard requirement from Envoy as otherwise it can't pick which filterchain to use.
                 if filter_chains.len() != n_filter_chains {
+                    warn!("Duplicate filter chains {:?}", envoy_filter_chains);
                     return Err(GenericError::from_msg("filter chain contains duplicate filter_chain_match entries")
                         .with_node("filter_chains"));
                 }
@@ -484,6 +528,9 @@ mod envoy_conversions {
                             }
                             proxy_protocol_config = Some(config);
                         },
+
+                        ListenerFilterConfig::Ignored => (),
+
                         ListenerFilterConfig::TlvListenerFilter(config) => {
                             if with_tlv_listener_filter {
                                 return Err(GenericError::from_msg("duplicate TLV listener filter"))
@@ -500,11 +547,17 @@ mod envoy_conversions {
                         .with_node("socket_options");
                 }
                 let bind_device = bind_device.into_iter().next();
+
                 Ok(Self {
                     name,
                     address,
                     filter_chains,
-                    bind_device,
+
+                    bind_device_options: BindDeviceOptions {
+                        bind_device,
+                        bind_to_port: bind_to_port.map(|v| v.value),
+                        ..Default::default()
+                    },
                     with_tls_inspector,
                     proxy_protocol_config,
                     with_tlv_listener_filter,
@@ -526,18 +579,19 @@ mod envoy_conversions {
                 use_proxy_proto,
                 metadata,
                 transport_socket,
-                transport_socket_connect_timeout,
+                transport_socket_connect_timeout: _,
                 name,
             } = envoy;
             unsupported_field!(
                 // filter_chain_match,
                 // filters,
                 use_proxy_proto,
-                metadata,
-                // transport_socket,
-                transport_socket_connect_timeout // name,
+                metadata // transport_socket,
+                         //transport_socket_connect_timeout // name,
             )?;
-            let name: CompactString = if name.is_empty() { "".into() } else { name.into() };
+
+            let name: CompactString = if name.is_empty() { "filter_chain".into() } else { name.into() };
+
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
                 let filter_chain_match = filter_chain_match
@@ -598,6 +652,7 @@ mod envoy_conversions {
                                     }
                                 }
                             },
+                            SupportedEnvoyFilter::Ignored => Ok(()),
                         },
                         Err(e) => Err(e),
                     }
@@ -649,12 +704,11 @@ mod envoy_conversions {
                 address_suffix,
                 suffix_len,
                 direct_source_prefix_ranges,
-                source_type,
-                // source_prefix_ranges,
-                // source_ports,
-                // server_names,
-                transport_protocol,
-                application_protocols
+                source_type // source_prefix_ranges,
+                            // source_ports,
+                            // server_names,
+                            //transport_protocol,
+                            //application_protocols
             )?;
             let server_names = server_names
                 .into_iter()
@@ -679,7 +733,15 @@ mod envoy_conversions {
                 .map(|envoy| CidrRange::try_from(envoy).map(CidrRange::into_ipnet))
                 .collect::<Result<_, _>>()
                 .with_node("source_prefix_ranges")?;
-            Ok(Self { server_names, destination_port, source_ports, destination_prefix_ranges, source_prefix_ranges })
+            Ok(Self {
+                server_names,
+                destination_port,
+                source_ports,
+                destination_prefix_ranges,
+                source_prefix_ranges,
+                transport_protocol,
+                application_protocols,
+            })
         }
     }
 
@@ -718,6 +780,7 @@ mod envoy_conversions {
         HttpConnectionManager(EnvoyHttpConnectionManager),
         NetworkRbac(EnvoyNetworkRbac),
         TcpProxy(EnvoyTcpProxy),
+        Ignored,
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -733,8 +796,14 @@ mod envoy_conversions {
             "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy" => {
                 EnvoyTcpProxy::decode(typed_config.value.as_slice()).map(Self::TcpProxy)
             },
+            "type.googleapis.com/stats.PluginConfig" | "type.googleapis.com/udpa.type.v1.TypedStruct"=> {
+                Ok(Self::Ignored)
+            }
             _ => {
-                return Err(GenericError::unsupported_variant(typed_config.type_url));
+                return Err(GenericError::unsupported_variant(format!(
+                        "Supported Envoy Filter unsupported variant {}",
+                        typed_config.type_url
+                    )))
             },
         }
         .map_err(|e| {

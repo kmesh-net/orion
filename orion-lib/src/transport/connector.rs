@@ -27,6 +27,7 @@ use std::{
 use http::uri::Authority;
 use hyper::Uri;
 use hyper_util::rt::TokioIo;
+use orion_configuration::config::transport::BindDeviceOptions;
 use orion_error::{Context, WithContext};
 use orion_format::types::ResponseFlags;
 use pingora_timeout::fast_timeout::fast_timeout;
@@ -36,7 +37,7 @@ use tracing::debug;
 
 use crate::event_error::{elapsed, EventError};
 
-use super::{bind_device::BindDevice, resolve};
+use super::resolve;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -56,7 +57,7 @@ pub struct TcpErrorContext {
 pub struct LocalConnectorWithDNSResolver {
     pub addr: Authority,
     pub cluster_name: &'static str,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
     pub timeout: Option<Duration>,
 }
 
@@ -66,7 +67,8 @@ impl LocalConnectorWithDNSResolver {
         &self,
     ) -> impl Future<Output = std::result::Result<(TcpStream, &'static str), WithContext<ConnectError>>> + 'static {
         let addr = self.addr.clone();
-        let device = self.bind_device.clone();
+        let device = self.bind_device_options.bind_device.clone();
+        let bind_address = self.bind_device_options.bind_address.clone();
         let cluster_name = self.cluster_name;
         let connection_timeout = self.timeout;
 
@@ -135,6 +137,47 @@ impl LocalConnectorWithDNSResolver {
                         })
                         .map_into()
                 })?;
+            }
+
+            if let Some(bind_addr) = bind_address {
+                let address = bind_addr.address();
+                match address {
+                    orion_configuration::config::core::envoy_conversions::Address::Socket(_, _) => {
+                        let maybe_socket_addr = address.clone().into_socket_addr();
+                        let bind_address = maybe_socket_addr
+                            .map_err(|e| {
+                                EventError::IoError(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))
+                            })
+                            .map_err(|e| {
+                                WithContext::new(e)
+                                    .with_context_data(TcpErrorContext {
+                                        upstream_addr: addr,
+                                        response_flags: ResponseFlags::LOCAL_RESET,
+                                        cluster_name,
+                                    })
+                                    .map_into()
+                            })?;
+
+                        let maybe_error = sock.bind(bind_address);
+                        debug!("LocalConnectorWithDNSResolver socket bound to {bind_address} {maybe_error:?}");
+                        maybe_error
+                            .map_err(|e| {
+                                EventError::IoError(io::Error::new(io::ErrorKind::AddrNotAvailable, e.to_string()))
+                            })
+                            .map_err(|e| {
+                                WithContext::new(e)
+                                    .with_context_data(TcpErrorContext {
+                                        upstream_addr: addr,
+                                        response_flags: ResponseFlags::LOCAL_RESET,
+                                        cluster_name,
+                                    })
+                                    .map_into()
+                            })?
+                    },
+
+                    orion_configuration::config::core::envoy_conversions::Address::Pipe(_, _)
+                    | orion_configuration::config::core::envoy_conversions::Address::Internal(_) => (),
+                }
             }
 
             let stream = if let Some(connection_timeout) = connection_timeout {

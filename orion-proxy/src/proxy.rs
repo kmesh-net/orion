@@ -110,7 +110,7 @@ fn launch_runtimes(
     bootstrap: Bootstrap,
     access_log_config: Option<AccessLogConfig>,
     ct: tokio_util::sync::CancellationToken,
-) -> Result<()> {
+) -> Result<Vec<ConfigurationSenders>> {
     let rt_config = runtime_config();
     let num_runtimes = rt_config.num_runtimes();
     let num_cpus = rt_config.num_cpus();
@@ -134,18 +134,8 @@ fn launch_runtimes(
         .flat_map(orion_configuration::config::Listener::get_tracing_configurations)
         .collect::<HashMap<_, _>>();
 
-    // The xDS runtime always runs - this is necessary for initialization even if we do not
-    // use dynamic updates from remote xDS servers. The decision on whether dynamic updates
-    // are used is based on:
-    // - The bootstrap loader from orion-data-plane-api gets the list of cluster names used
-    //   in dynamic_resources/ads_config (for grpc_services)
-    // - resolve ads clusters into endpoints, to be used as xDS address
-    // TODO: the xDS client could receive updates for endpoints too i.e. dynamic clusters. We
-    // should replace this with passing a configuration receiver. For now endpoints from
-    // static clusters.
-
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
-    let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into() });
+    let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into(), metadata: None });
 
     let (secret_manager, listener_factories, clusters) =
         get_listeners_and_clusters(bootstrap.clone()).with_context_msg("Failed to get listeners and clusters")?;
@@ -157,7 +147,7 @@ fn launch_runtimes(
 
     let config = ProxyConfiguration {
         node,
-        configuration_senders: config_senders,
+        configuration_senders: config_senders.clone(),
         secret_manager,
         listener_factories,
         clusters,
@@ -217,7 +207,7 @@ fn launch_runtimes(
             warn!("Closing handler with error {err:?}");
         }
     }
-    Ok(())
+    Ok(config_senders)
 }
 
 fn spawn_proxy_runtime_from_thread(

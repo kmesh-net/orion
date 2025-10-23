@@ -15,7 +15,11 @@
 //
 //
 
-use std::{fmt::Debug, marker::PhantomData, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    marker::PhantomData,
+    sync::Arc,
+};
 
 use http::uri::Authority;
 use rustc_hash::FxHashMap as HashMap;
@@ -109,7 +113,7 @@ where
 impl<B, E> Balancer<E> for DefaultBalancer<B, E>
 where
     B: Debug + Balancer<E> + FromIterator<Arc<E>>,
-    E: Debug + WeightedEndpoint,
+    E: Display + Debug + WeightedEndpoint,
 {
     fn next_item(&mut self, hash: Option<u64>) -> Option<Arc<E>> {
         let priority = self.priority_level_lb.next_item(None);
@@ -117,7 +121,11 @@ where
         let priority = priority?;
         let priority_info = self.priorities.get_mut(&priority)?;
         let endpoint = priority_info.balancer.next_item(hash);
-        debug!("Selecting endpoint {endpoint:?} based on {priority_info:?}");
+        let pi = std::any::type_name::<DefaultBalancer<B, E>>();
+        debug!(
+            "Selecting endpoint {} based on {pi:?}",
+            endpoint.as_ref().map(|e| (*e).to_string()).unwrap_or_default(),
+        );
         let endpoint = endpoint?;
         Some(endpoint)
     }
@@ -149,9 +157,6 @@ where
 
 #[cfg(test)]
 mod test {
-    use orion_configuration::config::cluster::HttpProtocolOptions;
-    use std::sync::Arc;
-
     use super::DefaultBalancer;
     use crate::{
         clusters::{
@@ -161,6 +166,8 @@ mod test {
         },
         transport::UpstreamTransportSocketConfigurator,
     };
+    use orion_configuration::config::{cluster::HttpProtocolOptions, transport::BindDeviceOptions};
+    use std::sync::Arc;
     type TestpointData = (u32, u32, Vec<(http::uri::Authority, u32, HealthStatus)>);
 
     fn get_locality_endpoints(data: Vec<TestpointData>) -> Vec<LocalityLbEndpoints> {
@@ -173,7 +180,14 @@ mod test {
                 if health_status == HealthStatus::Healthy {
                     healthy += 1;
                 }
-                lb_endpoints.push(Arc::new(LbEndpoint::new(auth, "test_cluster", None, weight, health_status)));
+
+                lb_endpoints.push(Arc::new(LbEndpoint::new(
+                    auth,
+                    "test_cluster",
+                    BindDeviceOptions::default(),
+                    weight,
+                    health_status,
+                )));
             }
 
             loc_lb_endpoints.push(LocalityLbEndpoints {
@@ -235,6 +249,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -298,6 +313,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -361,6 +377,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -424,6 +441,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -487,6 +505,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -550,6 +569,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();
@@ -613,6 +633,7 @@ mod test {
                 r.map(|f| match &f.address {
                     EndpointAddressType::Socket(authority, _, _) => authority.to_string(),
                     EndpointAddressType::Internal(internal, _) => internal.server_listener_name.to_string(),
+                    EndpointAddressType::Pipe(pipe_name, ..) => pipe_name.to_owned(),
                 })
             })
             .collect();

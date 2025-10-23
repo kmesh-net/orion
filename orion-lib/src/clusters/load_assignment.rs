@@ -15,14 +15,19 @@
 //
 //
 
-use std::{sync::Arc, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 
 use compact_str::CompactString;
 use http::uri::Authority;
-use orion_configuration::config::cluster::{
-    ClusterLoadAssignment as ClusterLoadAssignmentConfig, EndpointAddress, HealthStatus, HttpProtocolOptions,
-    InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
-    LocalityLbEndpoints as LocalityLbEndpointsConfig,
+
+use orion_configuration::config::{
+    cluster::{
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthStatus, HttpProtocolOptions,
+        InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
+        LocalityLbEndpoints as LocalityLbEndpointsConfig,
+    },
+    core::envoy_conversions::{Address, InternalAddress},
+    transport::BindDeviceOptions,
 };
 use tracing::debug;
 use typed_builder::TypedBuilder;
@@ -34,29 +39,37 @@ use super::{
         ring::RingHashBalancer, wrr::WeightedRoundRobinBalancer, Balancer, DefaultBalancer, EndpointWithAuthority,
         EndpointWithLoad, WeightedEndpoint,
     },
-    // cluster::HyperService,
     health::{EndpointHealth, ValueUpdated},
 };
 use crate::{
     transport::{
-        bind_device::BindDevice, GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector,
-        UpstreamTransportSocketConfigurator,
+        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
     },
     Result,
 };
+
+static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct LbEndpoint {
     pub name: CompactString,
     pub address: EndpointAddressType,
-    pub bind_device: Option<BindDevice>,
+    pub bind_device_options: BindDeviceOptions,
+
     pub weight: u32,
     pub health_status: HealthStatus,
+}
+
+impl Display for LbEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!(" LbEndpoint  {}", self.address).as_str())
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum EndpointAddressType {
     Socket(http::uri::Authority, HttpChannel, TcpChannelConnector),
+    Pipe(String, u32, HttpChannel, TcpChannelConnector),
     Internal(InternalEndpointAddress, InternalConnection),
 }
 
@@ -72,18 +85,33 @@ impl PartialEq for EndpointAddressType {
 
 impl Eq for EndpointAddressType {}
 
-impl EndpointAddressType {
-    pub fn to_endpoint_address(&self) -> EndpointAddress {
+impl Display for EndpointAddressType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EndpointAddressType::Socket(authority, _, _) => {
-                let addr_str = authority.as_str();
-                if let Ok(socket_addr) = addr_str.parse::<std::net::SocketAddr>() {
-                    EndpointAddress::Socket(socket_addr)
-                } else {
-                    panic!("Cannot convert authority back to socket address: {}", addr_str);
-                }
+                f.write_str(format!("EndpointAddressType::Socket {authority}").as_str())
             },
-            EndpointAddressType::Internal(internal_addr, _) => EndpointAddress::Internal(internal_addr.clone()),
+            EndpointAddressType::Pipe(name, options, _, _) => {
+                f.write_str(format!("EndpointAddressType::Pipe {name} {options}").as_str())
+            },
+            EndpointAddressType::Internal(internal_endpoint_address, _) => {
+                f.write_str(format!("EndpointAddressType::Internal {internal_endpoint_address:?}").as_str())
+            },
+        }
+    }
+}
+
+impl EndpointAddressType {
+    pub fn to_address(&self) -> Address {
+        match self {
+            EndpointAddressType::Socket(authority, _, _) => {
+                Address::Socket(authority.host().to_owned(), authority.port().map(|p| p.as_u16()).unwrap_or_default())
+            },
+            EndpointAddressType::Internal(internal_addr, _) => Address::Internal(InternalAddress {
+                server_listener_name: internal_addr.server_listener_name.clone(),
+                endpoint_id: internal_addr.endpoint_id.clone(),
+            }),
+            EndpointAddressType::Pipe(name, flags, _, _) => Address::Pipe(name.to_owned(), *flags),
         }
     }
 }
@@ -98,9 +126,12 @@ impl Ord for EndpointAddressType {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
             (Self::Socket(a, _, _), Self::Socket(b, _, _)) => a.as_str().cmp(b.as_str()),
+            (Self::Pipe(a, _, _, _), Self::Pipe(b, _, _, _)) => a.as_str().cmp(b.as_str()),
             (Self::Internal(a, _), Self::Internal(b, _)) => a.cmp(b),
-            (Self::Socket(_, _, _), Self::Internal(_, _)) => std::cmp::Ordering::Less,
-            (Self::Internal(_, _), Self::Socket(_, _, _)) => std::cmp::Ordering::Greater,
+            (Self::Socket(_, _, _) | Self::Pipe(_, _, _, _), Self::Internal(_, _))
+            | (Self::Socket(_, _, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Less,
+            (Self::Pipe(_, _, _, _) | Self::Internal(_, _), Self::Socket(_, _, _))
+            | (Self::Internal(_, _), Self::Pipe(_, _, _, _)) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -119,22 +150,13 @@ impl PartialEq for LbEndpoint {
 
 impl LbEndpoint {
     pub fn authority(&self) -> &Authority {
-        match &self.address {
-            EndpointAddressType::Socket(authority, _, _) => authority,
-            EndpointAddressType::Internal(_, _) => {
-                // For internal endpoints, return a static dummy authority and log a warning
-                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
-                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
-                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
-                authority
-            },
-        }
+        (&self.address).into()
     }
 
     pub fn socket_authority(&self) -> Option<&Authority> {
         match &self.address {
             EndpointAddressType::Socket(authority, _, _) => Some(authority),
-            EndpointAddressType::Internal(_, _) => None,
+            EndpointAddressType::Internal(_, _) | EndpointAddressType::Pipe(_, _, _, _) => None,
         }
     }
 }
@@ -145,18 +167,29 @@ impl WeightedEndpoint for LbEndpoint {
     }
 }
 
-impl EndpointWithAuthority for LbEndpoint {
-    fn authority(&self) -> &Authority {
-        match &self.address {
+impl<'a> From<&'a EndpointAddressType> for &'a Authority {
+    fn from(value: &'a EndpointAddressType) -> Self {
+        match &value {
             EndpointAddressType::Socket(authority, _, _) => authority,
             EndpointAddressType::Internal(_, _) => {
                 // For internal endpoints, return a static dummy authority and log a warning
-                static DUMMY_AUTHORITY: std::sync::OnceLock<Authority> = std::sync::OnceLock::new();
-                let authority = DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("internal.invalid"));
+                let authority = dummy_authority();
+                tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
+                authority
+            },
+            EndpointAddressType::Pipe(_, _, _, _) => {
+                // For internal endpoints, return a static dummy authority and log a warning
+                let authority = dummy_authority();
                 tracing::warn!("Internal endpoints don't have authorities, returning dummy authority");
                 authority
             },
         }
+    }
+}
+
+impl EndpointWithAuthority for LbEndpoint {
+    fn authority(&self) -> &Authority {
+        (&self.address).into()
     }
 }
 
@@ -174,8 +207,21 @@ impl Ord for LbEndpoint {
             (EndpointAddressType::Internal(a, _), EndpointAddressType::Internal(b, _)) => {
                 a.server_listener_name.cmp(&b.server_listener_name)
             },
-            (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Internal(_, _)) => std::cmp::Ordering::Less,
-            (EndpointAddressType::Internal(_, _), EndpointAddressType::Socket(_, _, _)) => std::cmp::Ordering::Greater,
+            (EndpointAddressType::Pipe(a1, a2, _, _), EndpointAddressType::Pipe(o1, o2, _, _)) => {
+                (a1, a2).cmp(&(o1, o2))
+            },
+            (
+                EndpointAddressType::Socket(_, _, _) | EndpointAddressType::Pipe(_, _, _, _),
+                EndpointAddressType::Internal(_, _),
+            )
+            | (EndpointAddressType::Socket(_, _, _), EndpointAddressType::Pipe(_, _, _, _)) => std::cmp::Ordering::Less,
+            (EndpointAddressType::Pipe(_, _, _, _), EndpointAddressType::Socket(_, _, _)) => {
+                std::cmp::Ordering::Greater
+            },
+            (
+                EndpointAddressType::Internal(_, _),
+                EndpointAddressType::Socket(_, _, _) | EndpointAddressType::Pipe(_, _, _, _),
+            ) => std::cmp::Ordering::Greater,
         }
     }
 }
@@ -196,6 +242,9 @@ impl LbEndpoint {
             EndpointAddressType::Socket(authority, http_channel, _) => {
                 GrpcService::try_new(http_channel.clone(), authority.clone())
             },
+            EndpointAddressType::Pipe(_name, _, http_channel, __) => {
+                GrpcService::try_new(http_channel.clone(), dummy_authority().clone())
+            },
             EndpointAddressType::Internal(_, _) => Err("Internal endpoints don't support gRPC service yet".into()),
         }
     }
@@ -203,13 +252,15 @@ impl LbEndpoint {
     pub fn http_channel(&self) -> Option<&HttpChannel> {
         match &self.address {
             EndpointAddressType::Socket(_, http_channel, _) => Some(http_channel),
+            EndpointAddressType::Pipe(_name, _, http_channel, __) => Some(http_channel),
             EndpointAddressType::Internal(_, _) => None,
         }
     }
 
     pub fn tcp_channel(&self) -> Option<&TcpChannelConnector> {
         match &self.address {
-            EndpointAddressType::Socket(_, _, tcp_channel) => Some(tcp_channel),
+            EndpointAddressType::Socket(_, _, tcp_channel_connector) => Some(tcp_channel_connector),
+            EndpointAddressType::Pipe(_name, _, _http_channel, tcp_channel_connector) => Some(tcp_channel_connector),
             EndpointAddressType::Internal(_, _) => None,
         }
     }
@@ -217,8 +268,8 @@ impl LbEndpoint {
 
 #[derive(Debug, Clone)]
 pub struct PartialLbEndpoint {
-    pub address: EndpointAddress,
-    pub bind_device: Option<BindDevice>,
+    pub address: Address,
+    pub bind_device_options: BindDeviceOptions,
     pub weight: u32,
     pub health_status: HealthStatus,
 }
@@ -226,8 +277,8 @@ pub struct PartialLbEndpoint {
 impl PartialLbEndpoint {
     fn new(value: &LbEndpoint) -> Self {
         PartialLbEndpoint {
-            address: value.address.to_endpoint_address(),
-            bind_device: value.bind_device.clone(),
+            address: value.address.to_address(),
+            bind_device_options: value.bind_device_options.clone(),
             weight: value.weight,
             health_status: value.health_status,
         }
@@ -237,7 +288,9 @@ impl PartialLbEndpoint {
 impl EndpointWithLoad for LbEndpoint {
     fn http_load(&self) -> u32 {
         match &self.address {
-            EndpointAddressType::Socket(_, http_channel, _) => http_channel.load(),
+            EndpointAddressType::Socket(_, http_channel, _) | EndpointAddressType::Pipe(_, _, http_channel, _) => {
+                http_channel.load()
+            },
             EndpointAddressType::Internal(_, _) => 0, // Internal endpoints don't have HTTP load tracking yet
         }
     }
@@ -257,40 +310,71 @@ struct LbEndpointBuilder {
 
 impl LbEndpointBuilder {
     #[must_use]
-    fn replace_bind_device(mut self, bind_device: Option<BindDevice>) -> Self {
-        self.endpoint.bind_device = bind_device;
+    fn replace_bind_device_options(mut self, bind_device_options: BindDeviceOptions) -> Self {
+        self.endpoint.bind_device_options = bind_device_options;
         self
     }
 
     pub fn build(self) -> Result<Arc<LbEndpoint>> {
         let cluster_name = self.cluster_name;
-        let PartialLbEndpoint { ref address, bind_device, weight, health_status } = self.endpoint;
+
+        let PartialLbEndpoint { ref address, bind_device_options, weight, health_status } = self.endpoint;
 
         let address = match address {
-            EndpointAddress::Socket(socket_addr) => {
-                let authority = http::uri::Authority::try_from(format!("{socket_addr}"))?;
-                let mut builder = HttpChannelBuilder::new(bind_device.clone())
+            Address::Socket(hostname, port) => {
+                let authority = http::uri::Authority::try_from(format!("{hostname}:{port}"))?;
+                let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
-                    .with_authority(authority.clone());
+                    .with_address(address.clone())
+                    .with_authority(authority.clone())
+                    .with_cluster_name(cluster_name);
 
                 // Configure TLS if needed
                 if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
-                    builder = builder.with_tls(Some(tls_configurator.clone()));
+                    builder = builder.with_tls(Some(tls_configurator.clone()))
+                }
+                if let Some(server_name) = self.server_name.as_ref() {
+                    builder = builder.with_server_name(server_name.clone());
                 }
 
-                let builder = if let Some(_bind_device) = &bind_device { builder } else { builder };
                 let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
                 let tcp_channel = TcpChannelConnector::new(
                     &authority,
                     cluster_name,
-                    bind_device.clone(),
+                    bind_device_options.clone(),
                     self.connect_timeout,
                     self.transport_socket.clone(),
                 );
                 EndpointAddressType::Socket(authority, http_channel, tcp_channel)
             },
-            EndpointAddress::Internal(internal_addr) => EndpointAddressType::Internal(
-                internal_addr.clone(),
+            Address::Pipe(_, _) => {
+                let authority = dummy_authority().clone();
+                let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
+                    .with_timeout(self.connect_timeout)
+                    .with_authority(authority.clone())
+                    .with_address(address.clone())
+                    .with_cluster_name(cluster_name);
+
+                // Configure TLS if needed
+                if let UpstreamTransportSocketConfigurator::Tls(tls_configurator) = &self.transport_socket {
+                    builder = builder.with_tls(Some(tls_configurator.clone()));
+                }
+                if let Some(server_name) = self.server_name.as_ref() {
+                    builder = builder.with_server_name(server_name.clone());
+                }
+
+                let http_channel = builder.with_http_protocol_options(self.http_protocol_options).build()?;
+                let tcp_channel = TcpChannelConnector::new(
+                    &authority,
+                    cluster_name,
+                    bind_device_options.clone(),
+                    self.connect_timeout,
+                    self.transport_socket.clone(),
+                );
+                EndpointAddressType::Socket(authority, http_channel, tcp_channel)
+            },
+            Address::Internal(internal_addr) => EndpointAddressType::Internal(
+                InternalEndpointAddress::from(internal_addr.clone()),
                 InternalConnection {
                     server_listener_name: internal_addr.server_listener_name.clone(),
                     endpoint_id: internal_addr.endpoint_id.clone(),
@@ -298,7 +382,13 @@ impl LbEndpointBuilder {
             ),
         };
 
-        Ok(Arc::new(LbEndpoint { name: cluster_name.into(), address, bind_device, weight, health_status }))
+        Ok(Arc::new(LbEndpoint {
+            name: cluster_name.into(),
+            address,
+            bind_device_options: bind_device_options.clone(),
+            weight,
+            health_status,
+        }))
     }
 }
 
@@ -308,8 +398,9 @@ impl TryFrom<LbEndpointConfig> for PartialLbEndpoint {
     fn try_from(lb_endpoint: LbEndpointConfig) -> Result<Self> {
         let health_status = lb_endpoint.health_status;
         let address = lb_endpoint.address;
+
         let weight = lb_endpoint.load_balancing_weight.into();
-        Ok(PartialLbEndpoint { address, bind_device: None, weight, health_status })
+        Ok(PartialLbEndpoint { address, bind_device_options: BindDeviceOptions::default(), weight, health_status })
     }
 }
 
@@ -354,7 +445,7 @@ pub struct PartialLocalityLbEndpoints {
 #[builder(build_method(vis="", name=prepare), field_defaults(setter(prefix = "with_")))]
 pub struct LocalityLbEndpointsBuilder {
     cluster_name: &'static str,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     endpoints: PartialLocalityLbEndpoints,
     http_protocol_options: HttpProtocolOptions,
     transport_socket: UpstreamTransportSocketConfigurator,
@@ -380,7 +471,7 @@ impl LocalityLbEndpointsBuilder {
                     .with_server_name(server_name)
                     .with_http_protocol_options(self.http_protocol_options.clone())
                     .prepare()
-                    .replace_bind_device(self.bind_device.clone())
+                    .replace_bind_device_options(self.bind_device_options.clone())
                     .build()
             })
             .collect::<Result<_>>()?;
@@ -466,6 +557,11 @@ pub struct ClusterLoadAssignment {
 pub struct PartialClusterLoadAssignment {
     endpoints: Vec<PartialLocalityLbEndpoints>,
 }
+impl PartialClusterLoadAssignment {
+    pub fn is_empty(&self) -> bool {
+        self.endpoints.is_empty()
+    }
+}
 
 impl ClusterLoadAssignment {
     pub fn get_http_channel(&mut self, hash: Option<HashState>) -> Result<HttpChannel> {
@@ -538,7 +634,7 @@ impl ClusterLoadAssignment {
 pub struct ClusterLoadAssignmentBuilder {
     cluster_name: &'static str,
     cla: PartialClusterLoadAssignment,
-    bind_device: Option<BindDevice>,
+    bind_device_options: BindDeviceOptions,
     #[builder(default)]
     protocol_options: Option<HttpProtocolOptions>,
     lb_policy: LbPolicy,
@@ -555,7 +651,6 @@ impl ClusterLoadAssignmentBuilder {
         let protocol_options = self.protocol_options.unwrap_or_default();
 
         let PartialClusterLoadAssignment { endpoints } = self.cla;
-
         let endpoints = endpoints
             .into_iter()
             .map(|e| {
@@ -564,7 +659,7 @@ impl ClusterLoadAssignmentBuilder {
                 LocalityLbEndpointsBuilder::builder()
                     .with_cluster_name(cluster_name)
                     .with_endpoints(e)
-                    .with_bind_device(self.bind_device.clone())
+                    .with_bind_device_options(self.bind_device_options.clone())
                     .with_connection_timeout(self.connection_timeout)
                     .with_transport_socket(self.transport_socket.clone())
                     .with_server_name(server_name)
@@ -600,9 +695,9 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
         let endpoints: Vec<_> =
             cla.endpoints.into_iter().map(PartialLocalityLbEndpoints::try_from).collect::<Result<_>>()?;
 
-        if endpoints.is_empty() {
-            return Err("At least one locality must be specified".into());
-        }
+        // if endpoints.is_empty() {
+        //     return Err("At least one locality must be specified".into());
+        // }
 
         Ok(Self { endpoints })
     }
@@ -610,34 +705,33 @@ impl TryFrom<ClusterLoadAssignmentConfig> for PartialClusterLoadAssignment {
 
 #[cfg(test)]
 mod test {
-    use http::uri::Authority;
-
     use super::{EndpointAddressType, LbEndpoint};
     use crate::{
         clusters::health::HealthStatus,
-        transport::{
-            bind_device::BindDevice, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
-        },
+        transport::{HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     };
+    use http::uri::Authority;
+    use orion_configuration::config::{core::envoy_conversions::Address, transport::BindDeviceOptions};
 
     impl LbEndpoint {
         /// This function is used by unit tests in other modules
         pub fn new(
             authority: Authority,
             cluster_name: &'static str,
-            bind_device: Option<BindDevice>,
+            bind_device_options: BindDeviceOptions,
             weight: u32,
             health_status: HealthStatus,
         ) -> Self {
-            let http_channel = HttpChannelBuilder::new(bind_device.clone())
+            let http_channel = HttpChannelBuilder::new(bind_device_options.clone())
                 .with_authority(authority.clone())
+                .with_address(Address::Socket(authority.host().to_owned(), authority.port_u16().unwrap_or_default()))
                 .with_cluster_name(cluster_name)
                 .build()
                 .unwrap();
             let tcp_channel = TcpChannelConnector::new(
                 &authority,
                 cluster_name,
-                bind_device.clone(),
+                bind_device_options.clone(),
                 None,
                 UpstreamTransportSocketConfigurator::None,
             );
@@ -645,10 +739,14 @@ mod test {
             Self {
                 name: "Cluster".into(),
                 address: EndpointAddressType::Socket(authority, http_channel, tcp_channel),
-                bind_device,
+                bind_device_options,
                 weight,
                 health_status,
             }
         }
     }
+}
+
+fn dummy_authority() -> &'static Authority {
+    DUMMY_AUTHORITY.get_or_init(|| Authority::from_static("invalid.authority"))
 }

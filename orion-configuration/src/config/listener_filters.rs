@@ -27,6 +27,7 @@ pub struct ListenerFilter {
 pub enum ListenerFilterConfig {
     TlsInspector,
     ProxyProtocol(DownstreamProxyProtocolConfig),
+    Ignored,
     TlvListenerFilter(TlvListenerFilterConfig),
 }
 
@@ -68,10 +69,12 @@ mod envoy_conversions {
         prost::Message,
         udpa::r#type::v1::TypedStruct,
     };
+    use tracing::info;
     #[derive(Debug, Clone)]
     enum SupportedEnvoyListenerFilter {
         TlsInspector(EnvoyTlsInspector),
         ProxyProtocol(EnvoyProxyProtocol),
+        Ignored,
         KmeshTlv(EnvoyKmeshTlv),
     }
 
@@ -103,13 +106,25 @@ mod envoy_conversions {
                 "type.googleapis.com/envoy.extensions.filters.listener.proxy_protocol.v3.ProxyProtocol" => {
                     EnvoyProxyProtocol::decode(typed_config.value.as_slice()).map(Self::ProxyProtocol)
                 },
+
+                "type.googleapis.com/udpa.type.v1.TypedStruct"
+                | "type.googleapis.com/stats.PluginConfig"
+                | "type.googleapis.com/envoy.extensions.filters.listener.http_inspector.v3.HttpInspector"
+                | "type.googleapis.com/envoy.extensions.filters.listener.original_dst.v3.OriginalDst" => {
+                    info!("Ignored Istio type {}", typed_config.type_url);
+                    Ok(SupportedEnvoyListenerFilter::Ignored)
+                },
+
                 "type.googleapis.com/envoy.extensions.filters.listener.kmesh_tlv.v3.KmeshTlv" => {
                     let config = EnvoyKmeshTlv::decode(typed_config.value.as_slice())
                         .map_err(|e| GenericError::from_msg_with_cause("failed to decode KmeshTlv protobuf", e))?;
                     Ok(Self::KmeshTlv(config))
                 },
                 _ => {
-                    return Err(GenericError::unsupported_variant(typed_config.type_url));
+                    return Err(GenericError::unsupported_variant(format!(
+                        "Listener filter unsupported variant {}",
+                        typed_config.type_url
+                    )));
                 },
             }
             .map_err(|e| {
@@ -130,8 +145,8 @@ mod envoy_conversions {
     impl TryFrom<EnvoyListenerFilter> for ListenerFilter {
         type Error = GenericError;
         fn try_from(envoy: EnvoyListenerFilter) -> Result<Self, Self::Error> {
-            let EnvoyListenerFilter { name, filter_disabled, config_type } = envoy;
-            unsupported_field!(filter_disabled)?;
+            let EnvoyListenerFilter { name, filter_disabled: _istio_ignore, config_type } = envoy;
+            //unsupported_field!(filter_disabled)?;
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let config = match required!(config_type) {
@@ -156,12 +171,12 @@ mod envoy_conversions {
             match value {
                 SupportedEnvoyListenerFilter::TlsInspector(EnvoyTlsInspector {
                     enable_ja3_fingerprinting,
-                    initial_read_buffer_size,
+                    initial_read_buffer_size: _istio_ignore,
                     enable_ja4_fingerprinting,
                 }) => {
                     // both fields are optional, and unsupported, but serde_yaml requires that at least one field is populated
                     // so allow for enable_ja3_fingerprinting: false
-                    unsupported_field!(initial_read_buffer_size, enable_ja4_fingerprinting)?;
+                    unsupported_field!(enable_ja4_fingerprinting)?;
                     if enable_ja3_fingerprinting.is_some_and(|b| b.value) {
                         return Err(GenericError::UnsupportedField("enable_ja3_fingerprinting"));
                     }
@@ -171,6 +186,9 @@ mod envoy_conversions {
                     let config = DownstreamProxyProtocolConfig::try_from(envoy_proxy_protocol)?;
                     Ok(Self::ProxyProtocol(config))
                 },
+
+                SupportedEnvoyListenerFilter::Ignored => Ok(Self::Ignored),
+
                 SupportedEnvoyListenerFilter::KmeshTlv(config) => {
                     let tlv_config = TlvListenerFilterConfig::try_from(config)?;
                     Ok(Self::TlvListenerFilter(tlv_config))

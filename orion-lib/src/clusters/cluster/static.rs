@@ -51,9 +51,15 @@ impl StaticClusterBuilder {
 pub struct StaticCluster {
     pub name: &'static str,
     pub load_assignment: ClusterLoadAssignment,
-    pub(super) transport_socket: UpstreamTransportSocketConfigurator,
+    pub transport_socket: UpstreamTransportSocketConfigurator,
     pub health_check: Option<HealthCheck>,
     pub config: orion_configuration::config::cluster::Cluster,
+}
+
+impl StaticCluster {
+    pub fn change_load_assignment(&mut self, cluster_load_assignment: ClusterLoadAssignment) {
+        self.load_assignment = cluster_load_assignment;
+    }
 }
 
 impl ClusterOps for StaticCluster {

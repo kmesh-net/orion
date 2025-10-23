@@ -11,7 +11,7 @@ members = [
   "orion-metrics",
   "orion-proxy",
   "orion-tracing",
-  "orion-xds",
+  "orion-xds", "tools/hyper_unix_listener",
 ]
 
 resolver = "2"

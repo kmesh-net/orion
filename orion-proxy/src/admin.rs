@@ -69,8 +69,9 @@ fn build_admin_router(admin_state: AdminState) -> Router {
     }
     #[cfg(feature = "prometheus")]
     {
-        use crate::admin::prometheus::prometheus_handler;
+        use crate::admin::prometheus::{prometheus_handler, stats_handler};
         router = router.route("/stats/prometheus", get(prometheus_handler));
+        router = router.route("/stats", get(stats_handler));
     }
 
     router = router.route("/ready", get(get_ready));
@@ -92,7 +93,7 @@ pub async fn start_admin_server(
     };
     let app = build_admin_router(admin_state);
     let address =
-        bootstrap.admin.ok_or(Error::from("Missing admin configuration in bootstrap"))?.address.into_addr()?;
+        bootstrap.admin.ok_or(Error::from("Missing admin configuration in bootstrap"))?.address.into_socket_addr()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     axum::serve(listener, app).await?;

@@ -42,7 +42,7 @@ pub fn get_listeners_and_clusters(
         .collect::<Result<Vec<_>>>()?;
     if clusters.is_empty() {
         //shouldn't happen with new config
-        return Err::<(SecretManager, Vec<_>, Vec<_>), Error>("No clusters configured".into());
+        return Err::<(SecretManager, Vec<_>, Vec<_>), Error>("No valid clusters configured".into());
     }
     Ok((secret_manager, listeners, clusters))
 }

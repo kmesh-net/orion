@@ -38,7 +38,7 @@ use hyper::{body::Incoming, service::Service, Request, Response};
 use opentelemetry::global::BoxedSpan;
 use opentelemetry::trace::{Span, Status};
 use opentelemetry::KeyValue;
-use orion_configuration::config::GenericError;
+use orion_configuration::config::{ConfigSource, ConfigSourceSpecifier, GenericError};
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
@@ -55,8 +55,7 @@ use orion_configuration::config::network_filters::{
     http_connection_manager::{
         http_filters::{http_rbac::HttpRbac, HttpFilter as HttpFilterConfig, HttpFilterType},
         route::{Action, RouteMatchResult},
-        CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager as HttpConnectionManagerConfig,
-        RdsSpecifier, RouteSpecifier, UpgradeType,
+        CodecType, HttpConnectionManager as HttpConnectionManagerConfig, RdsSpecifier, RouteSpecifier, UpgradeType,
     },
 };
 use orion_format::context::{
@@ -184,6 +183,7 @@ pub enum HttpFilterValue {
     // while Rbac uses a configuration type - we might want to revisit this
     RateLimit(LocalRateLimit),
     Rbac(HttpRbac),
+    Ignored,
 }
 
 impl From<HttpFilterConfig> for HttpFilter {
@@ -192,6 +192,7 @@ impl From<HttpFilterConfig> for HttpFilter {
         let filter = match filter {
             HttpFilterType::RateLimit(r) => HttpFilterValue::RateLimit(r.into()),
             HttpFilterType::Rbac(rbac) => HttpFilterValue::Rbac(rbac),
+            HttpFilterType::Ingored => HttpFilterValue::Ignored,
         };
         Self { name, disabled, filter: Some(filter) }
     }
@@ -202,12 +203,15 @@ impl HttpFilterValue {
         match self {
             HttpFilterValue::Rbac(rbac) => apply_authorization_rules(rbac, request),
             HttpFilterValue::RateLimit(rl) => rl.run(request),
+            HttpFilterValue::Ignored => FilterDecision::Continue,
         }
     }
     pub fn apply_response(&self, _response: &mut Response<PolyBody>) -> FilterDecision {
         match self {
             // RBAC and RateLimit do not apply on the response path
-            HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) => FilterDecision::Continue,
+            HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) | HttpFilterValue::Ignored => {
+                FilterDecision::Continue
+            },
         }
     }
     fn from_filter_override(value: &FilterOverride) -> Option<Self> {
@@ -801,6 +805,9 @@ impl
                                     route_name: &chosen_route.route.name,
                                     retry_policy: chosen_route.vh.retry_policy.as_ref(),
                                     route_match: chosen_route.route_match,
+                                    original_destination_address: downstream_metadata
+                                        .connection
+                                        .original_destination_address(),
                                     remote_address: downstream_metadata.connection.peer_address(),
                                     websocket_enabled_by_default,
                                 },
@@ -1024,7 +1031,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                     add,
                     1,
                     trans_handler.thread_id(),
-                    &[KeyValue::new("listener", listener_name_for_route.to_string())]
+                    &[KeyValue::new("listener", listener_name_for_route.to_owned())]
                 );
 
                 if let Some(state) = trans_handler.span_state.as_ref() {
@@ -1049,7 +1056,7 @@ impl Service<ExtendedRequest<Incoming>> for HttpRequestHandler {
                             add,
                             nbytes + resp_head_size as u64,
                             trans_handler.thread_id(),
-                            &[KeyValue::new("listener", listener_name_for_response.to_string())]
+                            &[KeyValue::new("listener", listener_name_for_response.to_owned())]
                         );
 
                         let is_transaction_complete = if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {

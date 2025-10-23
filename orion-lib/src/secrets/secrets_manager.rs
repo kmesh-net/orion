@@ -48,22 +48,30 @@ impl TryFrom<&ValidationContext> for CertStore {
     type Error = crate::Error;
 
     fn try_from(validation_context: &ValidationContext) -> Result<Self> {
-        let mut ca_reader = validation_context.trusted_ca().into_buf_read()?;
-        let mut root_store = rustls::RootCertStore::empty();
-        let ca_certs = certs(&mut ca_reader)
-            .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
-            .collect::<Result<Vec<_>>>()?;
+        match validation_context {
+            ValidationContext::TrustedCA(data_source) => {
+                let mut ca_reader = data_source.into_buf_read()?;
+                let mut root_store = rustls::RootCertStore::empty();
+                let ca_certs = certs(&mut ca_reader)
+                    .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
+                    .collect::<Result<Vec<_>>>()?;
 
-        if ca_certs.is_empty() {
-            return Err("No certificates have been configured".into());
-        }
+                if ca_certs.is_empty() {
+                    return Err("No certificates have been configured".into());
+                }
 
-        let (good, bad) = root_store.add_parsable_certificates(ca_certs);
-        debug!("Added certs {good} rejected certs {bad}");
-        if bad > 0 {
-            Err("Some certs in the trust store were invalid".into())
-        } else {
-            Ok(CertStore { store: Arc::new(root_store), config: validation_context.clone() })
+                let (good, bad) = root_store.add_parsable_certificates(ca_certs);
+                debug!("Added certs {good} rejected certs {bad}");
+                if bad > 0 {
+                    Err("Some certs in the trust store were invalid".into())
+                } else {
+                    Ok(CertStore { store: Arc::new(root_store), config: validation_context.clone() })
+                }
+            },
+            ValidationContext::None => {
+                let root_store = rustls::RootCertStore::empty();
+                Ok(CertStore { store: Arc::new(root_store), config: validation_context.clone() })
+            },
         }
     }
 }

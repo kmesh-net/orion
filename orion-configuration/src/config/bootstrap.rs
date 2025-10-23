@@ -47,10 +47,20 @@ impl Bootstrap {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Node {
     pub id: CompactString,
     pub cluster_id: CompactString,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub metadata: Option<orion_data_plane_api::envoy_data_plane_api::google::protobuf::Struct>,
+}
+
+impl Eq for Node {}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.cluster_id == other.cluster_id
+    }
 }
 
 impl Node {
@@ -104,7 +114,7 @@ mod envoy_conversions {
     use super::{
         Admin, Bootstrap, BootstrapExtension, DynamicResources, InternalListenerBootstrap, Node, StaticResources,
     };
-    use crate::config::{common::*, core::envoy_conversions::SocketAddressWrapper, grpc::Duration, metrics::StatsSink};
+    use crate::config::{common::*, grpc::Duration, metrics::StatsSink};
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
@@ -123,8 +133,12 @@ mod envoy_conversions {
             },
             extensions::bootstrap::internal_listener::v3::InternalListener as EnvoyInternalListener,
         },
+        google::protobuf::value::Kind,
         prost::Message,
+        udpa::r#type::v1::TypedStruct,
     };
+
+    use tracing::debug;
 
     impl Bootstrap {
         pub fn deserialize_from_envoy<R: std::io::Read>(rdr: R) -> Result<Self, GenericError> {
@@ -147,13 +161,13 @@ mod envoy_conversions {
                 hds_config,
                 flags_path,
                 stats_sinks,
-                deferred_stat_options,
-                stats_config,
+                deferred_stat_options: _,
+                stats_config: _,
                 stats_flush_interval,
                 watchdog,
                 watchdogs,
                 tracing,
-                layered_runtime,
+                layered_runtime: _,
                 admin,
                 overload_manager,
                 enable_dispatcher_stats,
@@ -174,7 +188,7 @@ mod envoy_conversions {
                 xds_delegate_extension,
                 xds_config_tracker_extension,
                 listener_manager,
-                application_log_config,
+                application_log_config: _,
                 grpc_async_client_manager_config,
                 stats_flush,
                 memory_allocator_manager,
@@ -189,13 +203,13 @@ mod envoy_conversions {
                 hds_config,
                 flags_path,
                 // stats_sinks,
-                deferred_stat_options,
-                stats_config,
+                //deferred_stat_options,
+                //stats_config,
                 // stats_flush_interval,
                 watchdog,
                 watchdogs,
                 tracing,
-                layered_runtime,
+                //layered_runtime,
                 //admin,
                 overload_manager,
                 enable_dispatcher_stats,
@@ -204,7 +218,7 @@ mod envoy_conversions {
                 use_tcp_for_dns_lookups,
                 dns_resolution_config,
                 typed_dns_resolver_config,
-                // bootstrap_extensions,
+                //bootstrap_extensions,
                 fatal_actions,
                 config_sources,
                 default_config_source,
@@ -216,7 +230,7 @@ mod envoy_conversions {
                 xds_delegate_extension,
                 xds_config_tracker_extension,
                 listener_manager,
-                application_log_config,
+                //application_log_config,
                 grpc_async_client_manager_config,
                 stats_flush,
                 memory_allocator_manager
@@ -266,9 +280,9 @@ mod envoy_conversions {
                 cluster,
                 metadata,
                 dynamic_parameters,
-                locality,
+                locality: _,
                 user_agent_name,
-                extensions,
+                extensions: _,
                 client_features,
                 listening_addresses,
                 user_agent_version_type,
@@ -276,53 +290,54 @@ mod envoy_conversions {
             unsupported_field!(
                 // id,
                 //cluster,
-                metadata,
+                //metadata,
                 dynamic_parameters,
-                locality,
+                //locality,
                 user_agent_name,
-                extensions,
+                //extensions,
                 client_features,
                 listening_addresses,
                 user_agent_version_type
             )?;
+
             let id = required!(id)?.into();
             let cluster = required!(cluster)?.into();
-            Ok(Self { id, cluster_id: cluster })
+            Ok(Self { id, cluster_id: cluster, metadata })
         }
     }
     impl TryFrom<EnvoyDynamicResources> for DynamicResources {
         type Error = GenericError;
         fn try_from(value: EnvoyDynamicResources) -> Result<Self, Self::Error> {
             let EnvoyDynamicResources {
-                lds_config,
+                lds_config: _,
                 lds_resources_locator,
-                cds_config,
+                cds_config: _,
                 cds_resources_locator,
                 ads_config,
             } = value;
-            unsupported_field!(lds_config, lds_resources_locator, cds_config, cds_resources_locator)?;
+            unsupported_field!(lds_resources_locator, cds_resources_locator)?;
             let EnvoyApiConfigSource {
-                api_type,
-                transport_api_version,
-                cluster_names,
+                api_type: _,
+                transport_api_version: _,
+                cluster_names: _,
                 grpc_services,
                 refresh_delay,
                 request_timeout,
                 rate_limit_settings,
-                set_node_on_first_message_only,
+                set_node_on_first_message_only: _,
                 config_validators,
             } = required!(ads_config)?;
             let grpc_cluster_specifiers = (|| -> Result<_, GenericError> {
                 unsupported_field!(
                     //todo(hayley): are these required to be set?
-                    api_type,
-                    transport_api_version,
-                    cluster_names,
+                    // api_type,
+                    // transport_api_version,
+                    // cluster_names,
                     // grpc_services,
                     refresh_delay,
                     request_timeout,
                     rate_limit_settings,
-                    set_node_on_first_message_only,
+                    //set_node_on_first_message_only,
                     config_validators
                 )?;
                 (|| -> Result<_, GenericError> {
@@ -379,32 +394,30 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: EnvoyAdmin) -> Result<Self, Self::Error> {
             let EnvoyAdmin {
-                access_log,
+                access_log: _,
                 access_log_path,
-                profile_path,
+                profile_path: _,
                 address,
                 socket_options,
-                ignore_global_conn_limit,
+                ignore_global_conn_limit: _,
             } = envoy;
-            unsupported_field!(access_log, access_log_path, profile_path, socket_options, ignore_global_conn_limit)?;
+            unsupported_field!(access_log_path, socket_options)?;
             let address = match required!(address)?
                 .address
                 .ok_or(GenericError::MissingField("address is mandatory to setup admin interface"))?
             {
-                address::Address::SocketAddress(sa) => {
-                    let wrapper: SocketAddressWrapper = sa.try_into()?;
-                    wrapper.0
-                },
+                address::Address::SocketAddress(sa) => sa.try_into()?,
                 _ => {
                     return Err(GenericError::UnsupportedVariant(std::borrow::Cow::Borrowed(
                         "Only SocketAddress is supported",
                     )));
                 },
             };
-            Ok(Self { address: crate::config::core::Address::Socket(address) })
+            Ok(Self { address })
         }
     }
 
+    use num_traits::cast::ToPrimitive;
     impl TryFrom<EnvoyTypedExtensionConfig> for BootstrapExtension {
         type Error = GenericError;
         fn try_from(value: EnvoyTypedExtensionConfig) -> Result<Self, Self::Error> {
@@ -413,13 +426,35 @@ mod envoy_conversions {
             let typed_config = required!(typed_config)?;
 
             match name.as_str() {
-                "internal_listener" => {
+                "internal_listener" | "envoy.bootstrap.internal_listener" => {
                     if typed_config.type_url
                         == "type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener"
                     {
                         let internal_listener = EnvoyInternalListener::decode(typed_config.value.as_slice())
                             .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalListener", e))?;
                         Ok(BootstrapExtension::InternalListener(internal_listener.try_into()?))
+                    } else if typed_config.type_url == "type.googleapis.com/udpa.type.v1.TypedStruct" {
+                        let typed_struct = TypedStruct::decode(typed_config.value.as_slice())
+                            .map_err(|e| GenericError::from_msg_with_cause("Failed to decode InternalListener", e))?;
+                        debug!("Internal listener value {:?}", typed_struct);
+                        if let Some(internl_listener_struct) = typed_struct.value {
+                            if let Some(maybe_buffer_size) = internl_listener_struct.fields.get("buffer_size_kb") {
+                                match maybe_buffer_size.kind {
+                                    Some(Kind::NumberValue(number)) => {
+                                        Ok(BootstrapExtension::InternalListener(InternalListenerBootstrap {
+                                            buffer_size_kb: number.to_u32(),
+                                        }))
+                                    },
+                                    _ => Err(GenericError::from_msg(
+                                        "Can't parse internal listener value from typed struct ",
+                                    )),
+                                }
+                            } else {
+                                Err(GenericError::from_msg("Can't parse internal listener value from typed struct "))
+                            }
+                        } else {
+                            Err(GenericError::from_msg("Can't parse internal listener value from typed struct "))
+                        }
                     } else {
                         Err(GenericError::from_msg(format!(
                             "Unsupported bootstrap extension type: {}",

@@ -17,13 +17,14 @@
 
 use orion_configuration::config::{
     bootstrap::{Bootstrap, BootstrapExtension, InternalListenerBootstrap},
-    cluster::cluster_specifier::ClusterSpecifier,
     cluster::{
-        EndpointAddress, InternalEndpointAddress, InternalUpstreamTransport, LbEndpoint, MetadataKind,
-        MetadataValueSource, TransportSocket,
+        cluster_specifier::ClusterSpecifier, InternalUpstreamTransport, LbEndpoint, MetadataKind, MetadataValueSource,
+        TransportSocket,
     },
-    listener::{FilterChain, InternalListener, Listener, ListenerAddress, MainFilter},
+    core::envoy_conversions::{Address, InternalAddress},
+    listener::{FilterChain, FilterChainMatch, InternalListener, Listener, ListenerAddress, MainFilter},
     network_filters::tcp_proxy::TcpProxy,
+    transport::BindDeviceOptions,
 };
 use std::num::NonZeroU32;
 
@@ -35,7 +36,7 @@ fn test_internal_listener_serialization() {
         name: "test_internal_listener".into(),
         address: ListenerAddress::Internal(internal_listener),
         filter_chains: std::collections::HashMap::from([(
-            Default::default(),
+            FilterChainMatch::default(),
             FilterChain {
                 filter_chain_match_hash: 0,
                 name: "test_filter_chain".into(),
@@ -47,7 +48,7 @@ fn test_internal_listener_serialization() {
                 }),
             },
         )]),
-        bind_device: None,
+        bind_device_options: BindDeviceOptions::default(),
         with_tls_inspector: false,
         proxy_protocol_config: None,
         with_tlv_listener_filter: false,
@@ -63,13 +64,11 @@ fn test_internal_listener_serialization() {
 
 #[test]
 fn test_internal_endpoint_serialization() {
-    let internal_addr = InternalEndpointAddress {
-        server_listener_name: "internal_listener".into(),
-        endpoint_id: Some("endpoint1".into()),
-    };
+    let internal_addr =
+        InternalAddress { server_listener_name: "internal_listener".into(), endpoint_id: Some("endpoint1".into()) };
 
     let endpoint = LbEndpoint {
-        address: EndpointAddress::Internal(internal_addr),
+        address: Address::Internal(internal_addr),
         health_status: Default::default(),
         load_balancing_weight: NonZeroU32::new(1).unwrap(),
     };
@@ -115,6 +114,7 @@ fn test_bootstrap_extension_serialization() {
     };
 
     let yaml = serde_yaml::to_string(&bootstrap).unwrap();
+    println!("{yaml}");
     assert!(yaml.contains("internal_listener"));
 
     let deserialized: Bootstrap = serde_yaml::from_str(&yaml).unwrap();
@@ -141,20 +141,18 @@ fn test_complete_internal_listener_config() {
                 }),
             },
         )]),
-        bind_device: None,
+        bind_device_options: BindDeviceOptions::default(),
         with_tls_inspector: false,
         proxy_protocol_config: None,
         with_tlv_listener_filter: false,
         tlv_listener_filter_config: None,
     };
 
-    let internal_addr = InternalEndpointAddress {
-        server_listener_name: "internal_listener".into(),
-        endpoint_id: Some("endpoint1".into()),
-    };
+    let internal_addr =
+        InternalAddress { server_listener_name: "internal_listener".into(), endpoint_id: Some("endpoint1".into()) };
 
     let endpoint = LbEndpoint {
-        address: EndpointAddress::Internal(internal_addr),
+        address: Address::Internal(internal_addr),
         health_status: Default::default(),
         load_balancing_weight: NonZeroU32::new(1).unwrap(),
     };

@@ -79,7 +79,7 @@ impl DeltaDiscoveryRequestBuilder {
         self
     }
 
-    pub fn with_nounce(mut self, nounce: String) -> Self {
+    pub fn with_nonce(mut self, nounce: String) -> Self {
         self.nounce = Some(nounce);
         self
     }
@@ -108,10 +108,10 @@ impl DeltaDiscoveryRequestBuilder {
     }
 
     pub fn build(self) -> DeltaDiscoveryRequest {
-        let Node { id, cluster_id } = self.node.unwrap_or_default();
+        let Node { id, cluster_id, metadata } = self.node.unwrap_or_default();
         let nounce = self.nounce.unwrap_or_default();
         DeltaDiscoveryRequest {
-            node: Some(EnvoyNode { id: id.into(), cluster: cluster_id.into(), ..Default::default() }),
+            node: Some(EnvoyNode { id: id.into(), cluster: cluster_id.into(), metadata, ..Default::default() }),
             response_nonce: nounce,
             type_url: self.type_url.to_string(),
             resource_names_subscribe: self.resource_names_subscribe,

@@ -121,7 +121,7 @@ pub(crate) fn init_server_metrics(number_of_threads: usize) {
 }
 
 #[cfg(feature = "metrics")]
-mod util {
+pub mod util {
     /// Return the physical memory allocated by the process.
     ///
     pub(crate) fn get_memory_physical_size() -> Option<usize> {
@@ -160,7 +160,7 @@ mod util {
         }
     }
 
-    pub(crate) fn server_uptime() -> u64 {
+    pub fn server_uptime() -> u64 {
         use std::time::Instant;
         let start_up_time = super::STARTUP_TIME.get().copied().unwrap_or_else(Instant::now);
         start_up_time.elapsed().as_secs()

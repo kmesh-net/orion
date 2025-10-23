@@ -33,6 +33,7 @@ use std::{collections::HashMap, str::FromStr, time::Duration};
 use crate::config::{
     common::*,
     network_filters::{access_log::AccessLog, tracing::TracingConfig},
+    ConfigSource,
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -336,6 +337,11 @@ pub enum RetryOn {
     RetriableStatusCodes,
     RetriableHeaders,
     Http3PostConnectFailure,
+    GRPCCancelled,
+    GRPCDeadlineExceeded,
+    GRPCInternal,
+    GRPCResourceExhausted,
+    GRPCUnavailable,
 }
 
 impl FromStr for RetryOn {
@@ -346,7 +352,7 @@ impl FromStr for RetryOn {
         match s {
             "5xx" => Ok(RetryOn::Err5xx),
             "gateway-error" => Ok(RetryOn::GatewayError),
-            "reset" => Ok(RetryOn::Reset),
+            "reset" | "reset-before-request" => Ok(RetryOn::Reset),
             "connect-failure" => Ok(RetryOn::ConnectFailure),
             "envoy-ratelimited" => Ok(RetryOn::EnvoyRateLimited),
             "retriable-4xx" => Ok(RetryOn::Retriable4xx),
@@ -354,6 +360,12 @@ impl FromStr for RetryOn {
             "retriable-status-codes" => Ok(RetryOn::RetriableStatusCodes),
             "retriable-headers" => Ok(RetryOn::RetriableHeaders),
             "http3-post-connect-failure" => Ok(RetryOn::Http3PostConnectFailure),
+            // https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/router_filter#config-http-filters-router-x-envoy-retry-on
+            "cancelled" => Ok(RetryOn::GRPCCancelled),
+            "deadline-exceeded" => Ok(RetryOn::GRPCDeadlineExceeded),
+            "internal" => Ok(RetryOn::GRPCInternal),
+            "resource-exhausted" => Ok(RetryOn::GRPCResourceExhausted),
+            "unavailable" => Ok(RetryOn::GRPCUnavailable),
             s => Err(GenericError::from_msg(format!("Invalid RetryOn value \"{s}\""))),
         }
     }
@@ -388,16 +400,6 @@ pub struct UpgradeConfig {
 pub struct RdsSpecifier {
     pub route_config_name: CompactString,
     pub config_source: ConfigSource,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct ConfigSource {
-    pub config_source_specifier: ConfigSourceSpecifier,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum ConfigSourceSpecifier {
-    ADS,
 }
 
 #[cfg(test)]
@@ -575,8 +577,8 @@ mod envoy_conversions {
             router::Router, FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, SupportedEnvoyFilter,
             SupportedEnvoyHttpFilter,
         },
-        CodecType, ConfigSource, ConfigSourceSpecifier, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn,
-        RetryPolicy, Route, RouteConfiguration, RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
+        CodecType, HttpConnectionManager, RdsSpecifier, RetryBackoff, RetryOn, RetryPolicy, Route, RouteConfiguration,
+        RouteSpecifier, UpgradeType, VirtualHost, XffSettings,
     };
     use crate::config::{
         common::*,
@@ -586,15 +588,9 @@ mod envoy_conversions {
     use compact_str::CompactString;
     use http::HeaderName;
     use orion_data_plane_api::envoy_data_plane_api::envoy::{
-        config::{
-            core::v3::{
-                config_source::ConfigSourceSpecifier as EnvoyConfigSourceSpecifier, AggregatedConfigSource,
-                ConfigSource as EnvoyConfigSource,
-            },
-            route::v3::{
-                retry_policy::RetryBackOff as EnvoyRetryBackoff, RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute,
-                RouteConfiguration as EnvoyRouteConfiguration, VirtualHost as EnvoyVirtualHost,
-            },
+        config::route::v3::{
+            retry_policy::RetryBackOff as EnvoyRetryBackoff, RetryPolicy as EnvoyRetryPolicy, Route as EnvoyRoute,
+            RouteConfiguration as EnvoyRouteConfiguration, VirtualHost as EnvoyVirtualHost,
         },
         extensions::filters::network::http_connection_manager::v3::{
             http_connection_manager::{CodecType as EnvoyCodecType, RouteSpecifier as EnvoyRouteSpecifier},
@@ -636,14 +632,14 @@ mod envoy_conversions {
                 add_user_agent,
                 tracing,
                 common_http_protocol_options,
-                http_protocol_options,
+                http_protocol_options: _istio_ignore_1,
                 http2_protocol_options,
                 http3_protocol_options,
-                server_name,
+                server_name: _,
                 server_header_transformation,
                 scheme_header_transformation,
                 max_request_headers_kb,
-                stream_idle_timeout,
+                stream_idle_timeout: _,
                 request_timeout,
                 request_headers_timeout,
                 drain_timeout,
@@ -662,15 +658,15 @@ mod envoy_conversions {
                 generate_request_id,
                 preserve_external_request_id,
                 always_set_request_id_in_response,
-                forward_client_cert_details,
-                set_current_client_cert_details,
-                proxy_100_continue,
+                forward_client_cert_details: _,
+                set_current_client_cert_details: _,
+                proxy_100_continue: _,
                 represent_ipv4_remote_address_as_ipv4_mapped_ipv6,
                 upgrade_configs,
-                normalize_path,
+                normalize_path: _,
                 merge_slashes,
-                path_with_escaped_slashes_action,
-                request_id_extension,
+                path_with_escaped_slashes_action: _,
+                request_id_extension: _,
                 local_reply_config,
                 strip_matching_host_port,
                 stream_error_on_invalid_http_message,
@@ -692,14 +688,14 @@ mod envoy_conversions {
                 add_user_agent,
                 // tracing,
                 common_http_protocol_options,
-                http_protocol_options,
+                //http_protocol_options,
                 http2_protocol_options,
                 http3_protocol_options,
-                server_name,
+                //server_name,
                 server_header_transformation,
                 scheme_header_transformation,
                 max_request_headers_kb,
-                stream_idle_timeout,
+                //stream_idle_timeout,
                 // request_timeout,
                 request_headers_timeout,
                 drain_timeout,
@@ -718,15 +714,15 @@ mod envoy_conversions {
                 // generate_request_id,
                 // preserve_external_request_id,
                 // always_set_request_id_in_response,
-                forward_client_cert_details,
-                set_current_client_cert_details,
-                proxy_100_continue,
+                //forward_client_cert_details,
+                //set_current_client_cert_details,
+                //proxy_100_continue,
                 represent_ipv4_remote_address_as_ipv4_mapped_ipv6,
                 // upgrade_configs,
-                normalize_path,
+                //normalize_path,
                 merge_slashes,
-                path_with_escaped_slashes_action,
-                request_id_extension,
+                //path_with_escaped_slashes_action,
+                //request_id_extension,
                 local_reply_config,
                 strip_matching_host_port,
                 stream_error_on_invalid_http_message,
@@ -891,11 +887,11 @@ mod envoy_conversions {
                 request_headers_to_add,
                 request_headers_to_remove,
                 most_specific_header_mutations_wins,
-                validate_clusters,
-                max_direct_response_body_size_bytes,
+                validate_clusters: _,
+                max_direct_response_body_size_bytes: _istio_ignore_1,
                 cluster_specifier_plugins,
                 request_mirror_policies,
-                ignore_port_in_host_matching,
+                ignore_port_in_host_matching: _istio_ignore_2,
                 ignore_path_parameters_in_path_matching,
                 typed_per_filter_config,
                 metadata,
@@ -910,15 +906,16 @@ mod envoy_conversions {
                 // request_headers_to_add,
                 // request_headers_to_remove,
                 // most_specific_header_mutations_wins,
-                validate_clusters,
-                max_direct_response_body_size_bytes,
+                //validate_clusters,
+                //max_direct_response_body_size_bytes,
                 cluster_specifier_plugins,
                 request_mirror_policies,
-                ignore_port_in_host_matching,
+                //ignore_port_in_host_matching,
                 ignore_path_parameters_in_path_matching,
                 typed_per_filter_config,
                 metadata
             )?;
+            let name = if name.is_empty() { "route_configuration".to_owned() } else { name };
             let name: CompactString = required!(name)?.into();
             (|| -> Result<_, GenericError> {
                 let response_headers_to_add = convert_vec!(response_headers_to_add)?;
@@ -973,7 +970,7 @@ mod envoy_conversions {
                 response_headers_to_remove,
                 cors,
                 typed_per_filter_config,
-                include_request_attempt_count,
+                include_request_attempt_count: _istio_ignored_1,
                 include_attempt_count_in_response,
                 retry_policy,
                 retry_policy_typed_config,
@@ -998,7 +995,7 @@ mod envoy_conversions {
                 // response_headers_to_remove,
                 cors,
                 typed_per_filter_config,
-                include_request_attempt_count,
+                //include_request_attempt_count,
                 include_attempt_count_in_response,
                 // retry_policy,
                 retry_policy_typed_config,
@@ -1058,9 +1055,9 @@ mod envoy_conversions {
                 per_try_timeout,
                 per_try_idle_timeout,
                 retry_priority,
-                retry_host_predicate,
+                retry_host_predicate: _istio_ignored_1,
                 retry_options_predicates,
-                host_selection_retry_max_attempts,
+                host_selection_retry_max_attempts: _istio_ignored_2,
                 retriable_status_codes,
                 retry_back_off,
                 rate_limited_retry_back_off,
@@ -1073,9 +1070,9 @@ mod envoy_conversions {
                 // per_try_timeout,
                 per_try_idle_timeout,
                 retry_priority,
-                retry_host_predicate,
+                //retry_host_predicate,
                 retry_options_predicates,
-                host_selection_retry_max_attempts,
+                //host_selection_retry_max_attempts,
                 // retriable_status_codes,
                 // retry_back_off,
                 // retriable_headers,
@@ -1147,8 +1144,8 @@ mod envoy_conversions {
             let EnvoyRoute {
                 name,
                 r#match,
-                metadata,
-                decorator,
+                metadata: _istio_ignore_1,
+                decorator: _,
                 typed_per_filter_config,
                 request_headers_to_add,
                 request_headers_to_remove,
@@ -1163,8 +1160,8 @@ mod envoy_conversions {
             unsupported_field!(
                 //name,
                 // r#match,
-                metadata,
-                decorator,
+                //metadata,
+                //decorator,
                 // typed_per_filter_config,
                 // request_headers_to_add,
                 // request_headers_to_remove,
@@ -1225,33 +1222,6 @@ mod envoy_conversions {
             let route_config_name = required!(route_config_name)?.into();
             let config_source = convert_opt!(config_source)?;
             Ok(Self { route_config_name, config_source })
-        }
-    }
-    impl TryFrom<EnvoyConfigSource> for ConfigSource {
-        type Error = GenericError;
-        fn try_from(value: EnvoyConfigSource) -> Result<Self, Self::Error> {
-            let EnvoyConfigSource { authorities, initial_fetch_timeout, resource_api_version, config_source_specifier } =
-                value;
-            unsupported_field!(authorities, initial_fetch_timeout, resource_api_version)?;
-            let config_source_specifier = convert_opt!(config_source_specifier)?;
-            Ok(Self { config_source_specifier })
-        }
-    }
-
-    impl TryFrom<EnvoyConfigSourceSpecifier> for ConfigSourceSpecifier {
-        type Error = GenericError;
-        fn try_from(value: EnvoyConfigSourceSpecifier) -> Result<Self, Self::Error> {
-            match value {
-                EnvoyConfigSourceSpecifier::Ads(AggregatedConfigSource {}) => Ok(Self::ADS),
-                EnvoyConfigSourceSpecifier::ApiConfigSource(_) => {
-                    Err(GenericError::unsupported_variant("ApiConfigSource"))
-                },
-                EnvoyConfigSourceSpecifier::Path(_) => Err(GenericError::unsupported_variant("Path")),
-                EnvoyConfigSourceSpecifier::PathConfigSource(_) => {
-                    Err(GenericError::unsupported_variant("PathConfigSource"))
-                },
-                EnvoyConfigSourceSpecifier::Self_(_) => Err(GenericError::unsupported_variant("Self_")),
-            }
         }
     }
 }

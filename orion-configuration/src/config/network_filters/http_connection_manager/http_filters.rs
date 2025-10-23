@@ -60,6 +60,7 @@ pub struct HttpFilter {
 pub enum HttpFilterType {
     Rbac(HttpRbac),
     RateLimit(LocalRateLimit),
+    Ingored,
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -90,6 +91,7 @@ mod envoy_conversions {
         google::protobuf::Any,
         prost::Message,
     };
+    use tracing::info;
 
     #[derive(Debug, Clone)]
     pub(crate) struct SupportedEnvoyHttpFilter {
@@ -133,6 +135,7 @@ mod envoy_conversions {
                 SupportedEnvoyFilter::Router(_) => {
                     Err(GenericError::from_msg("router filter has to be the last filter in the chain"))
                 },
+                SupportedEnvoyFilter::Ignored => Ok(Self::Ingored),
             }
         }
     }
@@ -143,6 +146,7 @@ mod envoy_conversions {
         LocalRateLimit(EnvoyLocalRateLimit),
         Rbac(EnvoyRbac),
         Router(EnvoyRouter),
+        Ignored,
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -158,7 +162,22 @@ mod envoy_conversions {
                 "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
                     EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
                 },
-                _ => return Err(GenericError::unsupported_variant(typed_config.type_url)),
+                "type.googleapis.com/udpa.type.v1.TypedStruct"
+                | "type.googleapis.com/stats.PluginConfig"
+                | "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig"
+                | "type.googleapis.com/istio.envoy.config.filter.http.alpn.v2alpha1.FilterConfig"
+                | "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                | "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors" => {
+                    info!("Ignored Istio type {}", typed_config.type_url);
+                    Ok(SupportedEnvoyFilter::Ignored)
+                },
+
+                _ => {
+                    return Err(GenericError::unsupported_variant(format!(
+                        "HTTP filter unsupported variant {}",
+                        typed_config.type_url
+                    )))
+                },
             }
             .map_err(|e| {
                 GenericError::from_msg_with_cause(
@@ -186,7 +205,12 @@ mod envoy_conversions {
                 "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute" => {
                     EnvoyRbacPerRoute::decode(typed_config.value.as_slice()).map(Self::Rbac)
                 },
-                _ => return Err(GenericError::unsupported_variant(typed_config.type_url)),
+                _ => {
+                    return Err(GenericError::unsupported_variant(format!(
+                        "HTTP Filter override unsupported variant {}",
+                        typed_config.type_url
+                    )))
+                },
             }
             .map_err(|e| {
                 GenericError::from_msg_with_cause(

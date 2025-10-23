@@ -87,9 +87,9 @@ pub async fn get_config_dump(State(admin_state): State<AdminState>) -> Json<Valu
         .iter()
         .flat_map(|cluster| match &cluster.discovery_settings {
             ClusterDiscoveryType::Static(load_assignment)
-            | ClusterDiscoveryType::Eds(Some(load_assignment))
+            | ClusterDiscoveryType::Eds(Some(load_assignment), _)
             | ClusterDiscoveryType::StrictDns(load_assignment) => load_assignment.endpoints.clone(),
-            ClusterDiscoveryType::Eds(None) | ClusterDiscoveryType::OriginalDst(_) => vec![],
+            ClusterDiscoveryType::Eds(None, _) | ClusterDiscoveryType::OriginalDst(_) => vec![],
         })
         .collect();
     config.endpoints = (!endpoints.is_empty()).then_some(endpoints);
@@ -106,9 +106,10 @@ mod config_dump_tests {
     use axum_test::TestServer;
     use compact_str::CompactString;
     use orion_configuration::config::{
-        core::DataSource,
+        core::{envoy_conversions::Address, DataSource},
         network_filters::http_connection_manager::header_modifer::HeaderModifier,
         secret::{Secret, TlsCertificate, Type, ValidationContext},
+        transport::BindDeviceOptions,
         Bootstrap, Listener,
     };
     use orion_lib::{ConfigDump, ListenerConfigurationChange};
@@ -185,8 +186,13 @@ mod config_dump_tests {
         };
         let redacted = redact_secrets(vec![secret.clone()]);
         match &redacted[0].kind {
-            Type::ValidationContext(vc) => {
-                assert_eq!(vc.trusted_ca(), &DataSource::InlineString("ca_data".into()));
+            Type::ValidationContext(vc) => match vc {
+                ValidationContext::TrustedCA(data_source) => {
+                    assert_eq!(data_source, &DataSource::InlineString("ca_data".into()));
+                },
+                ValidationContext::None => {
+                    assert!(false)
+                },
             },
             Type::TlsCertificate(_) => unreachable!(),
         }
@@ -301,7 +307,7 @@ mod config_dump_tests {
                 );
                 map
             },
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             proxy_protocol_config: None,
             with_tls_inspector: false,
             with_tlv_listener_filter: false,
@@ -329,18 +335,15 @@ mod config_dump_tests {
     async fn config_dump_clusters() {
         use compact_str::CompactString;
         use orion_configuration::config::cluster::{
-            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
-            LbEndpoint, LbPolicy, LocalityLbEndpoints,
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
+            LbPolicy, LocalityLbEndpoints,
         };
-        use std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr},
-            num::NonZeroU32,
-            time::Duration,
-        };
-        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
+        use std::{num::NonZeroU32, time::Duration};
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
+                cluster_name: "kdjfk".to_owned(),
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
                     lb_endpoints: vec![LbEndpoint {
@@ -351,7 +354,7 @@ mod config_dump_tests {
                 }],
             }),
             transport_socket: None,
-            bind_device: None,
+            bind_device_options: orion_configuration::config::transport::BindDeviceOptions::default(),
             load_balancing_policy: LbPolicy::default(),
             http_protocol_options: HttpProtocolOptions::default(),
             health_check: None,
@@ -384,18 +387,15 @@ mod config_dump_tests {
     async fn config_dump_endpoints() {
         use compact_str::CompactString;
         use orion_configuration::config::cluster::{
-            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, EndpointAddress, HealthStatus, HttpProtocolOptions,
-            LbEndpoint, LbPolicy, LocalityLbEndpoints,
+            Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions, LbEndpoint,
+            LbPolicy, LocalityLbEndpoints,
         };
-        use std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr},
-            num::NonZeroU32,
-            time::Duration,
-        };
-        let endpoint_addr = EndpointAddress::Socket(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 9000));
+        use std::{num::NonZeroU32, time::Duration};
+        let endpoint_addr = Address::Socket("127.0.0.1".to_owned(), 9000);
         let cluster = Cluster {
             name: CompactString::from("cluster1"),
             discovery_settings: ClusterDiscoveryType::Static(ClusterLoadAssignment {
+                cluster_name: "kdjfk".to_owned(),
                 endpoints: vec![LocalityLbEndpoints {
                     priority: 0,
                     lb_endpoints: vec![LbEndpoint {
@@ -406,7 +406,7 @@ mod config_dump_tests {
                 }],
             }),
             transport_socket: None,
-            bind_device: None,
+            bind_device_options: BindDeviceOptions::default(),
             load_balancing_policy: LbPolicy::default(),
             http_protocol_options: HttpProtocolOptions::default(),
             health_check: None,
@@ -431,7 +431,8 @@ mod config_dump_tests {
         let response = server.get("/config_dump").await;
         response.assert_status_ok();
         let value: serde_json::Value = response.json();
-        let address = value["endpoints"][0]["lb_endpoints"][0]["Socket"].to_string();
+        let address = value["endpoints"][0]["lb_endpoints"][0]["address"]["Socket"].to_string();
+
         assert_eq!(address, "[\"127.0.0.1\",9000]");
         handle.abort();
     }
@@ -524,7 +525,8 @@ mod config_dump_tests {
         assert_eq!(value["secrets"][1]["name"], "beefcake_ca");
         // Check redaction
         assert_eq!(value["secrets"][0]["tls_certificate"]["private_key"]["inline_string"], "[redacted]");
-        assert_eq!(value["secrets"][1]["validation_context"]["trusted_ca"]["inline_string"], ca_pem);
+        dbg!(&value["secrets"][1]);
+        assert_eq!(value["secrets"][1]["validation_context"]["TrustedCA"]["inline_string"], ca_pem);
         handle.abort();
     }
 }

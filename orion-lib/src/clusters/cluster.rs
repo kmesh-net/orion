@@ -26,7 +26,7 @@ use crate::clusters::clusters_manager::{RoutingContext, RoutingRequirement};
 use orion_configuration::config::cluster::{
     Cluster as ClusterConfig, ClusterDiscoveryType, ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck,
 };
-use tracing::debug;
+use tracing::{debug, warn};
 use webpki::types::ServerName;
 
 use super::health::HealthStatus;
@@ -48,7 +48,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
         let (cluster, secrets) = value;
         let config = cluster.clone();
         let transport_socket_config = cluster.transport_socket;
-        let bind_device = cluster.bind_device;
+        let bind_device_options = cluster.bind_device_options;
         let load_balancing_policy = cluster.load_balancing_policy;
         let protocol_options = cluster.http_protocol_options;
 
@@ -62,11 +62,14 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     .tls_configurator()
                     .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
                     .transpose()?;
+                let cluster_name = cla.cluster_name.clone();
+                let pcla = PartialClusterLoadAssignment::try_from(cla)
+                    .map_err(|e| Error::from(format!("Unable to create cluster load assignment {cluster_name} {e}")))?;
 
                 let cla = ClusterLoadAssignmentBuilder::builder()
-                    .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
+                    .with_cla(pcla)
                     .with_cluster_name(cluster.name.to_static_str())
-                    .with_bind_device(bind_device)
+                    .with_bind_device_options(bind_device_options)
                     .with_lb_policy(load_balancing_policy)
                     .with_connection_timeout(cluster.connect_timeout)
                     .with_transport_socket(transport_socket.clone())
@@ -93,7 +96,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                 let cla = ClusterLoadAssignmentBuilder::builder()
                     .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
                     .with_cluster_name(cluster.name.to_static_str())
-                    .with_bind_device(bind_device)
+                    .with_bind_device_options(bind_device_options)
                     .with_lb_policy(load_balancing_policy)
                     .with_connection_timeout(cluster.connect_timeout)
                     .with_transport_socket(transport_socket.clone())
@@ -110,16 +113,24 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                 }))
             },
 
-            ClusterDiscoveryType::Eds(None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
-                name: cluster.name.to_static_str(),
-                bind_device,
-                transport_socket,
-                health_check,
-                load_balancing_policy,
-                config,
-            })),
-            ClusterDiscoveryType::Eds(Some(_)) => {
-                Err("EDS clusters can't have a static cluster load assignment configured".into())
+            // ClusterDiscoveryType::Eds(None, None) => Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
+            //     name: cluster.name.to_static_str(),
+            //     bind_device,
+            //     transport_socket,
+            //     health_check,
+            //     load_balancing_policy,
+            //     config,
+            // })),
+            ClusterDiscoveryType::Eds(cla, eds) => {
+                warn!("Creating EDS cluster and skippint static endpoints {cla:?} {eds:?}");
+                Ok(PartialClusterType::Dynamic(DynamicClusterBuilder {
+                    name: cluster.name.to_static_str(),
+                    bind_device_options,
+                    transport_socket,
+                    health_check,
+                    load_balancing_policy,
+                    config,
+                }))
             },
             ClusterDiscoveryType::OriginalDst(_) => {
                 let server_name = transport_socket
@@ -130,7 +141,7 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 
                 Ok(PartialClusterType::OnDemand(OriginalDstClusterBuilder {
                     name: cluster.name.to_static_str(),
-                    bind_device,
+                    bind_device_options,
                     transport_socket,
                     connect_timeout: cluster.connect_timeout,
                     server_name,
@@ -172,7 +183,7 @@ impl TryFrom<&ClusterType> for ClusterConfig {
             ClusterType::Dynamic(dynamic_cluster) => {
                 let cla: ClusterLoadAssignmentConfig = dynamic_cluster.try_into()?;
                 let mut config = dynamic_cluster.config.clone();
-                config.discovery_settings = ClusterDiscoveryType::Eds(Some(cla));
+                config.discovery_settings = ClusterDiscoveryType::Eds(Some(cla), None);
                 Ok(config)
             },
             ClusterType::OnDemand(original_dst_cluster) => Ok(original_dst_cluster.config.clone()),
@@ -229,7 +240,7 @@ mod tests {
         let cla = match c {
             ClusterType::Static(s) => Some(&s.load_assignment),
             ClusterType::Dynamic(d) => {
-                assert_eq!(&d.bind_device, &expected_bind_device);
+                assert_eq!(d.bind_device_options.bind_device, expected_bind_device);
                 d.load_assignment.as_ref()
             },
             ClusterType::OnDemand(_) => unreachable!("OnDemand cluster has no load assignment"),
@@ -238,7 +249,7 @@ mod tests {
         if let Some(load_assignment) = cla {
             for lep in &load_assignment.endpoints {
                 for ep in &lep.endpoints {
-                    assert_eq!(ep.bind_device, expected_bind_device);
+                    assert_eq!(ep.bind_device_options.bind_device, expected_bind_device);
                 }
             }
         }

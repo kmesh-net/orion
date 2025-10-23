@@ -15,85 +15,16 @@
 //
 //
 
-use std::{
-    fmt,
-    fmt::{Display, Formatter},
-};
+use std::fmt;
 
 use anyhow::Result;
-use envoy_data_plane_api::{
-    envoy::{
-        config::{
-            cluster::v3::Cluster, endpoint::v3::ClusterLoadAssignment, listener::v3::Listener,
-            route::v3::RouteConfiguration,
-        },
-        extensions::transport_sockets::tls::v3::Secret,
-        service::discovery::v3::{DeltaDiscoveryRequest, Resource},
-    },
-    prost,
-    prost::Message,
-    tonic,
-};
+use envoy_data_plane_api::{envoy::service::discovery::v3::DeltaDiscoveryRequest, prost, tonic};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::sync::mpsc;
 
 pub type ResourceId = String;
 pub type ResourceVersion = String;
-
-#[derive(Clone, Debug)]
-pub enum XdsResourceUpdate {
-    Update(ResourceId, Box<XdsResourcePayload>),
-    Remove(ResourceId, TypeUrl),
-}
-
-impl XdsResourceUpdate {
-    pub fn id(&self) -> ResourceId {
-        match self {
-            XdsResourceUpdate::Update(id, _) => id.to_string(),
-            XdsResourceUpdate::Remove(id, _) => id.to_string(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum XdsResourcePayload {
-    Listener(ResourceId, Box<Listener>),
-    Cluster(ResourceId, Box<Cluster>),
-    Endpoints(ResourceId, Box<ClusterLoadAssignment>),
-    RouteConfiguration(ResourceId, Box<RouteConfiguration>),
-    Secret(ResourceId, Box<Secret>),
-}
-
-impl TryFrom<(Resource, TypeUrl)> for XdsResourcePayload {
-    type Error = XdsError;
-
-    fn try_from((resource, type_url): (Resource, TypeUrl)) -> Result<XdsResourcePayload, XdsError> {
-        let resource_id = resource.name;
-        resource.resource.ok_or(XdsError::MissingResource()).and_then(|res| match type_url {
-            TypeUrl::Listener => {
-                let decoded = Listener::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Listener(resource_id, Box::new(value)))
-            },
-            TypeUrl::Cluster => {
-                let decoded = Cluster::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Cluster(resource_id, Box::new(value)))
-            },
-            TypeUrl::RouteConfiguration => {
-                let decoded = RouteConfiguration::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::RouteConfiguration(resource_id, Box::new(value)))
-            },
-            TypeUrl::ClusterLoadAssignment => {
-                let decoded = ClusterLoadAssignment::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Endpoints(resource_id, Box::new(value)))
-            },
-            TypeUrl::Secret => {
-                let decoded = Secret::decode(res.value.as_slice()).map_err(XdsError::Decode);
-                decoded.map(|value| XdsResourcePayload::Secret(resource_id, Box::new(value)))
-            },
-        })
-    }
-}
 
 #[derive(Eq, Hash, PartialEq, Debug, Copy, Clone, Deserialize)]
 pub enum TypeUrl {
@@ -134,22 +65,6 @@ impl TryFrom<&str> for TypeUrl {
             "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret" => Ok(TypeUrl::Secret),
             value => Err(XdsError::UnknownResourceType(format!("did not recognise type_url {value}"))),
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct RejectedConfig {
-    name: ResourceId,
-    reason: anyhow::Error,
-}
-impl From<(ResourceId, anyhow::Error)> for RejectedConfig {
-    fn from(context: (ResourceId, anyhow::Error)) -> RejectedConfig {
-        RejectedConfig { name: context.0, reason: context.1 }
-    }
-}
-impl Display for RejectedConfig {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}: {}", self.name, self.reason)
     }
 }
 

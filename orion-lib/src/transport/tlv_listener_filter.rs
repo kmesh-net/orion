@@ -237,7 +237,7 @@ impl TlvListenerFilter {
 
                 if let Some(original_dest) = self.extract_original_destination() {
                     debug!("Extracted original destination: {}", original_dest);
-                    let metadata = DownstreamConnectionMetadata::FromTlv {
+                    let metadata = DownstreamConnectionMetadata::Tlv {
                         original_destination_address: original_dest,
                         tlv_data: std::collections::HashMap::new(),
                         proxy_peer_address: peer_address,
@@ -245,13 +245,21 @@ impl TlvListenerFilter {
                     };
                     Ok((stream, metadata))
                 } else {
-                    let metadata = DownstreamConnectionMetadata::FromSocket { peer_address, local_address };
+                    let metadata = DownstreamConnectionMetadata::Socket {
+                        peer_address,
+                        local_address,
+                        original_destination_address: None,
+                    };
                     Ok((stream, metadata))
                 }
             },
             ReadOrParseState::SkipFilter => {
                 trace!("Skipping TLV filter");
-                let metadata = DownstreamConnectionMetadata::FromSocket { peer_address, local_address };
+                let metadata = DownstreamConnectionMetadata::Socket {
+                    peer_address,
+                    local_address,
+                    original_destination_address: None,
+                };
                 Ok((stream, metadata))
             },
             ReadOrParseState::Error => {
@@ -412,7 +420,7 @@ mod tests {
         let (_stream, metadata) = filter.process_stream(stream, local_addr, peer_addr).await.unwrap();
 
         match metadata {
-            DownstreamConnectionMetadata::FromTlv { original_destination_address, .. } => {
+            DownstreamConnectionMetadata::Tlv { original_destination_address, .. } => {
                 assert_eq!(original_destination_address, "192.168.1.100:8080".parse::<SocketAddr>().unwrap());
             },
             other => {
@@ -445,7 +453,7 @@ mod tests {
         let (_stream, metadata) = filter.process_stream(stream, local_addr, peer_addr).await.unwrap();
 
         match metadata {
-            DownstreamConnectionMetadata::FromTlv { original_destination_address, .. } => {
+            DownstreamConnectionMetadata::Tlv { original_destination_address, .. } => {
                 assert_eq!(original_destination_address, "[2001:db8::1]:8080".parse::<SocketAddr>().unwrap());
             },
             other => {

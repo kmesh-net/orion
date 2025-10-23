@@ -143,9 +143,7 @@ impl AuthorityRewriteSpecifier {
             AuthorityRewriteSpecifier::Authority(authority) => Some(authority.clone()),
 
             AuthorityRewriteSpecifier::Header(header_name) => {
-                let Some(header_value) = headers.get(header_name.as_str()) else {
-                    return None;
-                };
+                let header_value = headers.get(header_name.as_str())?;
                 let Ok(header_str) = header_value.to_str() else {
                     return None;
                 };
@@ -995,14 +993,14 @@ mod envoy_conversions {
                 include_vh_rate_limits,
                 hash_policy,
                 cors,
-                max_grpc_timeout,
+                max_grpc_timeout: _istio_ignored_1,
                 grpc_timeout_offset,
                 upgrade_configs,
                 internal_redirect_policy,
                 internal_redirect_action,
                 max_internal_redirects,
                 hedge_policy,
-                max_stream_duration,
+                max_stream_duration: _,
                 cluster_specifier,
                 host_rewrite_specifier,
             } = value;
@@ -1024,15 +1022,14 @@ mod envoy_conversions {
                 include_vh_rate_limits,
                 // hash_policy,
                 cors,
-                max_grpc_timeout,
+                //max_grpc_timeout,
                 grpc_timeout_offset,
                 // upgrade_configs,
                 internal_redirect_policy,
                 internal_redirect_action,
                 max_internal_redirects,
-                hedge_policy,
-                max_stream_duration // cluster_specifier,
-                                    // host_rewrite_specifier
+                hedge_policy // cluster_specifier,
+                             // host_rewrite_specifier
             )?;
             let cluster_not_found_response_code =
                 parse_cluster_not_found_response_code(cluster_not_found_response_code)?;

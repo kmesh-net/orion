@@ -31,14 +31,18 @@ use crate::{
 };
 use http::{uri::Authority, HeaderName, HeaderValue, Request};
 use hyper::body::Incoming;
-use orion_configuration::config::cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig};
+use orion_configuration::config::{
+    cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig},
+    transport::BindDeviceOptions,
+};
 use orion_interner::StringInterner;
 use rand::{prelude::SliceRandom, thread_rng};
 use std::{
     cell::RefCell,
     collections::{btree_map::Entry as BTreeEntry, BTreeMap},
+    net::SocketAddr,
 };
-use tracing::warn;
+use tracing::{info, warn};
 
 type ClusterID = &'static str;
 type ClustersMap = BTreeMap<ClusterID, ClusterType>;
@@ -54,19 +58,51 @@ pub enum RoutingRequirement {
 pub enum RoutingContext<'a> {
     None,
     Header(&'a HeaderValue),
-    Authority(Authority),
+    Authority(Authority, SocketAddr),
     Hash(HashState<'a>),
 }
 
-impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>)>
-    for RoutingContext<'a>
+impl std::fmt::Debug for RoutingContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::Header(arg0) => f.debug_tuple("Header").field(arg0).finish(),
+            Self::Authority(arg0, _) => f.debug_tuple("Authority").field(arg0).finish(),
+            Self::Hash(_) => f.debug_tuple("Hash").finish(),
+        }
+    }
+}
+
+impl std::fmt::Display for RoutingContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => Ok(f.write_str("RoutingContext None")?),
+            Self::Header(arg0) => Ok(f.write_str(&format!("RoutingContext header: {arg0:?}"))?),
+            Self::Authority(arg0, _) => Ok(f.write_str(&format!("RoutingContext authority: {arg0:?}"))?),
+            Self::Hash(_) => Ok(f.write_str("RoutingContext Hash")?),
+        }
+    }
+}
+
+impl<'a>
+    TryFrom<(
+        &'a RoutingRequirement,
+        &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
+        HashState<'a>,
+        SocketAddr,
+    )> for RoutingContext<'a>
 {
     type Error = String;
 
     fn try_from(
-        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, HashState<'a>),
+        value: (
+            &'a RoutingRequirement,
+            &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
+            HashState<'a>,
+            SocketAddr,
+        ),
     ) -> std::result::Result<Self, Self::Error> {
-        let (routing_requirement, request, hash_state) = value;
+        let (routing_requirement, request, hash_state, original_destination_address) = value;
         match routing_requirement {
             RoutingRequirement::Header(header_name) => {
                 let header_value = request
@@ -76,9 +112,31 @@ impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<BodyWithTi
                 Ok(RoutingContext::Header(header_value))
             },
             RoutingRequirement::Authority => {
-                let msg = "Routing by Authority is not currently supported, coming soon".to_owned();
-                warn!(msg);
-                Err(msg)
+                warn!(
+                    "Routing by Authority {:?} {:?}",
+                    request.uri().authority(),
+                    request.headers().get(http::header::HOST)
+                );
+                if request.uri().authority().is_none() {
+                    if let Some(host) = request.headers().get(http::header::HOST) {
+                        Ok(RoutingContext::Authority(
+                            Authority::try_from(host.as_bytes())
+                                .map_err(|_op| "Routing by Authority.. can't convert host to authority".to_owned())?,
+                            original_destination_address,
+                        ))
+                    } else {
+                        Err("Routing by Authority.. No host header".to_owned())
+                    }
+                } else {
+                    Ok(RoutingContext::Authority(
+                        request
+                            .uri()
+                            .authority()
+                            .cloned()
+                            .ok_or("Routing by Authority but not authority".to_owned())?,
+                        original_destination_address,
+                    ))
+                }
             },
             RoutingRequirement::Hash => Ok(RoutingContext::Hash(hash_state)),
             RoutingRequirement::None => Ok(RoutingContext::None),
@@ -115,22 +173,36 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                         .with_cla(cla.clone())
                         .with_transport_socket(dynamic_cluster.transport_socket.clone())
                         .with_cluster_name(dynamic_cluster.name)
-                        .with_bind_device(dynamic_cluster.bind_device.clone())
+                        .with_bind_device_options(dynamic_cluster.bind_device_options.clone())
                         .with_lb_policy(dynamic_cluster.load_balancing_policy)
                         .prepare();
                     cla.build().map(|cla| dynamic_cluster.change_load_assignment(Some(cla)))?;
                     Ok(cluster.clone())
                 },
-                ClusterType::Static(_) => {
-                    let msg = format!("{name} Attempt to change CLA for static cluster");
+                ClusterType::Static(static_cluster) => {
+                    let msg = format!("{name} Attempt to change CLA for Static cluster ");
                     warn!(msg);
-                    Err(msg.into())
+                    let cla = ClusterLoadAssignmentBuilder::builder()
+                        .with_cla(cla.clone())
+                        .with_transport_socket(static_cluster.transport_socket.clone())
+                        .with_cluster_name(static_cluster.name)
+                        .with_bind_device_options(BindDeviceOptions::default())
+                        .with_lb_policy(orion_configuration::config::cluster::LbPolicy::RoundRobin)
+                        .prepare();
+                    cla.build().map(|cla|static_cluster.change_load_assignment(cla))?;
+                    Ok(cluster.clone())
                 },
-                ClusterType::OnDemand(_) => {
-                    let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster");
-                    warn!(msg);
-                    Err(msg.into())
-                },
+                ClusterType::OnDemand(original_dst_cluster) => {
+                    if cla.is_empty(){
+                        let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster {cla:?}");
+                        info!(msg);
+                        Ok(ClusterType::OnDemand(original_dst_cluster.clone()))
+                    }else{
+                        let msg = format!("{name} Attempt to change CLA for ORIGINAL_DST cluster ...but endpoints are not empty {cla:?}");
+                        warn!(msg);
+                        Err(msg.into())
+                    }
+                }
             }
         } else {
             let msg = format!("{name} No cluster found");
@@ -188,7 +260,9 @@ pub fn update_tls_context(secret_id: &str, secret: &TransportSecret) -> Result<V
 }
 
 pub fn add_cluster(partial_cluster: PartialClusterType) -> Result<ClusterType> {
-    let cluster = partial_cluster.build()?;
+    let cluster = partial_cluster.build();
+    let cluster = cluster?;
+
     let cluster_name = cluster.get_name();
 
     CLUSTERS_MAP.update(|current| match current.entry(cluster_name) {
