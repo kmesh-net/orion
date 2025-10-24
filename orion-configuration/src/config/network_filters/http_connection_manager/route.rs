@@ -606,15 +606,10 @@ impl PartialEq for PathSpecifier {
 impl Eq for PathSpecifier {}
 impl Hash for PathSpecifier {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
         match self {
-            Self::Regex(r) => {
-                core::mem::discriminant(self).hash(state);
-                r.as_str().hash(state);
-            },
-            Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => {
-                core::mem::discriminant(self).hash(state);
-                s.hash(state);
-            },
+            Self::Regex(r) => r.as_str().hash(state),
+            Self::Prefix(s) | Self::Exact(s) | Self::PathSeparatedPrefix(s) => s.hash(state),
         }
     }
 }
