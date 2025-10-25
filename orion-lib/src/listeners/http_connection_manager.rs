@@ -83,6 +83,8 @@ use crate::{
         body_with_metrics::BodyWithMetrics,
         response_flags::{BodyKind, ResponseFlags},
     },
+    filter_state::FilterState,
+    format_string::{FormatStringEvaluator, RequestContext},
 };
 
 use crate::{
@@ -141,6 +143,8 @@ impl HttpConnectionManagerBuilder {
                 Some(tracing) => HttpTracer::new().with_config(tracing),
                 None => HttpTracer::new(),
             },
+            filter_state: FilterState::new(),
+            format_evaluator: FormatStringEvaluator::new(),
         })
     }
 
@@ -183,6 +187,7 @@ pub enum HttpFilterValue {
     // while Rbac uses a configuration type - we might want to revisit this
     RateLimit(LocalRateLimit),
     Rbac(HttpRbac),
+    SetFilterState(orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState),
     Ignored,
     /// Istio peer metadata filter - parsed but not executed (metadata/telemetry only)
     PeerMetadata,
@@ -196,11 +201,7 @@ impl From<HttpFilterConfig> for HttpFilter {
         let filter = match filter {
             HttpFilterType::RateLimit(r) => HttpFilterValue::RateLimit(r.into()),
             HttpFilterType::Rbac(rbac) => HttpFilterValue::Rbac(rbac),
-            HttpFilterType::SetFilterState(_) => {
-                // TODO: Implement runtime support for set_filter_state filter
-                // For now, treat as ignored to allow config parsing
-                HttpFilterValue::Ignored
-            },
+            HttpFilterType::SetFilterState(sfs) => HttpFilterValue::SetFilterState(sfs),
             HttpFilterType::Ingored => HttpFilterValue::Ignored,
             // Istio-specific filters: parsed but not executed (metadata/telemetry only)
             HttpFilterType::PeerMetadata(_) => HttpFilterValue::PeerMetadata,
@@ -215,6 +216,11 @@ impl HttpFilterValue {
         match self {
             HttpFilterValue::Rbac(rbac) => apply_authorization_rules(rbac, request),
             HttpFilterValue::RateLimit(rl) => rl.run(request),
+            HttpFilterValue::SetFilterState(_) => {
+                // SetFilterState is handled separately in apply_set_filter_state_filters
+                // to avoid borrowing issues with filter_state
+                FilterDecision::Continue
+            },
             HttpFilterValue::Ignored => FilterDecision::Continue,
             // Istio-specific filters: no-op execution (metadata/telemetry only)
             HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
@@ -222,8 +228,8 @@ impl HttpFilterValue {
     }
     pub fn apply_response(&self, _response: &mut Response<PolyBody>) -> FilterDecision {
         match self {
-            // RBAC and RateLimit do not apply on the response path
-            HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) | HttpFilterValue::Ignored => {
+            // RBAC, RateLimit, and SetFilterState do not apply on the response path
+            HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) | HttpFilterValue::SetFilterState(_) | HttpFilterValue::Ignored => {
                 FilterDecision::Continue
             },
             // Istio-specific filters: no-op on response path
@@ -263,6 +269,112 @@ fn per_route_http_filters(
         }
     }
     per_route_filters
+}
+
+/// Applies set_filter_state filters from HCM configuration
+/// 
+/// This function evaluates format strings and stores the resulting values in filter state
+/// for use in routing decisions and upstream propagation.
+fn apply_set_filter_state_filters<B>(
+    request: &Request<B>,
+    downstream_metadata: &DownstreamMetadata,
+    http_filters: &[Arc<HttpFilter>],
+    filter_state: &FilterState,
+    format_evaluator: &FormatStringEvaluator,
+) {
+    use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SharedWithUpstream as ConfigSharedWithUpstream;
+    use crate::SharedWithUpstream as RuntimeSharedWithUpstream;
+
+    // Build request context from HTTP request
+    let mut ctx = RequestContext::new();
+    
+    // Extract headers
+    for (name, value) in request.headers() {
+        if let Ok(value_str) = value.to_str() {
+            ctx = ctx.with_header(name.as_str(), value_str);
+        }
+    }
+    
+    // Extract method
+    ctx = ctx.with_method(request.method().as_str());
+    
+    // Extract path
+    ctx = ctx.with_path(request.uri().path());
+    
+    // Extract protocol
+    ctx = ctx.with_protocol(format!("{:?}", request.version()));
+    
+    // Extract downstream addresses
+    let remote_addr = downstream_metadata.connection.peer_address();
+    ctx = ctx.with_downstream_remote_address(remote_addr);
+    
+    let local_addr = downstream_metadata.connection.local_address();
+    ctx = ctx.with_downstream_local_address(local_addr);
+
+    // Apply each set_filter_state filter
+    for filter in http_filters {
+        if filter.disabled {
+            continue;
+        }
+        
+        // Check if this is a SetFilterState filter
+        if let Some(HttpFilterValue::SetFilterState(sfs_config)) = &filter.filter {
+            // Process each on_request_headers entry
+            for value_config in &sfs_config.on_request_headers {
+                // 1. Evaluate format string
+                use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::FormatString;
+                let evaluated_value = match &value_config.format_string {
+                    FormatString::Text(template) => format_evaluator.evaluate(template, &ctx),
+                    FormatString::Structured { .. } => {
+                        // Structured format not yet supported
+                        tracing::warn!(
+                            "Structured format strings not yet supported for filter state key '{}'",
+                            value_config.object_key
+                        );
+                        continue;
+                    }
+                };
+                
+                // 2. Check skip_if_empty
+                if value_config.skip_if_empty && evaluated_value.is_empty() {
+                    tracing::debug!(
+                        "Skipping filter state key '{}' due to empty value",
+                        value_config.object_key
+                    );
+                    continue;
+                }
+                
+                // 3. Convert SharedWithUpstream
+                let shared_with_upstream = match value_config.shared_with_upstream {
+                    ConfigSharedWithUpstream::None => RuntimeSharedWithUpstream::None,
+                    ConfigSharedWithUpstream::Once => RuntimeSharedWithUpstream::Once,
+                    ConfigSharedWithUpstream::Transitive => RuntimeSharedWithUpstream::Transitive,
+                };
+                
+                // 4. Store in filter state
+                if let Err(e) = filter_state.set(
+                    value_config.object_key.as_str(),
+                    evaluated_value.clone(),
+                    value_config.read_only,
+                    shared_with_upstream,
+                ) {
+                    tracing::warn!(
+                        "Failed to set filter state key '{}': {}",
+                        value_config.object_key,
+                        e
+                    );
+                } else {
+                    tracing::debug!(
+                        "Set filter state: {} = {} (read_only={}, shared={:?})",
+                        value_config.object_key,
+                        evaluated_value,
+                        value_config.read_only,
+                        shared_with_upstream
+                    );
+                }
+            }
+        }
+    }
 }
 
 impl TryFrom<ConversionContext<'_, HttpConnectionManagerConfig>> for PartialHttpConnectionManager {
@@ -355,6 +467,8 @@ pub struct HttpConnectionManager {
     xff_settings: XffSettings,
     request_id_handler: RequestIdManager,
     pub http_tracer: HttpTracer,
+    filter_state: FilterState,
+    format_evaluator: FormatStringEvaluator,
 }
 
 impl fmt::Display for HttpConnectionManager {
@@ -545,6 +659,15 @@ impl TransactionHandler {
             &mut request,
             downstream_metadata.connection.peer_address(),
             manager.xff_settings,
+        );
+
+        // apply set_filter_state filters (must be done before routing)
+        apply_set_filter_state_filters(
+            &request,
+            &downstream_metadata,
+            &manager.http_filters_hcm,
+            &manager.filter_state,
+            &manager.format_evaluator,
         );
 
         // process request, get the response and calcuate the first byte time
