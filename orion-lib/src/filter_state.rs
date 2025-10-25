@@ -24,18 +24,27 @@
 //! - Propagated to upstream connections
 //! - Protected with read-only semantics
 //!
+//! # Architecture
+//!
+//! Filter state is stored per-request using HTTP request extensions, following
+//! the same pattern as `ResponseFlags` and `EventKind` in the codebase.
+//! This eliminates the need for global storage and locking.
+//!
 //! # Example
 //! ```rust,ignore
-//! use orion_lib::filter_state::{FilterState, SharedWithUpstream};
+//! use orion_lib::filter_state::{FilterStateExtension, SharedWithUpstream};
 //!
-//! let state = FilterState::new();
-//! state.set("my.key", "value".into(), false, SharedWithUpstream::Once)?;
-//! let value = state.get("my.key")?;
+//! // Access from request extensions
+//! let filter_state = request.extensions_mut()
+//!     .entry::<FilterStateExtension>()
+//!     .or_insert_with(FilterStateExtension::default);
+//!
+//! filter_state.set("my.key", "value", false, SharedWithUpstream::Once)?;
+//! let value = filter_state.get("my.key")?;
 //! ```
 
 use compact_str::CompactString;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
 use thiserror::Error;
 
 /// Errors that can occur during filter state operations
@@ -46,9 +55,6 @@ pub enum FilterStateError {
 
     #[error("Filter state key '{0}' is read-only and cannot be modified")]
     ReadOnly(CompactString),
-
-    #[error("Filter state lock poisoned")]
-    LockPoisoned,
 
     #[error("Invalid filter state value for key '{0}'")]
     InvalidValue(CompactString),
@@ -73,35 +79,49 @@ impl Default for SharedWithUpstream {
 
 /// A single filter state entry
 #[derive(Debug, Clone)]
-struct FilterStateEntry {
+pub struct FilterStateEntry {
     /// The stored value (currently only strings are supported)
-    value: CompactString,
+    pub value: CompactString,
     /// Whether this entry is read-only (cannot be overwritten)
-    read_only: bool,
+    pub read_only: bool,
     /// How this entry should be shared with upstream
-    shared_with_upstream: SharedWithUpstream,
+    pub shared_with_upstream: SharedWithUpstream,
 }
 
-/// Thread-safe filter state storage for dynamic per-request metadata
+/// Per-request filter state storage for dynamic metadata
 ///
-/// FilterState stores key-value pairs that can be set by filters and used
-/// for routing decisions, logging, or propagation to upstream connections.
+/// This extension is stored in HTTP request extensions and contains key-value pairs
+/// that can be set by filters and used for routing decisions, logging, or propagation
+/// to upstream connections.
+///
+/// # Usage
+///
+/// Store in request extensions:
+/// ```rust,ignore
+/// request.extensions_mut().insert(FilterStateExtension::default());
+/// ```
+///
+/// Access from request:
+/// ```rust,ignore
+/// if let Some(filter_state) = request.extensions().get::<FilterStateExtension>() {
+///     let value = filter_state.get("my.key")?;
+/// }
+/// ```
 ///
 /// # Thread Safety
-/// Uses RwLock for interior mutability, allowing concurrent reads and
-/// exclusive writes.
-#[derive(Debug, Clone)]
-pub struct FilterState {
-    /// Internal storage protected by RwLock
-    storage: Arc<RwLock<HashMap<CompactString, FilterStateEntry>>>,
+///
+/// No locking needed - each request has its own instance that is automatically
+/// cleaned up when the request completes.
+#[derive(Debug, Clone, Default)]
+pub struct FilterStateExtension {
+    /// Internal storage - no lock needed since this is per-request
+    entries: HashMap<CompactString, FilterStateEntry>,
 }
 
-impl FilterState {
-    /// Creates a new empty FilterState
+impl FilterStateExtension {
+    /// Creates a new empty FilterStateExtension
     pub fn new() -> Self {
-        Self {
-            storage: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self::default()
     }
 
     /// Sets a filter state value
@@ -115,33 +135,22 @@ impl FilterState {
     /// # Errors
     /// Returns `FilterStateError::ReadOnly` if the key already exists and is read-only
     pub fn set(
-        &self,
+        &mut self,
         key: impl Into<CompactString>,
-        value: CompactString,
+        value: impl Into<CompactString>,
         read_only: bool,
         shared_with_upstream: SharedWithUpstream,
     ) -> Result<(), FilterStateError> {
         let key = key.into();
-        let mut storage = self
-            .storage
-            .write()
-            .map_err(|_| FilterStateError::LockPoisoned)?;
 
         // Check if key exists and is read-only
-        if let Some(existing) = storage.get(&key) {
+        if let Some(existing) = self.entries.get(&key) {
             if existing.read_only {
                 return Err(FilterStateError::ReadOnly(key));
             }
         }
 
-        storage.insert(
-            key,
-            FilterStateEntry {
-                value,
-                read_only,
-                shared_with_upstream,
-            },
-        );
+        self.entries.insert(key, FilterStateEntry { value: value.into(), read_only, shared_with_upstream });
 
         Ok(())
     }
@@ -156,41 +165,22 @@ impl FilterState {
     ///
     /// # Errors
     /// Returns `FilterStateError::KeyNotFound` if the key doesn't exist
-    pub fn get(&self, key: &str) -> Result<CompactString, FilterStateError> {
-        let storage = self
-            .storage
-            .read()
-            .map_err(|_| FilterStateError::LockPoisoned)?;
-
-        storage
-            .get(key)
-            .map(|entry| entry.value.clone())
-            .ok_or_else(|| FilterStateError::KeyNotFound(key.into()))
+    pub fn get(&self, key: &str) -> Result<&CompactString, FilterStateError> {
+        self.entries.get(key).map(|entry| &entry.value).ok_or_else(|| FilterStateError::KeyNotFound(key.into()))
     }
 
     /// Checks if a key exists in the filter state
     pub fn contains_key(&self, key: &str) -> bool {
-        self.storage
-            .read()
-            .map(|storage| storage.contains_key(key))
-            .unwrap_or(false)
+        self.entries.contains_key(key)
     }
 
     /// Gets a value with its metadata
     ///
     /// Returns tuple of (value, read_only, shared_with_upstream)
-    pub fn get_with_metadata(
-        &self,
-        key: &str,
-    ) -> Result<(CompactString, bool, SharedWithUpstream), FilterStateError> {
-        let storage = self
-            .storage
-            .read()
-            .map_err(|_| FilterStateError::LockPoisoned)?;
-
-        storage
+    pub fn get_with_metadata(&self, key: &str) -> Result<(&CompactString, bool, SharedWithUpstream), FilterStateError> {
+        self.entries
             .get(key)
-            .map(|entry| (entry.value.clone(), entry.read_only, entry.shared_with_upstream))
+            .map(|entry| (&entry.value, entry.read_only, entry.shared_with_upstream))
             .ok_or_else(|| FilterStateError::KeyNotFound(key.into()))
     }
 
@@ -203,58 +193,45 @@ impl FilterState {
     ///
     /// # Returns
     /// HashMap of keys and their values that should be propagated upstream
-    pub fn get_upstream_shared(
-        &self,
-        mode: SharedWithUpstream,
-    ) -> HashMap<CompactString, CompactString> {
-        self.storage
-            .read()
-            .ok()
-            .map(|storage| {
-                storage
-                    .iter()
-                    .filter(|(_, entry)| match mode {
-                        SharedWithUpstream::None => false,
-                        SharedWithUpstream::Once => {
-                            entry.shared_with_upstream == SharedWithUpstream::Once
-                                || entry.shared_with_upstream == SharedWithUpstream::Transitive
-                        }
-                        SharedWithUpstream::Transitive => {
-                            entry.shared_with_upstream == SharedWithUpstream::Transitive
-                        }
-                    })
-                    .map(|(k, v)| (k.clone(), v.value.clone()))
-                    .collect()
+    pub fn get_upstream_shared(&self, mode: SharedWithUpstream) -> HashMap<CompactString, CompactString> {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| match mode {
+                SharedWithUpstream::None => false,
+                SharedWithUpstream::Once => {
+                    entry.shared_with_upstream == SharedWithUpstream::Once
+                        || entry.shared_with_upstream == SharedWithUpstream::Transitive
+                },
+                SharedWithUpstream::Transitive => entry.shared_with_upstream == SharedWithUpstream::Transitive,
             })
-            .unwrap_or_default()
+            .map(|(k, v)| (k.clone(), v.value.clone()))
+            .collect()
     }
 
-    /// Clears all filter state (useful for connection cleanup)
-    pub fn clear(&self) {
-        if let Ok(mut storage) = self.storage.write() {
-            storage.clear();
-        }
+    /// Clears all filter state entries
+    pub fn clear(&mut self) {
+        self.entries.clear();
     }
 
     /// Returns the number of entries in the filter state
     pub fn len(&self) -> usize {
-        self.storage
-            .read()
-            .map(|storage| storage.len())
-            .unwrap_or(0)
+        self.entries.len()
     }
 
     /// Returns true if the filter state is empty
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.entries.is_empty()
+    }
+
+    /// Returns an iterator over all entries
+    pub fn iter(&self) -> impl Iterator<Item = (&CompactString, &FilterStateEntry)> {
+        self.entries.iter()
     }
 }
 
-impl Default for FilterState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Backwards compatibility alias - users should migrate to FilterStateExtension
+#[deprecated(since = "0.1.0", note = "Use FilterStateExtension instead - stores per-request via HTTP extensions")]
+pub type FilterState = FilterStateExtension;
 
 #[cfg(test)]
 mod tests {
@@ -262,103 +239,86 @@ mod tests {
 
     #[test]
     fn test_new_filter_state() {
-        let state = FilterState::new();
+        let state = FilterStateExtension::new();
         assert_eq!(state.len(), 0);
         assert!(state.is_empty());
     }
 
     #[test]
     fn test_set_and_get() {
-        let state = FilterState::new();
-        
-        state
-            .set("test.key", "test_value".into(), false, SharedWithUpstream::None)
-            .unwrap();
+        let mut state = FilterStateExtension::new();
 
-        assert_eq!(state.get("test.key").unwrap(), "test_value");
+        state.set("test.key", "test_value", false, SharedWithUpstream::None).unwrap();
+
+        assert_eq!(state.get("test.key").unwrap().as_str(), "test_value");
         assert_eq!(state.len(), 1);
         assert!(!state.is_empty());
     }
 
     #[test]
     fn test_get_nonexistent_key() {
-        let state = FilterState::new();
-        
+        let state = FilterStateExtension::new();
+
         let result = state.get("nonexistent");
         assert!(matches!(result, Err(FilterStateError::KeyNotFound(_))));
     }
 
     #[test]
     fn test_read_only_enforcement() {
-        let state = FilterState::new();
-        
+        let mut state = FilterStateExtension::new();
+
         // Set initial value as read-only
-        state
-            .set("readonly.key", "initial".into(), true, SharedWithUpstream::None)
-            .unwrap();
+        state.set("readonly.key", "initial", true, SharedWithUpstream::None).unwrap();
 
         // Try to overwrite - should fail
-        let result = state.set(
-            "readonly.key",
-            "modified".into(),
-            false,
-            SharedWithUpstream::None,
-        );
-        
+        let result = state.set("readonly.key", "modified", false, SharedWithUpstream::None);
+
         assert!(matches!(result, Err(FilterStateError::ReadOnly(_))));
-        assert_eq!(state.get("readonly.key").unwrap(), "initial");
+        assert_eq!(state.get("readonly.key").unwrap().as_str(), "initial");
     }
 
     #[test]
     fn test_overwrite_non_readonly() {
-        let state = FilterState::new();
-        
-        state
-            .set("mutable.key", "first".into(), false, SharedWithUpstream::None)
-            .unwrap();
+        let mut state = FilterStateExtension::new();
 
-        state
-            .set("mutable.key", "second".into(), false, SharedWithUpstream::None)
-            .unwrap();
+        state.set("mutable.key", "first", false, SharedWithUpstream::None).unwrap();
 
-        assert_eq!(state.get("mutable.key").unwrap(), "second");
+        state.set("mutable.key", "second", false, SharedWithUpstream::None).unwrap();
+
+        assert_eq!(state.get("mutable.key").unwrap().as_str(), "second");
     }
 
     #[test]
     fn test_contains_key() {
-        let state = FilterState::new();
-        
+        let mut state = FilterStateExtension::new();
+
         assert!(!state.contains_key("test.key"));
-        
-        state
-            .set("test.key", "value".into(), false, SharedWithUpstream::None)
-            .unwrap();
-        
+
+        state.set("test.key", "value", false, SharedWithUpstream::None).unwrap();
+
         assert!(state.contains_key("test.key"));
     }
 
     #[test]
     fn test_get_with_metadata() {
-        let state = FilterState::new();
-        
-        state
-            .set("meta.key", "value".into(), true, SharedWithUpstream::Once)
-            .unwrap();
+        let mut state = FilterStateExtension::new();
+
+        state.set("meta.key", "value", true, SharedWithUpstream::Once).unwrap();
 
         let (value, read_only, shared) = state.get_with_metadata("meta.key").unwrap();
-        
-        assert_eq!(value, "value");
+
+        assert_eq!(value.as_str(), "value");
         assert!(read_only);
         assert_eq!(shared, SharedWithUpstream::Once);
     }
 
     #[test]
     fn test_upstream_shared_none() {
-        let state = FilterState::new();
-        
-        state.set("local", "v1".into(), false, SharedWithUpstream::None).unwrap();
-        state.set("once", "v2".into(), false, SharedWithUpstream::Once).unwrap();
-        state.set("trans", "v3".into(), false, SharedWithUpstream::Transitive).unwrap();
+        let mut state = FilterStateExtension::new();
+
+        state.set("local", "v1", false, SharedWithUpstream::None).unwrap();
+        state.set("once", "v2", false, SharedWithUpstream::Once).unwrap();
+        state.set("trans", "v3", false, SharedWithUpstream::Transitive).unwrap();
 
         let shared = state.get_upstream_shared(SharedWithUpstream::None);
         assert_eq!(shared.len(), 0);
@@ -366,63 +326,63 @@ mod tests {
 
     #[test]
     fn test_upstream_shared_once() {
-        let state = FilterState::new();
-        
-        state.set("local", "v1".into(), false, SharedWithUpstream::None).unwrap();
-        state.set("once", "v2".into(), false, SharedWithUpstream::Once).unwrap();
-        state.set("trans", "v3".into(), false, SharedWithUpstream::Transitive).unwrap();
+        let mut state = FilterStateExtension::new();
+
+        state.set("local", "v1", false, SharedWithUpstream::None).unwrap();
+        state.set("once", "v2", false, SharedWithUpstream::Once).unwrap();
+        state.set("trans", "v3", false, SharedWithUpstream::Transitive).unwrap();
 
         let shared = state.get_upstream_shared(SharedWithUpstream::Once);
         assert_eq!(shared.len(), 2);
-        assert_eq!(shared.get("once").unwrap(), "v2");
-        assert_eq!(shared.get("trans").unwrap(), "v3");
+        assert_eq!(shared.get("once").unwrap().as_str(), "v2");
+        assert_eq!(shared.get("trans").unwrap().as_str(), "v3");
     }
 
     #[test]
     fn test_upstream_shared_transitive() {
-        let state = FilterState::new();
-        
-        state.set("local", "v1".into(), false, SharedWithUpstream::None).unwrap();
-        state.set("once", "v2".into(), false, SharedWithUpstream::Once).unwrap();
-        state.set("trans", "v3".into(), false, SharedWithUpstream::Transitive).unwrap();
+        let mut state = FilterStateExtension::new();
+
+        state.set("local", "v1", false, SharedWithUpstream::None).unwrap();
+        state.set("once", "v2", false, SharedWithUpstream::Once).unwrap();
+        state.set("trans", "v3", false, SharedWithUpstream::Transitive).unwrap();
 
         let shared = state.get_upstream_shared(SharedWithUpstream::Transitive);
         assert_eq!(shared.len(), 1);
-        assert_eq!(shared.get("trans").unwrap(), "v3");
+        assert_eq!(shared.get("trans").unwrap().as_str(), "v3");
     }
 
     #[test]
     fn test_clear() {
-        let state = FilterState::new();
-        
-        state.set("key1", "v1".into(), false, SharedWithUpstream::None).unwrap();
-        state.set("key2", "v2".into(), false, SharedWithUpstream::None).unwrap();
-        
+        let mut state = FilterStateExtension::new();
+
+        state.set("key1", "v1", false, SharedWithUpstream::None).unwrap();
+        state.set("key2", "v2", false, SharedWithUpstream::None).unwrap();
+
         assert_eq!(state.len(), 2);
-        
+
         state.clear();
-        
+
         assert_eq!(state.len(), 0);
         assert!(state.is_empty());
     }
 
     #[test]
     fn test_istio_connect_authority_use_case() {
-        let state = FilterState::new();
-        
+        let mut state = FilterStateExtension::new();
+
         // Simulate Istio waypoint setting connect authority
         state
             .set(
                 "io.istio.connect_authority",
-                "my-service.default.svc.cluster.local:8080".into(),
-                true, // read-only to prevent tampering
+                "my-service.default.svc.cluster.local:8080",
+                true,                     // read-only to prevent tampering
                 SharedWithUpstream::Once, // share with immediate upstream
             )
             .unwrap();
 
         // Verify the value is set
         assert_eq!(
-            state.get("io.istio.connect_authority").unwrap(),
+            state.get("io.istio.connect_authority").unwrap().as_str(),
             "my-service.default.svc.cluster.local:8080"
         );
 
@@ -431,46 +391,25 @@ mod tests {
         assert!(shared.contains_key("io.istio.connect_authority"));
 
         // Verify read-only protection
-        let result = state.set(
-            "io.istio.connect_authority",
-            "tampered".into(),
-            false,
-            SharedWithUpstream::None,
-        );
+        let result = state.set("io.istio.connect_authority", "tampered", false, SharedWithUpstream::None);
         assert!(matches!(result, Err(FilterStateError::ReadOnly(_))));
     }
 
     #[test]
-    fn test_concurrent_access() {
-        use std::sync::Arc;
-        use std::thread;
+    fn test_per_request_isolation() {
+        // Simulate two separate requests with their own filter state
+        let mut request1_state = FilterStateExtension::new();
+        let mut request2_state = FilterStateExtension::new();
 
-        let state = Arc::new(FilterState::new());
-        let mut handles = vec![];
+        // Set different values in each request's state
+        request1_state.set("key", "request1_value", false, SharedWithUpstream::None).unwrap();
+        request2_state.set("key", "request2_value", false, SharedWithUpstream::None).unwrap();
 
-        // Spawn multiple threads writing different keys
-        for i in 0..10 {
-            let state_clone = Arc::clone(&state);
-            let handle = thread::spawn(move || {
-                let key = format!("key{}", i);
-                let value = format!("value{}", i);
-                state_clone
-                    .set(&key, value.into(), false, SharedWithUpstream::None)
-                    .unwrap();
-            });
-            handles.push(handle);
-        }
+        // Verify isolation - each request has its own value
+        assert_eq!(request1_state.get("key").unwrap().as_str(), "request1_value");
+        assert_eq!(request2_state.get("key").unwrap().as_str(), "request2_value");
 
-        // Wait for all threads
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        // Verify all keys were set
-        assert_eq!(state.len(), 10);
-        for i in 0..10 {
-            let key = format!("key{}", i);
-            assert!(state.contains_key(&key));
-        }
+        // No cross-contamination
+        assert_ne!(request1_state.get("key").unwrap(), request2_state.get("key").unwrap());
     }
 }

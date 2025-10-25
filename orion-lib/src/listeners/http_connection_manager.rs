@@ -83,7 +83,6 @@ use crate::{
         body_with_metrics::BodyWithMetrics,
         response_flags::{BodyKind, ResponseFlags},
     },
-    filter_state::FilterState,
     format_string::{FormatStringEvaluator, RequestContext},
 };
 
@@ -143,7 +142,6 @@ impl HttpConnectionManagerBuilder {
                 Some(tracing) => HttpTracer::new().with_config(tracing),
                 None => HttpTracer::new(),
             },
-            filter_state: FilterState::new(),
             format_evaluator: FormatStringEvaluator::new(),
         })
     }
@@ -191,8 +189,6 @@ pub enum HttpFilterValue {
     Ignored,
     /// Istio peer metadata filter - parsed but not executed (metadata/telemetry only)
     PeerMetadata,
-    /// Envoy set filter state - parsed but not executed (metadata only)
-    SetFilterState,
 }
 
 impl From<HttpFilterConfig> for HttpFilter {
@@ -205,7 +201,6 @@ impl From<HttpFilterConfig> for HttpFilter {
             HttpFilterType::Ingored => HttpFilterValue::Ignored,
             // Istio-specific filters: parsed but not executed (metadata/telemetry only)
             HttpFilterType::PeerMetadata(_) => HttpFilterValue::PeerMetadata,
-            HttpFilterType::SetFilterState(_) => HttpFilterValue::SetFilterState,
         };
         Self { name, disabled, filter: Some(filter) }
     }
@@ -223,17 +218,18 @@ impl HttpFilterValue {
             },
             HttpFilterValue::Ignored => FilterDecision::Continue,
             // Istio-specific filters: no-op execution (metadata/telemetry only)
-            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
+            HttpFilterValue::PeerMetadata => FilterDecision::Continue,
         }
     }
     pub fn apply_response(&self, _response: &mut Response<PolyBody>) -> FilterDecision {
         match self {
             // RBAC, RateLimit, and SetFilterState do not apply on the response path
-            HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) | HttpFilterValue::SetFilterState(_) | HttpFilterValue::Ignored => {
-                FilterDecision::Continue
-            },
+            HttpFilterValue::Rbac(_)
+            | HttpFilterValue::RateLimit(_)
+            | HttpFilterValue::SetFilterState(_)
+            | HttpFilterValue::Ignored => FilterDecision::Continue,
             // Istio-specific filters: no-op on response path
-            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
+            HttpFilterValue::PeerMetadata => FilterDecision::Continue,
         }
     }
     fn from_filter_override(value: &FilterOverride) -> Option<Self> {
@@ -272,42 +268,67 @@ fn per_route_http_filters(
 }
 
 /// Applies set_filter_state filters from HCM configuration
-/// 
-/// This function evaluates format strings and stores the resulting values in filter state
-/// for use in routing decisions and upstream propagation.
+///
+/// This function evaluates format strings and stores the resulting values in the request's
+/// FilterStateExtension (via HTTP extensions) for use in routing decisions and upstream propagation.
+///
+/// # Architecture Note
+///
+/// Filter state is stored per-request using HTTP request extensions, eliminating the need for
+/// global storage and locking. This follows the same pattern as ResponseFlags and EventKind.
 fn apply_set_filter_state_filters<B>(
-    request: &Request<B>,
+    request: &mut Request<B>,
     downstream_metadata: &DownstreamMetadata,
     http_filters: &[Arc<HttpFilter>],
-    filter_state: &FilterState,
     format_evaluator: &FormatStringEvaluator,
 ) {
+    use crate::{FilterStateExtension, SharedWithUpstream as RuntimeSharedWithUpstream};
     use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SharedWithUpstream as ConfigSharedWithUpstream;
-    use crate::SharedWithUpstream as RuntimeSharedWithUpstream;
+
+    tracing::trace!(
+        "Applying set_filter_state filters: method={}, uri={}, filters={}",
+        request.method(),
+        request.uri(),
+        http_filters.len()
+    );
 
     // Build request context from HTTP request
     let mut ctx = RequestContext::new();
-    
+
     // Extract headers
     for (name, value) in request.headers() {
-        if let Ok(value_str) = value.to_str() {
-            ctx = ctx.with_header(name.as_str(), value_str);
+        match value.to_str() {
+            Ok(value_str) => ctx = ctx.with_header(name.as_str(), value_str),
+            Err(_) => tracing::warn!(
+                header_name = %name.as_str(),
+                "Skipping non-UTF8 header value in format string context"
+            ),
         }
     }
-    
+
+    if ctx.get_header(":authority").is_none() {
+        if let Some(host) = ctx.get_header("host") {
+            let host = host.clone();
+            ctx = ctx.with_header(":authority", host);
+        }
+    }
+
     // Extract method
     ctx = ctx.with_method(request.method().as_str());
-    
+
+    // Also add :method pseudo-header for compatibility with %REQ(:method)%
+    ctx = ctx.with_header(":method", request.method().as_str());
+
     // Extract path
     ctx = ctx.with_path(request.uri().path());
-    
+
     // Extract protocol
     ctx = ctx.with_protocol(format!("{:?}", request.version()));
-    
+
     // Extract downstream addresses
     let remote_addr = downstream_metadata.connection.peer_address();
     ctx = ctx.with_downstream_remote_address(remote_addr);
-    
+
     let local_addr = downstream_metadata.connection.local_address();
     ctx = ctx.with_downstream_local_address(local_addr);
 
@@ -316,9 +337,15 @@ fn apply_set_filter_state_filters<B>(
         if filter.disabled {
             continue;
         }
-        
+
         // Check if this is a SetFilterState filter
         if let Some(HttpFilterValue::SetFilterState(sfs_config)) = &filter.filter {
+            tracing::debug!(
+                "Processing SetFilterState filter '{}' with {} entries",
+                filter.name,
+                sfs_config.on_request_headers.len()
+            );
+
             // Process each on_request_headers entry
             for value_config in &sfs_config.on_request_headers {
                 // 1. Evaluate format string
@@ -332,37 +359,42 @@ fn apply_set_filter_state_filters<B>(
                             value_config.object_key
                         );
                         continue;
-                    }
+                    },
                 };
-                
+
                 // 2. Check skip_if_empty
-                if value_config.skip_if_empty && evaluated_value.is_empty() {
-                    tracing::debug!(
-                        "Skipping filter state key '{}' due to empty value",
-                        value_config.object_key
-                    );
+                if value_config.skip_if_empty && (evaluated_value.is_empty() || evaluated_value == "-") {
+                    tracing::debug!("Skipping filter state key '{}' due to empty value", value_config.object_key);
                     continue;
                 }
-                
+
                 // 3. Convert SharedWithUpstream
                 let shared_with_upstream = match value_config.shared_with_upstream {
                     ConfigSharedWithUpstream::None => RuntimeSharedWithUpstream::None,
                     ConfigSharedWithUpstream::Once => RuntimeSharedWithUpstream::Once,
                     ConfigSharedWithUpstream::Transitive => RuntimeSharedWithUpstream::Transitive,
                 };
-                
-                // 4. Store in filter state
+
+                // 4. Get or create filter state extension for this request (lazy initialization)
+                // Only create if we actually have data to store
+                let filter_state = if let Some(fs) = request.extensions_mut().get_mut::<FilterStateExtension>() {
+                    fs
+                } else {
+                    request.extensions_mut().insert(FilterStateExtension::default());
+                    request
+                        .extensions_mut()
+                        .get_mut::<FilterStateExtension>()
+                        .expect("FilterStateExtension was just inserted")
+                };
+
+                // 5. Store in filter state extension (per-request storage, no locks!)
                 if let Err(e) = filter_state.set(
                     value_config.object_key.as_str(),
-                    evaluated_value.clone(),
+                    evaluated_value.as_str(),
                     value_config.read_only,
                     shared_with_upstream,
                 ) {
-                    tracing::warn!(
-                        "Failed to set filter state key '{}': {}",
-                        value_config.object_key,
-                        e
-                    );
+                    tracing::warn!("Failed to set filter state key '{}': {}", value_config.object_key, e);
                 } else {
                     tracing::debug!(
                         "Set filter state: {} = {} (read_only={}, shared={:?})",
@@ -467,7 +499,6 @@ pub struct HttpConnectionManager {
     xff_settings: XffSettings,
     request_id_handler: RequestIdManager,
     pub http_tracer: HttpTracer,
-    filter_state: FilterState,
     format_evaluator: FormatStringEvaluator,
 }
 
@@ -663,10 +694,9 @@ impl TransactionHandler {
 
         // apply set_filter_state filters (must be done before routing)
         apply_set_filter_state_filters(
-            &request,
+            &mut request,
             &downstream_metadata,
             &manager.http_filters_hcm,
-            &manager.filter_state,
             &manager.format_evaluator,
         );
 
@@ -1321,7 +1351,12 @@ fn apply_authorization_rules<B>(rbac: &HttpRbac, req: &Request<B>) -> FilterDeci
 
 #[cfg(test)]
 mod tests {
+    use crate::filter_state::SharedWithUpstream as RuntimeSharedWithUpstream;
+    use crate::listeners::filter_state::{DownstreamConnectionMetadata, DownstreamMetadata};
+    use crate::FilterStateExtension;
+    use hyper::Method;
     use orion_configuration::config::network_filters::http_connection_manager::MatchHost;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     use super::*;
 
@@ -1359,5 +1394,291 @@ mod tests {
         let vh2 = VirtualHost { domains: domains2, ..Default::default() };
         let request = Request::builder().header("host", "domain2.com").body(()).unwrap();
         assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), None);
+    }
+
+    #[test]
+    fn test_apply_set_filter_state_filters_basic() {
+        use compact_str::CompactString;
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::{
+            FilterStateValue, FormatString, SharedWithUpstream as ConfigSharedWithUpstream,
+        };
+
+        let format_evaluator = FormatStringEvaluator::new();
+
+        let sfs_config = orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState {
+            on_request_headers: vec![
+                FilterStateValue {
+                    object_key: CompactString::from("io.istio.connect_authority"),
+                    format_string: FormatString::Text(CompactString::from("%REQ(:authority)%")),
+                    factory_key: None,
+                    read_only: true,
+                    shared_with_upstream: ConfigSharedWithUpstream::Once,
+                    skip_if_empty: false,
+                },
+            ],
+        };
+
+        let http_filter = Arc::new(HttpFilter {
+            name: CompactString::from("test.set_filter_state"),
+            disabled: false,
+            filter: Some(HttpFilterValue::SetFilterState(sfs_config)),
+        });
+
+        let mut request = Request::builder()
+            .method(Method::CONNECT)
+            .uri("example.com:443")
+            .header("host", "example.com:443")
+            .body(())
+            .unwrap();
+
+        let downstream_metadata = DownstreamMetadata::new(
+            DownstreamConnectionMetadata::Socket {
+                peer_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 54321),
+                local_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1)), 15008),
+                original_destination_address: None,
+            },
+            None::<String>,
+        );
+
+        apply_set_filter_state_filters(&mut request, &downstream_metadata, &[http_filter], &format_evaluator);
+
+        // Access filter state from request extensions
+        let filter_state = request.extensions().get::<FilterStateExtension>().unwrap();
+        let (value, read_only, shared_with_upstream) =
+            filter_state.get_with_metadata("io.istio.connect_authority").unwrap();
+        assert_eq!(value.as_str(), "example.com:443");
+        assert!(read_only);
+        assert!(matches!(shared_with_upstream, RuntimeSharedWithUpstream::Once));
+    }
+
+    #[test]
+    fn test_apply_set_filter_state_filters_skip_if_empty() {
+        use compact_str::CompactString;
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::{
+            FilterStateValue, FormatString, SharedWithUpstream as ConfigSharedWithUpstream,
+        };
+
+        let format_evaluator = FormatStringEvaluator::new();
+
+        // Create config with skip_if_empty=true for a missing header
+        let sfs_config = orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState {
+            on_request_headers: vec![
+                FilterStateValue {
+                    object_key: CompactString::from("test.missing_header"),
+                    format_string: FormatString::Text(CompactString::from("%REQ(x-missing-header)%")),
+                    factory_key: None,
+                    read_only: false,
+                    shared_with_upstream: ConfigSharedWithUpstream::None,
+                    skip_if_empty: true,
+                },
+            ],
+        };
+
+        let http_filter = Arc::new(HttpFilter {
+            name: CompactString::from("test.set_filter_state"),
+            disabled: false,
+            filter: Some(HttpFilterValue::SetFilterState(sfs_config)),
+        });
+
+        let mut request = Request::builder().method(Method::GET).uri("/test").body(()).unwrap();
+
+        let downstream_metadata = DownstreamMetadata::new(
+            DownstreamConnectionMetadata::Socket {
+                peer_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 12345),
+                local_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                original_destination_address: None,
+            },
+            None::<String>,
+        );
+
+        apply_set_filter_state_filters(&mut request, &downstream_metadata, &[http_filter], &format_evaluator);
+
+        // Filter state should not have been created or the key should not exist
+        if let Some(filter_state) = request.extensions().get::<FilterStateExtension>() {
+            assert!(filter_state.get("test.missing_header").is_err());
+        }
+    }
+
+    #[test]
+    fn test_apply_set_filter_state_filters_client_address() {
+        use compact_str::CompactString;
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::{
+            FilterStateValue, FormatString, SharedWithUpstream as ConfigSharedWithUpstream,
+        };
+
+        let format_evaluator = FormatStringEvaluator::new();
+
+        // Create config for client address
+        let sfs_config = orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState {
+            on_request_headers: vec![
+                FilterStateValue {
+                    object_key: CompactString::from("io.istio.client_address"),
+                    format_string: FormatString::Text(CompactString::from("%DOWNSTREAM_REMOTE_ADDRESS%")),
+                    factory_key: None,
+                    read_only: false,
+                    shared_with_upstream: ConfigSharedWithUpstream::Transitive,
+                    skip_if_empty: false,
+                },
+            ],
+        };
+
+        let http_filter = Arc::new(HttpFilter {
+            name: CompactString::from("test.set_filter_state"),
+            disabled: false,
+            filter: Some(HttpFilterValue::SetFilterState(sfs_config)),
+        });
+
+        let mut request = Request::builder().method(Method::GET).uri("/").body(()).unwrap();
+
+        let downstream_metadata = DownstreamMetadata::new(
+            DownstreamConnectionMetadata::Socket {
+                peer_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100)), 45678),
+                local_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 8080),
+                original_destination_address: None,
+            },
+            None::<String>,
+        );
+
+        // Apply filters
+        apply_set_filter_state_filters(&mut request, &downstream_metadata, &[http_filter], &format_evaluator);
+
+        // Verify the client address was captured
+        let filter_state = request.extensions().get::<FilterStateExtension>().unwrap();
+        let (value, read_only, shared_with_upstream) =
+            filter_state.get_with_metadata("io.istio.client_address").unwrap();
+        assert_eq!(value.as_str(), "192.168.1.100:45678");
+        assert!(!read_only);
+        assert!(matches!(shared_with_upstream, RuntimeSharedWithUpstream::Transitive));
+    }
+
+    #[test]
+    fn test_apply_set_filter_state_filters_multiple_entries() {
+        use compact_str::CompactString;
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::{
+            FilterStateValue, FormatString, SharedWithUpstream as ConfigSharedWithUpstream,
+        };
+
+        let format_evaluator = FormatStringEvaluator::new();
+
+        // Create config with multiple filter state entries
+        let sfs_config = orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState {
+            on_request_headers: vec![
+                FilterStateValue {
+                    object_key: CompactString::from("io.istio.connect_authority"),
+                    format_string: FormatString::Text(CompactString::from("%REQ(:authority)%")),
+                    factory_key: None,
+                    read_only: true,
+                    shared_with_upstream: ConfigSharedWithUpstream::Once,
+                    skip_if_empty: false,
+                },
+                FilterStateValue {
+                    object_key: CompactString::from("io.istio.client_address"),
+                    format_string: FormatString::Text(CompactString::from("%DOWNSTREAM_REMOTE_ADDRESS%")),
+                    factory_key: None,
+                    read_only: false,
+                    shared_with_upstream: ConfigSharedWithUpstream::Transitive,
+                    skip_if_empty: false,
+                },
+                FilterStateValue {
+                    object_key: CompactString::from("test.method"),
+                    format_string: FormatString::Text(CompactString::from("%REQ(:method)%")),
+                    factory_key: None,
+                    read_only: false,
+                    shared_with_upstream: ConfigSharedWithUpstream::None,
+                    skip_if_empty: false,
+                },
+            ],
+        };
+
+        let http_filter = Arc::new(HttpFilter {
+            name: CompactString::from("test.set_filter_state"),
+            disabled: false,
+            filter: Some(HttpFilterValue::SetFilterState(sfs_config)),
+        });
+
+        let mut request = Request::builder()
+            .method(Method::CONNECT)
+            .uri("dest.example.com:443")
+            .header("host", "dest.example.com:443")
+            .body(())
+            .unwrap();
+
+        let downstream_metadata = DownstreamMetadata::new(
+            DownstreamConnectionMetadata::Socket {
+                peer_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)), 12345),
+                local_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 31, 0, 1)), 15008),
+                original_destination_address: None,
+            },
+            None::<String>,
+        );
+
+        // Apply filters
+        apply_set_filter_state_filters(&mut request, &downstream_metadata, &[http_filter], &format_evaluator);
+
+        // Verify all three entries were set
+        let filter_state = request.extensions().get::<FilterStateExtension>().unwrap();
+        assert_eq!(filter_state.get("io.istio.connect_authority").unwrap().as_str(), "dest.example.com:443");
+        assert_eq!(filter_state.get("io.istio.client_address").unwrap().as_str(), "10.1.2.3:12345");
+        assert_eq!(filter_state.get("test.method").unwrap().as_str(), "CONNECT");
+
+        // Verify metadata
+        let (_, read_only1, shared1) = filter_state.get_with_metadata("io.istio.connect_authority").unwrap();
+        assert!(read_only1);
+        assert!(matches!(shared1, RuntimeSharedWithUpstream::Once));
+
+        let (_, read_only2, shared2) = filter_state.get_with_metadata("io.istio.client_address").unwrap();
+        assert!(!read_only2);
+        assert!(matches!(shared2, RuntimeSharedWithUpstream::Transitive));
+
+        let (_, read_only3, shared3) = filter_state.get_with_metadata("test.method").unwrap();
+        assert!(!read_only3);
+        assert!(matches!(shared3, RuntimeSharedWithUpstream::None));
+    }
+
+    #[test]
+    fn test_apply_set_filter_state_filters_disabled_filter() {
+        use compact_str::CompactString;
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::{
+            FilterStateValue, FormatString, SharedWithUpstream as ConfigSharedWithUpstream,
+        };
+
+        let format_evaluator = FormatStringEvaluator::new();
+
+        let sfs_config = orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::SetFilterState {
+            on_request_headers: vec![
+                FilterStateValue {
+                    object_key: CompactString::from("test.disabled"),
+                    format_string: FormatString::Text(CompactString::from("value")),
+                    factory_key: None,
+                    read_only: false,
+                    shared_with_upstream: ConfigSharedWithUpstream::None,
+                    skip_if_empty: false,
+                },
+            ],
+        };
+
+        // Create a disabled filter
+        let http_filter = Arc::new(HttpFilter {
+            name: CompactString::from("test.set_filter_state"),
+            disabled: true, // Disabled!
+            filter: Some(HttpFilterValue::SetFilterState(sfs_config)),
+        });
+
+        let mut request = Request::builder().method(Method::GET).uri("/").body(()).unwrap();
+
+        let downstream_metadata = DownstreamMetadata::new(
+            DownstreamConnectionMetadata::Socket {
+                peer_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 12345),
+                local_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+                original_destination_address: None,
+            },
+            None::<String>,
+        );
+
+        // Apply filters
+        apply_set_filter_state_filters(&mut request, &downstream_metadata, &[http_filter], &format_evaluator);
+
+        // Verify nothing was set (filter was disabled) - extensions should be empty
+        assert!(request.extensions().get::<FilterStateExtension>().is_none());
     }
 }

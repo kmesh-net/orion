@@ -46,7 +46,7 @@ pub use clusters::{
     load_assignment::PartialClusterLoadAssignment,
     ClusterLoadAssignmentBuilder,
 };
-pub use filter_state::{FilterState, FilterStateError, SharedWithUpstream};
+pub use filter_state::{FilterStateError, FilterStateExtension, SharedWithUpstream};
 pub use format_string::{FormatStringEvaluator, RequestContext};
 pub use listeners::listener::ListenerFactory;
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};

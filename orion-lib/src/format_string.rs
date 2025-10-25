@@ -60,10 +60,8 @@
 //! ```
 
 use compact_str::CompactString;
-use regex::Regex;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::OnceLock;
 
 /// Request context containing all information needed for format string evaluation
 #[derive(Debug, Clone)]
@@ -157,8 +155,7 @@ impl RequestContext {
 
     /// Gets the :authority header (or falls back to Host)
     pub fn get_authority(&self) -> Option<&CompactString> {
-        self.get_header(":authority")
-            .or_else(|| self.get_header("host"))
+        self.get_header(":authority").or_else(|| self.get_header("host"))
     }
 }
 
@@ -170,22 +167,12 @@ impl Default for RequestContext {
 
 /// Format string evaluator that substitutes command operators with actual values
 #[derive(Debug, Clone)]
-pub struct FormatStringEvaluator {
-    /// Regex for matching command operators (cached)
-    command_regex: &'static Regex,
-}
+pub struct FormatStringEvaluator {}
 
 impl FormatStringEvaluator {
     /// Creates a new format string evaluator
     pub fn new() -> Self {
-        static COMMAND_REGEX: OnceLock<Regex> = OnceLock::new();
-        let command_regex = COMMAND_REGEX.get_or_init(|| {
-            // Match %COMMAND(arg):maxlen% or %COMMAND%
-            // Groups: 1=command, 2=arg (optional), 3=maxlen (optional)
-            Regex::new(r"%([A-Z_]+)(?:\(([^)]*)\))?(?::(\d+))?%").unwrap()
-        });
-
-        Self { command_regex }
+        Self {}
     }
 
     /// Evaluates a format string with the given request context
@@ -197,88 +184,140 @@ impl FormatStringEvaluator {
     /// # Returns
     /// String with all command operators replaced with actual values
     pub fn evaluate(&self, format: &str, ctx: &RequestContext) -> CompactString {
-        let result = self.command_regex.replace_all(format, |caps: &regex::Captures| {
-            let command = &caps[1];
-            let arg = caps.get(2).map(|m| m.as_str());
-            let max_len = caps
-                .get(3)
-                .and_then(|m| m.as_str().parse::<usize>().ok());
+        let mut out = String::with_capacity(format.len());
+        let bytes = format.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] != b'%' {
+                out.push(bytes[i] as char);
+                i += 1;
+                continue;
+            }
 
-            let value = self.evaluate_command(command, arg, ctx);
-            self.apply_max_length(value, max_len)
-        });
+            let mut j = i + 1;
 
-        result.into()
+            let start_cmd = j;
+            while j < bytes.len() {
+                let c = bytes[j];
+                if (b'A'..=b'Z').contains(&c) || c == b'_' {
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+
+            if j == start_cmd {
+                out.push('%');
+                i += 1;
+                continue;
+            }
+
+            let command = &format[start_cmd..j];
+
+            let mut arg: Option<&str> = None;
+            if j < bytes.len() && bytes[j] == b'(' {
+                j += 1;
+                let start_arg = j;
+                while j < bytes.len() && bytes[j] != b')' {
+                    j += 1;
+                }
+                if j >= bytes.len() {
+                    out.push('%');
+                    i += 1;
+                    continue;
+                }
+                arg = Some(&format[start_arg..j]);
+                j += 1;
+            }
+
+            let mut max_len: Option<usize> = None;
+            if j < bytes.len() && bytes[j] == b':' {
+                j += 1;
+                let start_num = j;
+                while j < bytes.len() && (b'0'..=b'9').contains(&bytes[j]) {
+                    j += 1;
+                }
+                if j == start_num {
+                    out.push('%');
+                    i += 1;
+                    continue;
+                }
+                if let Ok(n) = format[start_num..j].parse::<usize>() {
+                    max_len = Some(n);
+                }
+            }
+
+            if j < bytes.len() && bytes[j] == b'%' {
+                let value = self.evaluate_command(command, arg, ctx);
+                let truncated = self.apply_max_length(value, max_len);
+                out.push_str(&truncated);
+                i = j + 1;
+                continue;
+            } else {
+                out.push('%');
+                i += 1;
+                continue;
+            }
+        }
+
+        out.into()
     }
 
     /// Evaluates a single command operator
-    fn evaluate_command(
-        &self,
-        command: &str,
-        arg: Option<&str>,
-        ctx: &RequestContext,
-    ) -> CompactString {
+    fn evaluate_command(&self, command: &str, arg: Option<&str>, ctx: &RequestContext) -> CompactString {
         match command {
             "REQ" => {
                 // %REQ(header_name)%
                 if let Some(header_name) = arg {
-                    ctx.get_header(header_name)
-                        .cloned()
-                        .unwrap_or_else(|| "-".into())
+                    ctx.get_header(header_name).cloned().unwrap_or_else(|| "-".into())
                 } else {
                     "-".into()
                 }
-            }
+            },
             "DOWNSTREAM_REMOTE_ADDRESS" => {
                 // %DOWNSTREAM_REMOTE_ADDRESS%
-                ctx.downstream_remote_address
-                    .map(|addr| addr.to_string().into())
-                    .unwrap_or_else(|| "-".into())
-            }
+                ctx.downstream_remote_address.map(|addr| addr.to_string().into()).unwrap_or_else(|| "-".into())
+            },
             "DOWNSTREAM_LOCAL_ADDRESS" => {
                 // %DOWNSTREAM_LOCAL_ADDRESS%
-                ctx.downstream_local_address
-                    .map(|addr| addr.to_string().into())
-                    .unwrap_or_else(|| "-".into())
-            }
+                ctx.downstream_local_address.map(|addr| addr.to_string().into()).unwrap_or_else(|| "-".into())
+            },
             "UPSTREAM_HOST" => {
                 // %UPSTREAM_HOST%
                 ctx.upstream_host.clone().unwrap_or_else(|| "-".into())
-            }
+            },
             "PROTOCOL" => {
                 // %PROTOCOL%
                 ctx.protocol.clone().unwrap_or_else(|| "-".into())
-            }
+            },
             "REQ_METHOD" => {
                 // %REQ_METHOD%
                 ctx.method.clone().unwrap_or_else(|| "-".into())
-            }
+            },
             "REQ_PATH" => {
                 // %REQ_PATH%
                 ctx.path.clone().unwrap_or_else(|| "-".into())
-            }
+            },
             "REQ_AUTHORITY" => {
                 // %REQ_AUTHORITY% - alias for :authority header
-                ctx.get_authority()
-                    .cloned()
-                    .unwrap_or_else(|| "-".into())
-            }
+                ctx.get_authority().cloned().unwrap_or_else(|| "-".into())
+            },
             "ROUTE_NAME" => {
                 // %ROUTE_NAME%
                 ctx.route_name.clone().unwrap_or_else(|| "-".into())
-            }
+            },
             _ => {
                 // Unknown command - return as-is with % markers
                 format!("%{}%", command).into()
-            }
+            },
         }
     }
 
     /// Applies max length truncation to a value
     fn apply_max_length(&self, value: CompactString, max_len: Option<usize>) -> CompactString {
         if let Some(max_len) = max_len {
-            if value.len() > max_len {
-                return value.chars().take(max_len).collect::<String>().into();
+            if let Some((end_index, _)) = value.char_indices().nth(max_len) {
+                return value[..end_index].into();
             }
         }
         value
@@ -307,9 +346,7 @@ mod tests {
     #[test]
     fn test_req_header() {
         let evaluator = FormatStringEvaluator::new();
-        let ctx = RequestContext::new()
-            .with_header(":authority", "example.com")
-            .with_header("user-agent", "test/1.0");
+        let ctx = RequestContext::new().with_header(":authority", "example.com").with_header("user-agent", "test/1.0");
 
         let result = evaluator.evaluate("Host: %REQ(:authority)%", &ctx);
         assert_eq!(result, "Host: example.com");
@@ -451,10 +488,8 @@ mod tests {
             .with_path("/api/test")
             .with_downstream_remote_address(addr);
 
-        let result = evaluator.evaluate(
-            "%REQ_METHOD% %REQ_PATH% from %DOWNSTREAM_REMOTE_ADDRESS% to %REQ(:authority)%",
-            &ctx,
-        );
+        let result =
+            evaluator.evaluate("%REQ_METHOD% %REQ_PATH% from %DOWNSTREAM_REMOTE_ADDRESS% to %REQ(:authority)%", &ctx);
         assert_eq!(result, "GET /api/test from 192.168.1.1:54321 to example.com");
     }
 
@@ -463,10 +498,7 @@ mod tests {
         let evaluator = FormatStringEvaluator::new();
         let ctx = RequestContext::new();
 
-        let result = evaluator.evaluate(
-            "%REQ_METHOD% %PROTOCOL% %UPSTREAM_HOST% %ROUTE_NAME%",
-            &ctx,
-        );
+        let result = evaluator.evaluate("%REQ_METHOD% %PROTOCOL% %UPSTREAM_HOST% %ROUTE_NAME%", &ctx);
         assert_eq!(result, "- - - -");
     }
 
@@ -482,7 +514,7 @@ mod tests {
     #[test]
     fn test_istio_connect_authority_use_case() {
         let evaluator = FormatStringEvaluator::new();
-        
+
         // Simulate Istio waypoint extracting connect authority from CONNECT request
         let ctx = RequestContext::new()
             .with_header(":authority", "backend.default.svc.cluster.local:8080")
