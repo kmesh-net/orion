@@ -90,6 +90,7 @@ mod envoy_conversions {
                     local_ratelimit::v3::LocalRateLimit as EnvoyLocalRateLimit,
                     rbac::v3::{Rbac as EnvoyRbac, RbacPerRoute as EnvoyRbacPerRoute},
                     router::v3::Router as EnvoyRouter,
+                    set_filter_state::v3::Config as EnvoySetFilterStateConfig,
                 },
                 network::http_connection_manager::v3::{
                     http_filter::ConfigType as EnvoyConfigType, HttpFilter as EnvoyHttpFilter,

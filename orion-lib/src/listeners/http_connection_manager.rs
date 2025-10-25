@@ -196,6 +196,11 @@ impl From<HttpFilterConfig> for HttpFilter {
         let filter = match filter {
             HttpFilterType::RateLimit(r) => HttpFilterValue::RateLimit(r.into()),
             HttpFilterType::Rbac(rbac) => HttpFilterValue::Rbac(rbac),
+            HttpFilterType::SetFilterState(_) => {
+                // TODO: Implement runtime support for set_filter_state filter
+                // For now, treat as ignored to allow config parsing
+                HttpFilterValue::Ignored
+            },
             HttpFilterType::Ingored => HttpFilterValue::Ignored,
             // Istio-specific filters: parsed but not executed (metadata/telemetry only)
             HttpFilterType::PeerMetadata(_) => HttpFilterValue::PeerMetadata,
