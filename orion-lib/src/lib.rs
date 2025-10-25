@@ -24,6 +24,7 @@ pub mod access_log;
 mod body;
 pub mod clusters;
 pub mod filter_state;
+pub mod format_string;
 mod listeners;
 mod secrets;
 pub(crate) mod thread_local;
@@ -46,6 +47,7 @@ pub use clusters::{
     ClusterLoadAssignmentBuilder,
 };
 pub use filter_state::{FilterState, FilterStateError, SharedWithUpstream};
+pub use format_string::{FormatStringEvaluator, RequestContext};
 pub use listeners::listener::ListenerFactory;
 pub use listeners_manager::{ListenerConfigurationChange, ListenersManager, RouteConfigurationChange};
 pub use orion_configuration::config::network_filters::http_connection_manager::RouteConfiguration;
