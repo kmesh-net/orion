@@ -23,7 +23,10 @@ use prost::Message;
 
 /// TypedStruct protobuf message definition
 ///
-/// From udpa/type/v1/typed_struct.proto:
+/// From udpa/type/v1/typed_struct.proto and xds/type/v3/typed_struct.proto:
+/// - <https://github.com/cncf/xds/blob/main/udpa/type/v1/typed_struct.proto>
+/// - <https://github.com/cncf/xds/blob/main/xds/type/v3/typed_struct.proto>
+///
 /// ```protobuf
 /// message TypedStruct {
 ///   string type_url = 1;
