@@ -51,9 +51,9 @@ http-body           = "1.0"
 http-body-util      = "0.1.0"
 num_cpus            = "1"
 ppp                 = "2.3"
-prost               = "0.13"
-prost-build         = "^0.13"
-prost-reflect       = { version = "0.14", features = ["derive", "serde"] }
+prost               = "0.14"
+prost-build         = "^0.14"
+prost-reflect       = { version = "0.16", features = ["derive", "serde"] }
 regex               = "1.10.2"
 serde               = { version = "1", features = ["derive", "rc"] }
 serde_json          = { version = "1" }
@@ -61,9 +61,9 @@ serde_yaml          = "0.9.34"
 thiserror           = "1.0.57"
 tokio               = { version = "1.37", features = ["full"] }
 tokio-stream        = { version = "0.1.15", features = ["net", "sync"] }
-tonic               = "^0.12"
-tonic-build         = "^0.12"
-tonic-health        = "^0.12"
+tonic               = "^0.14"
+tonic-build         = "^0.14"
+tonic-health        = "^0.14"
 tower               = { version = "0.5.1", features = ["make"] }
 tracing             = "0.1"
 tracing-subscriber  = "0.3"
