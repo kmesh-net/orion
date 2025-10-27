@@ -20,7 +20,10 @@ use compact_str::CompactString;
 use http_rbac::HttpRbac;
 pub mod local_rate_limit;
 use local_rate_limit::LocalRateLimit;
+pub mod filter_registry;
+pub mod peer_metadata;
 pub mod router;
+pub mod set_filter_state;
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -61,6 +64,10 @@ pub enum HttpFilterType {
     Rbac(HttpRbac),
     RateLimit(LocalRateLimit),
     Ingored,
+    /// Istio peer metadata filter (parsed but may not be executed)
+    PeerMetadata(peer_metadata::PeerMetadataConfig),
+    /// Envoy set filter state filter (parsed but may not be executed)
+    SetFilterState(set_filter_state::SetFilterStateConfig),
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -71,6 +78,7 @@ use super::is_default;
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
+    use super::filter_registry::ensure_filters_registered;
     use super::{FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, HttpRbac};
     use crate::config::common::*;
     use compact_str::CompactString;
@@ -136,6 +144,8 @@ mod envoy_conversions {
                     Err(GenericError::from_msg("router filter has to be the last filter in the chain"))
                 },
                 SupportedEnvoyFilter::Ignored => Ok(Self::Ingored),
+                SupportedEnvoyFilter::PeerMetadata(config) => Ok(Self::PeerMetadata(config)),
+                SupportedEnvoyFilter::SetFilterState(config) => Ok(Self::SetFilterState(config)),
             }
         }
     }
@@ -147,44 +157,76 @@ mod envoy_conversions {
         Rbac(EnvoyRbac),
         Router(EnvoyRouter),
         Ignored,
+        PeerMetadata(super::peer_metadata::PeerMetadataConfig),
+        SetFilterState(super::set_filter_state::SetFilterStateConfig),
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
         type Error = GenericError;
         fn try_from(typed_config: Any) -> Result<Self, Self::Error> {
-            match typed_config.type_url.as_str() {
-                "type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit" => {
-                    EnvoyLocalRateLimit::decode(typed_config.value.as_slice()).map(Self::LocalRateLimit)
-                },
-                "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC" => {
-                    EnvoyRbac::decode(typed_config.value.as_slice()).map(Self::Rbac)
-                },
-                "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
-                    EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
-                },
-                "type.googleapis.com/udpa.type.v1.TypedStruct"
-                | "type.googleapis.com/stats.PluginConfig"
-                | "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig"
-                | "type.googleapis.com/istio.envoy.config.filter.http.alpn.v2alpha1.FilterConfig"
-                | "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
-                | "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors" => {
-                    info!("Ignored Istio type {}", typed_config.type_url);
-                    Ok(SupportedEnvoyFilter::Ignored)
-                },
+            use crate::typed_struct::{global_registry, TypedStructFilter, TypedStructParser};
 
-                _ => {
-                    return Err(GenericError::unsupported_variant(format!(
-                        "HTTP filter unsupported variant {}",
-                        typed_config.type_url
+            ensure_filters_registered();
+
+            if TypedStructParser::is_typed_struct_url(&typed_config.type_url) {
+                let parsed = TypedStructParser::parse(&typed_config.value)
+                    .map_err(|e| GenericError::from_msg_with_cause("Failed to parse TypedStruct wrapper", e))?;
+
+                let registry = global_registry();
+                if registry.is_supported(&parsed.type_url) {
+                    match parsed.type_url.as_str() {
+                        url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
+                            super::peer_metadata::PeerMetadataConfig::from_typed_struct(&parsed).map(Self::PeerMetadata)
+                        },
+                        url if url == super::set_filter_state::SetFilterStateConfig::TYPE_URL => {
+                            super::set_filter_state::SetFilterStateConfig::from_typed_struct(&parsed)
+                                .map(Self::SetFilterState)
+                        },
+                        _ => Err(GenericError::unsupported_variant(format!(
+                            "TypedStruct with inner type: {}",
+                            parsed.type_url
+                        ))),
+                    }
+                } else {
+                    Err(GenericError::unsupported_variant(format!(
+                        "Unregistered TypedStruct filter: {}. Use global_registry().register_dynamic() to add support.",
+                        parsed.type_url
                     )))
-                },
+                }
+            } else {
+                match typed_config.type_url.as_str() {
+                    "type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit" => {
+                        EnvoyLocalRateLimit::decode(typed_config.value.as_slice()).map(Self::LocalRateLimit)
+                    },
+                    "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBAC" => {
+                        EnvoyRbac::decode(typed_config.value.as_slice()).map(Self::Rbac)
+                    },
+                    "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
+                        EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
+                    },
+                    "type.googleapis.com/udpa.type.v1.TypedStruct"
+                    | "type.googleapis.com/stats.PluginConfig"
+                    | "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig"
+                    | "type.googleapis.com/istio.envoy.config.filter.http.alpn.v2alpha1.FilterConfig"
+                    | "type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault"
+                    | "type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors" => {
+                        info!("Ignored Istio type {}", typed_config.type_url);
+                        Ok(SupportedEnvoyFilter::Ignored)
+                    },
+                    _ => {
+                        return Err(GenericError::unsupported_variant(format!(
+                            "HTTP filter unsupported variant {}",
+                            typed_config.type_url
+                        )))
+                    },
+                }
+                .map_err(|e| {
+                    GenericError::from_msg_with_cause(
+                        format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
+                        e,
+                    )
+                })
             }
-            .map_err(|e| {
-                GenericError::from_msg_with_cause(
-                    format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
-                    e,
-                )
-            })
         }
     }
 
@@ -287,6 +329,97 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(envoy: Any) -> Result<Self, Self::Error> {
             MaybeWrappedEnvoyFilter::try_from(envoy)?.try_into()
+        }
+    }
+}
+
+#[cfg(test)]
+mod typed_struct_integration_tests {
+    use super::*;
+    use crate::typed_struct::{TypedStruct, TypedStructFilter};
+    use orion_data_plane_api::envoy_data_plane_api::google::protobuf::Any;
+    use prost::Message;
+    use prost_types::{value::Kind, ListValue, Struct, Value};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_try_from_any_typed_struct_peer_metadata() {
+        // Build inner Struct for PeerMetadataConfig with discovery object
+        let mut discovery_obj = BTreeMap::new();
+        discovery_obj.insert(
+            "workload_discovery".to_string(),
+            Value { kind: Some(Kind::StructValue(Struct { fields: BTreeMap::new() })) },
+        );
+
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "downstream_discovery".to_string(),
+            Value {
+                kind: Some(Kind::ListValue(ListValue {
+                    values: vec![Value { kind: Some(Kind::StructValue(Struct { fields: discovery_obj })) }],
+                })),
+            },
+        );
+        fields.insert("shared_with_upstream".to_string(), Value { kind: Some(Kind::BoolValue(true)) });
+
+        let typed_struct = TypedStruct {
+            type_url: super::peer_metadata::PeerMetadataConfig::TYPE_URL.to_string(),
+            value: Some(Struct { fields }),
+        };
+
+        let mut buf = Vec::new();
+        typed_struct.encode(&mut buf).unwrap();
+
+        // Wrap in Any as TypedStruct wrapper
+        let any = Any { type_url: "type.googleapis.com/udpa.type.v1.TypedStruct".to_string(), value: buf };
+
+        let parsed = SupportedEnvoyFilter::try_from(any).expect("should parse typed struct");
+        match parsed {
+            SupportedEnvoyFilter::PeerMetadata(cfg) => {
+                assert_eq!(cfg.shared_with_upstream, Some(true));
+                assert!(cfg.downstream_discovery.is_some());
+            },
+            _ => panic!("expected PeerMetadata variant"),
+        }
+    }
+
+    #[test]
+    fn test_try_from_any_typed_struct_set_filter_state() {
+        // Build inner Struct for SetFilterStateConfig with one action
+        let mut action_fields = BTreeMap::new();
+        action_fields.insert("object_key".to_string(), Value { kind: Some(Kind::StringValue("test_key".to_string())) });
+
+        let mut list_values = Vec::new();
+        let mut struct_fields = BTreeMap::new();
+        struct_fields.insert("object_key".to_string(), Value { kind: Some(Kind::StringValue("test_key".to_string())) });
+        let action_struct = Value { kind: Some(Kind::StructValue(Struct { fields: struct_fields })) };
+        list_values.push(action_struct);
+
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "on_request_headers".to_string(),
+            Value { kind: Some(Kind::ListValue(ListValue { values: list_values })) },
+        );
+
+        let typed_struct = TypedStruct {
+            type_url: super::set_filter_state::SetFilterStateConfig::TYPE_URL.to_string(),
+            value: Some(Struct { fields }),
+        };
+
+        let mut buf = Vec::new();
+        typed_struct.encode(&mut buf).unwrap();
+
+        let any = Any { type_url: "type.googleapis.com/udpa.type.v1.TypedStruct".to_string(), value: buf };
+
+        let parsed = SupportedEnvoyFilter::try_from(any).expect("should parse typed struct");
+        match parsed {
+            SupportedEnvoyFilter::SetFilterState(cfg) => {
+                assert!(cfg.on_request_headers.is_some());
+                let actions = cfg.on_request_headers.unwrap();
+                assert_eq!(actions.len(), 1);
+                assert_eq!(actions[0].object_key, "test_key");
+            },
+            _ => panic!("expected SetFilterState variant"),
         }
     }
 }

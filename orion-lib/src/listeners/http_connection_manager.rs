@@ -184,6 +184,10 @@ pub enum HttpFilterValue {
     RateLimit(LocalRateLimit),
     Rbac(HttpRbac),
     Ignored,
+    /// Istio peer metadata filter - parsed but not executed (metadata/telemetry only)
+    PeerMetadata,
+    /// Envoy set filter state - parsed but not executed (metadata only)
+    SetFilterState,
 }
 
 impl From<HttpFilterConfig> for HttpFilter {
@@ -193,6 +197,9 @@ impl From<HttpFilterConfig> for HttpFilter {
             HttpFilterType::RateLimit(r) => HttpFilterValue::RateLimit(r.into()),
             HttpFilterType::Rbac(rbac) => HttpFilterValue::Rbac(rbac),
             HttpFilterType::Ingored => HttpFilterValue::Ignored,
+            // Istio-specific filters: parsed but not executed (metadata/telemetry only)
+            HttpFilterType::PeerMetadata(_) => HttpFilterValue::PeerMetadata,
+            HttpFilterType::SetFilterState(_) => HttpFilterValue::SetFilterState,
         };
         Self { name, disabled, filter: Some(filter) }
     }
@@ -204,6 +211,8 @@ impl HttpFilterValue {
             HttpFilterValue::Rbac(rbac) => apply_authorization_rules(rbac, request),
             HttpFilterValue::RateLimit(rl) => rl.run(request),
             HttpFilterValue::Ignored => FilterDecision::Continue,
+            // Istio-specific filters: no-op execution (metadata/telemetry only)
+            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
         }
     }
     pub fn apply_response(&self, _response: &mut Response<PolyBody>) -> FilterDecision {
@@ -212,6 +221,8 @@ impl HttpFilterValue {
             HttpFilterValue::Rbac(_) | HttpFilterValue::RateLimit(_) | HttpFilterValue::Ignored => {
                 FilterDecision::Continue
             },
+            // Istio-specific filters: no-op on response path
+            HttpFilterValue::PeerMetadata | HttpFilterValue::SetFilterState => FilterDecision::Continue,
         }
     }
     fn from_filter_override(value: &FilterOverride) -> Option<Self> {
