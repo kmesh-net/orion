@@ -1,7 +1,8 @@
 <img src="docs/pics/logo/orion_proxy_logo.png" alt="orion-proxy-logo" style="zoom: 100%;" />
 
 <!--
-[![LICENSE](https://img.shields.io/github/license/kmesh-net/orion)](/LICENSE) [![codecov](https://codecov.io/gh/kmesh-net/kmesh/graph/badge.svg?token=0EGQ84FGDU)](https://img.shields.io/github/license/kmesh-net/orion) 
+[![LICENSE](https://img.shields.io/github/license/kmesh-net/orion)](/LICENSE) [![codecov](https://codecov.io/gh/kmesh-net/kmesh/graph/badge.svg?token=0EGQ84FGDU)](https://img.shields.io/github/license/kmesh-net/orion) [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkmesh-net%2Forion.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkmesh-net%2Forion?ref=badge_shield)
+
 -->
 
 ## Introduction
@@ -140,3 +141,6 @@ For detailed information, see [examples/tlv-filter-demo/README.md](examples/tlv-
 
 Orion Proxy is licensed under the
 [Apache License, Version 2.0](./LICENSE).
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkmesh-net%2Forion.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkmesh-net%2Forion?ref=badge_large)
