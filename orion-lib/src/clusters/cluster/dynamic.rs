@@ -22,7 +22,6 @@ use orion_configuration::config::{
         ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck, HealthStatus,
         LbEndpoint as LbEndpointConfig, LbPolicy, LocalityLbEndpoints as LocalityLbEndpointsConfig,
     },
-    core::envoy_conversions::Address,
     transport::BindDeviceOptions,
 };
 

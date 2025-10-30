@@ -72,6 +72,7 @@ enum ListenerAddress {
     Internal(InternalListenerConfig),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct InternalListenerConfig {
     buffer_size_kb: Option<u32>,

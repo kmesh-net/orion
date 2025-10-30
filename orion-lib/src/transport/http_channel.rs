@@ -70,8 +70,10 @@ use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
 use {
-    hyper_util::client::legacy::pool::{ConnectionEvent, EventHandler, Tag},
-    hyper_util::client::legacy::PoolKey,
+    hyper_util::client::legacy::{
+        pool::{ConnectionEvent, EventHandler, Tag},
+        PoolKey,
+    },
     std::any::Any,
 };
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -510,6 +512,7 @@ impl HttpChannel {
 
         let mut total_requests = 0;
         for (index, back_off) in retry_policy.exponential_back_off().iter().enumerate() {
+            let back_off = back_off.unwrap_or(Duration::from_secs(1));
             total_requests += 1;
             let cloned_body =
                 BodyWithMetrics { inner: body.clone().into(), guard: guard.clone(), state: state.clone() };
