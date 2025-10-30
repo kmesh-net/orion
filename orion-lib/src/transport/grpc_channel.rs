@@ -22,13 +22,14 @@ use http::{
 };
 use std::{iter::Cycle, sync::Arc, vec::IntoIter};
 
-use orion_xds::grpc_deps::{to_grpc_body, GrpcBody};
+use orion_xds::grpc_deps::{GrpcBody, Response};
 use tower::Service;
 
 use crate::{
     body::{body_with_metrics::BodyWithMetrics, response_flags::BodyKind},
     listeners::http_connection_manager::{RequestHandler, TransactionHandler},
     transport::{policy::RequestExt, HttpChannel},
+    PolyBody,
 };
 
 /// Adapts a [`HttpChannel`] to a [`Service`] that can be used as a channel for gRPC.
@@ -70,7 +71,10 @@ impl GrpcService {
 
         let svc_resp =
             self.inner.to_response(&Arc::new(TransactionHandler::default()), RequestExt::new(http_req)).await?;
-        Ok(svc_resp.map(to_grpc_body))
+        let (header, body) = svc_resp.into_parts();
+        let body = GrpcBody::new(body);
+        let svc_resp = http::Response::from_parts(header, body);
+        Ok(svc_resp)
     }
 }
 

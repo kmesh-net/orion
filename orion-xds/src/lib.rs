@@ -28,7 +28,7 @@ use orion_data_plane_api::envoy_data_plane_api::{
     envoy::service::discovery::v3::aggregated_discovery_service_client::AggregatedDiscoveryServiceClient, tonic,
 };
 use tonic::{
-    body::BoxBody,
+    body::Body,
     codegen::StdError as TonicError,
     transport::{Channel, Endpoint},
 };
@@ -38,11 +38,7 @@ use xds::client::{DeltaClientBackgroundWorker, DeltaDiscoverySubscriptionManager
 
 pub mod grpc_deps {
     pub use orion_data_plane_api::envoy_data_plane_api::{
-        tonic::{
-            body::{boxed as to_grpc_body, BoxBody as GrpcBody},
-            codegen::StdError as Error,
-            Response, Status,
-        },
+        tonic::{body::Body as GrpcBody, codegen::StdError as Error, Response, Status},
         tonic_health,
     };
 }
@@ -83,7 +79,7 @@ pub fn start_aggregate_client_no_retry_loop<C>(
     XdsError,
 >
 where
-    C: Service<Request<BoxBody>, Response = Response<BoxBody>, Error = TonicError> + Send,
+    C: Service<Request<Body>, Response = Response<Body>, Error = TonicError> + Send,
     C::Future: Send,
 {
     let underlying_client =

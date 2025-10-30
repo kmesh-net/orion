@@ -1,9 +1,11 @@
-use std::path::PathBuf;
-
 use glob::glob;
+use std::env;
+use std::path::{Path, PathBuf};
 
 /// std::env::set_var("PROTOC", The Path of Protoc);
 fn main() -> std::io::Result<()> {
+    let path = env::current_dir()?;
+    println!("The current directory is {}", path.display());
     let descriptor_path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("proto_descriptor.bin");
 
     let mut protos: Vec<PathBuf> = glob("data-plane-api/envoy/**/v3/*.proto").unwrap().filter_map(Result::ok).collect();
@@ -15,16 +17,16 @@ fn main() -> std::io::Result<()> {
     protos.extend(custom_protos);
 
     let include_paths = [
-        "data-plane-api/",
-        "xds/",
-        "protoc-gen-validate/",
-        "googleapis/",
-        "opencensus-proto/src/",
-        "opentelemetry-proto/",
-        "prometheus-client-model/",
-        "cel-spec/proto",
-        "protobuf/src/",
-        "udpa/udpa/type/v1",
+        "./data-plane-api/",
+        "./xds/",
+        "./protoc-gen-validate/",
+        "./googleapis/",
+        "./opencensus-proto/src/",
+        "./opentelemetry-proto/",
+        "./prometheus-client-model/",
+        "./cel-spec/proto",
+        "./protobuf/src/",
+        "./udpa/udpa/type/v1",
         "../proto/",
     ];
 
@@ -52,9 +54,9 @@ fn main() -> std::io::Result<()> {
             .type_attribute(full_name, format!(r#"#[prost_reflect(message_name = "{}")]"#, full_name,))
             .type_attribute(full_name, pool_attribute);
     }
-
+    let include_paths = include_paths.into_iter().map(|p| Path::new(p).to_path_buf()).collect::<Vec<PathBuf>>();
     // Proceed w/ tonic_build
-    tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
+    let err = tonic_prost_build::configure().build_server(true).build_client(true).compile_with_config(
         config,
         &protos,
         &include_paths,

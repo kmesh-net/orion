@@ -31,21 +31,21 @@ orion-lib.workspace            = true
 orion-metrics.workspace        = true
 orion-tracing.workspace        = true
 orion-xds.workspace            = true
-parking_lot                    = "0.12.3"
+parking_lot                    = "0.12.5"
 tokio.workspace                = true
 tower.workspace                = true
 tracing.workspace              = true
 pingora-timeout                = "0.3.0"
 
 
-axum = "0.8.1"
+axum = "0.8.6"
 compact_str.workspace = true
 http.workspace = true
-opentelemetry = "0.29.0"
+opentelemetry.workspace = true
 prometheus = { version = "0.14.0", features = ["process"] }
-regex = "1.10.2"
+regex = "1.12.2"
 serde = { version = "1.0", features = ["rc"] }
-serde_json = "1.0.140"
+serde_json = "1.0.145"
 thiserror.workspace = true
 tracing-appender = "0.2"
 tracing-subscriber = { workspace = true, features = [
@@ -65,7 +65,7 @@ caps = "0.5"
 affinity = "0.1.2"
 
 [dev-dependencies]
-axum-test              = "17.2.0"
+axum-test              = "17.3.0"
 orion-data-plane-api.workspace = true
 tracing-test.workspace = true
 
