@@ -17,7 +17,7 @@ thiserror.workspace      = true
 ahash          = "0.8.12"
 bitflags        = { version = "2.10.0", features = ["serde"] }
 chrono         = "0.4.42"
-compact_str    = "0.8.1"
+compact_str    = "0.9.0"
 criterion      = "0.5.1"
 dhat           = "0.3.3"
 http-serde-ext = "1.0.2"
