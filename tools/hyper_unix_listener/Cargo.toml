@@ -9,7 +9,7 @@ version.workspace = true
 [dependencies]
 tokio.workspace = true
 hyper = { version = "1", features = ["full"] }
-clap = { version = "4.5.46", features = ["derive"] }
+clap = { version = "4.5.51", features = ["derive"] }
 
 hyperlocal = "0.9.1"
 

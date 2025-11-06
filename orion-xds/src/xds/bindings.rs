@@ -84,7 +84,7 @@ pub struct AggregatedDiscoveryType<C> {
 
 impl<C> TypedXdsBinding for AggregatedDiscoveryType<C>
 where
-    C: tower::Service<http::Request<tonic::body::BoxBody>, Response = http::Response<tonic::body::BoxBody>> + Send,
+    C: tower::Service<http::Request<tonic::body::Body>, Response = http::Response<tonic::body::Body>> + Send,
     C::Error: Into<StdError>,
     C::Future: Send,
 {

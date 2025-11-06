@@ -11,33 +11,29 @@ version.workspace = true
 [dependencies]
 base64 = "0.22.1"
 base64-serde = "0.7.0"
-bounded-integer = { version = "0.5.8", features = ["serde", "types"] }
+bounded-integer = { version = "0.6.1", features = ["serde1"] }
 bytes.workspace = true
-clap = { version = "4.5.46", features = ["derive"] }
+clap = { version = "4.5.51", features = ["derive"] }
 compact_str.workspace = true
 exponential-backoff.workspace = true
 http.workspace = true
 http-serde-ext = "1.0.2"
 humantime-serde = "1.1.1"
-ipnet = { version = "2.9", features = ["serde"] }
+ipnet = { version = "2.11", features = ["serde"] }
 itertools = "0.14.0"
 num_cpus.workspace = true
 num-traits = "0.2.19"
-opentelemetry-otlp = { version = "0.29.0", features = [
-  "serde",
-  "serde_json",
-  "serialize",
-] }
+opentelemetry-otlp.workspace=true
 orion-data-plane-api = { workspace = true, optional = true }
 orion-error.workspace = true
 orion-format.workspace = true
 orion-interner.workspace = true
-prost = "0.13.0"
-prost-types = "0.13.0"
+prost = "0.13.5"
+prost-types = "0.13.5"
 regex.workspace = true
 serde = { workspace = true, features = ["rc"] }
 serde_json.workspace = true
-serde_path_to_error = "0.1.16"
+serde_path_to_error = "0.1.20"
 serde_regex = "1.1.0"
 serde_yaml.workspace = true
 thiserror.workspace = true
@@ -49,7 +45,7 @@ url.workspace = true
 
 [dev-dependencies]
 tracing-test.workspace = true
-tempfile = "3.8"
+tempfile = "3.23"
 
 [features]
 default = ["envoy-conversions"]

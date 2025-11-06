@@ -67,6 +67,7 @@ fn read_static_resource() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn read_dynamic_resource() {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests");
@@ -92,6 +93,7 @@ fn read_dynamic_resource() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn read_ads_config() {
     const ADS_BOOTSTRAP: &str = r#"
 dynamic_resources:
@@ -158,6 +160,7 @@ static_resources:
 }
 
 #[test]
+#[allow(deprecated)]
 fn read_mixture_config() {
     const BOOTSTRAP: &str = r#"
 dynamic_resources:

@@ -1,6 +1,22 @@
-use std::path::PathBuf;
+// Copyright 2025 The kmesh Authors
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 use glob::glob;
+use std::path::{Path, PathBuf};
 
 /// std::env::set_var("PROTOC", The Path of Protoc);
 fn main() -> std::io::Result<()> {
@@ -15,16 +31,16 @@ fn main() -> std::io::Result<()> {
     protos.extend(custom_protos);
 
     let include_paths = [
-        "data-plane-api/",
-        "xds/",
-        "protoc-gen-validate/",
-        "googleapis/",
-        "opencensus-proto/src/",
-        "opentelemetry-proto/",
-        "prometheus-client-model/",
-        "cel-spec/proto",
-        "protobuf/src/",
-        "udpa/udpa/type/v1",
+        "./data-plane-api/",
+        "./xds/",
+        "./protoc-gen-validate/",
+        "./googleapis/",
+        "./opencensus-proto/src/",
+        "./opentelemetry-proto/",
+        "./prometheus-client-model/",
+        "./cel-spec/proto",
+        "./protobuf/src/",
+        "./udpa/udpa/type/v1",
         "../proto/",
     ];
 
@@ -52,13 +68,11 @@ fn main() -> std::io::Result<()> {
             .type_attribute(full_name, format!(r#"#[prost_reflect(message_name = "{}")]"#, full_name,))
             .type_attribute(full_name, pool_attribute);
     }
-
+    let include_paths = include_paths.into_iter().map(|p| Path::new(p).to_path_buf()).collect::<Vec<PathBuf>>();
     // Proceed w/ tonic_build
-    tonic_build::configure().build_server(true).build_client(true).compile_protos_with_config(
+    tonic_prost_build::configure().build_server(true).build_client(true).compile_with_config(
         config,
         &protos,
         &include_paths,
-    )?;
-
-    Ok(())
+    )
 }

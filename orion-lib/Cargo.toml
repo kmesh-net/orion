@@ -7,30 +7,30 @@ version.workspace = true
 
 [dependencies]
 abort-on-drop.workspace = true
-ahash = "0.8.11"
+ahash = "0.8.12"
 arc-swap = "1.7.1"
 arrayvec = "0.7.6"
 async-stream = "0.3"
-atomic-time = "0.1.4"
+atomic-time = "0.1.5"
 bytes.workspace = true
 compact_str.workspace = true
 enum_dispatch = "0.3.13"
 exponential-backoff.workspace = true
 futures.workspace = true
 futures-util = { version = "0.3", default-features = false }
-h2 = "0.4.5"
+h2 = "0.4.12"
 hickory-resolver = { version = "0.24", features = ["system-config"] }
 http.workspace = true
 http-body.workspace = true
 http-body-util.workspace = true
 hyper = { version = "1", features = ["full"] }
-hyper-rustls = { version = "0.27.1", features = ["default", "http2"] }
+hyper-rustls = { version = "0.27.7", features = ["default", "http2"] }
 if-addrs = "0.14"
-ipnet = "2.9"
+ipnet = "2.11"
 lru_time_cache = "0.11.11"
-multimap = "0.10.0"
-once_cell = { version = "1.19" }
-opentelemetry = "0.29.0"
+multimap = "0.10.1"
+once_cell = { version = "1.21" }
+opentelemetry.workspace = true
 hyper-util.workspace = true
 orion-configuration.workspace = true
 orion-data-plane-api.workspace = true
@@ -41,9 +41,9 @@ orion-interner.workspace = true
 orion-metrics.workspace = true
 orion-tracing.workspace = true
 orion-xds.workspace = true
-parking_lot = "0.12.3"
+parking_lot = "0.12.5"
 bounded-integer.workspace = true
-pin-project = "1.1.5"
+pin-project = "1.1.10"
 pingora-timeout = "0.3.0"
 ppp.workspace = true
 pretty-duration = "0.1.1"
@@ -51,7 +51,7 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 regex.workspace = true
 rustc-hash = "1.1.0"
 rustls = "0.23"
-rustls-pemfile = "2.1"
+rustls-pemfile = "2.2"
 rustls-platform-verifier = { version = "0.3" }
 rustls-webpki = "0.102"
 scopeguard = "1.2.0"
@@ -60,19 +60,19 @@ serde.workspace = true
 smol_str = "0.3.2"
 thiserror.workspace = true
 thread-id = "5.0.0"
-thread_local = "1.1.8"
+thread_local = "1.1.9"
 tokio.workspace = true
 tokio-rustls = "0.26"
 tokio-stream.workspace = true
 tower.workspace = true
-tower-service = "0.3.2"
+tower-service = "0.3.3"
 traceparent = "0.0.3"
 tracing.workspace = true
 tracing-appender = "0.2.3"
 twox-hash = "1.6.3"
 typed-builder = "0.18.2"
 url.workspace = true
-uuid = { version = "1.17.0", features = ["v4"] }
+uuid = { version = "1.18.1", features = ["v4"] }
 x509-parser = { version = "0.17", features = ["default"] }
 hyperlocal = "0.9.1"
 tokio-util = "0.7.16"
