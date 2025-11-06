@@ -71,7 +71,7 @@ use webpki::types::ServerName;
 #[cfg(feature = "metrics")]
 use {
     hyper_util::client::legacy::{
-        pool::{ConnectionEvent, EventHandler, Tag},
+        pool::{EventHandler, PoolEvent},
         PoolKey,
     },
     std::any::Any,
@@ -209,7 +209,7 @@ impl HttpChannelBuilder {
         #[cfg(feature = "metrics")]
         {
             let cluster_name = self.cluster_name.unwrap_or_default();
-            client_builder.event_handler(EventHandler::new(update_upstream_stats, cluster_name));
+            client_builder.pool_event_handler(EventHandler::new(update_upstream_stats, cluster_name));
         }
 
         client_builder
@@ -318,51 +318,89 @@ impl HttpChannelBuilder {
 
 #[cfg(feature = "metrics")]
 #[allow(clippy::needless_pass_by_value)]
-fn update_upstream_stats(event: ConnectionEvent, key: &dyn Any, tag: &dyn Tag) {
+fn update_upstream_stats(event: PoolEvent, tag: &dyn Any, keys: &[&PoolKey]) {
     use tracing::debug;
-    let cluster_name = *(tag.as_any().downcast_ref::<&str>().unwrap_or(&""));
+    let cluster_name = *(tag.downcast_ref::<&str>().unwrap_or(&""));
     let shard_id = std::thread::current().id();
-    if let Some(pk) = key.downcast_ref::<PoolKey>() {
-        debug!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, pk);
+
+    for key in keys {
+        debug!("HttpClient: {:?} for cluster {:?} (pool_key: {:?})", event, cluster_name, key);
     }
 
+    let num_events = keys.len() as u64;
     match event {
-        ConnectionEvent::NewConnection => {
-            with_metric!(clusters::UPSTREAM_CX_TOTAL, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        PoolEvent::NewConnection => {
+            with_metric!(
+                clusters::UPSTREAM_CX_TOTAL,
+                add,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
+            with_metric!(
+                clusters::UPSTREAM_CX_ACTIVE,
+                add,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
         },
-        ConnectionEvent::IdleConnectionClosed => {
-            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        PoolEvent::IdleConnectionClosed => {
+            with_metric!(
+                clusters::UPSTREAM_CX_DESTROY,
+                add,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
             with_metric!(
                 clusters::UPSTREAM_CX_IDLE_TIMEOUT,
                 add,
-                1,
+                num_events,
                 shard_id,
                 &[KeyValue::new("cluster", cluster_name)]
             );
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+            with_metric!(
+                clusters::UPSTREAM_CX_ACTIVE,
+                sub,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
         },
-        ConnectionEvent::ConnectionError => {
+        PoolEvent::ConnectionError => {
             with_metric!(
                 clusters::UPSTREAM_CX_CONNECT_FAIL,
                 add,
-                1,
+                num_events,
                 shard_id,
                 &[KeyValue::new("cluster", cluster_name)]
             );
         },
-        ConnectionEvent::ConnectionTimeout => {
+        PoolEvent::ConnectionTimeout => {
             with_metric!(
                 clusters::UPSTREAM_CX_CONNECT_TIMEOUT,
                 add,
-                1,
+                num_events,
                 shard_id,
                 &[KeyValue::new("cluster", cluster_name)]
             );
         },
-        ConnectionEvent::ConnectionClosed => {
-            with_metric!(clusters::UPSTREAM_CX_DESTROY, add, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
-            with_metric!(clusters::UPSTREAM_CX_ACTIVE, sub, 1, shard_id, &[KeyValue::new("cluster", cluster_name)]);
+        PoolEvent::ConnectionClosed => {
+            with_metric!(
+                clusters::UPSTREAM_CX_DESTROY,
+                add,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
+            with_metric!(
+                clusters::UPSTREAM_CX_ACTIVE,
+                sub,
+                num_events,
+                shard_id,
+                &[KeyValue::new("cluster", cluster_name)]
+            );
         },
     }
 }
