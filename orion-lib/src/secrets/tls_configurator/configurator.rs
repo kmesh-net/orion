@@ -34,14 +34,13 @@ use orion_configuration::config::{
 use rustls::{
     client::danger::ServerCertVerifier,
     crypto::KeyProvider,
-    pki_types::{CertificateDer, PrivateKeyDer},
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
     version::{TLS12, TLS13},
     ClientConfig, RootCertStore, ServerConfig,
 };
 use rustls_platform_verifier::Verifier;
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 use tracing::{debug, warn};
-use webpki::types::ServerName;
 
 pub fn get_crypto_key_provider() -> Result<&'static dyn KeyProvider> {
     rustls::crypto::CryptoProvider::get_default()

@@ -18,7 +18,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use rand::{
-    distributions::{Distribution, WeightedIndex},
+    distr::{weighted::WeightedIndex, Distribution},
     rngs::SmallRng,
     SeedableRng,
 };
@@ -35,7 +35,7 @@ pub struct RandomBalancer<E> {
 impl<E> RandomBalancer<E> {
     #[allow(clippy::expect_used)]
     pub fn new(items: impl IntoIterator<Item = LbItem<E>>) -> Self {
-        let rng = SmallRng::from_rng(rand::thread_rng()).expect("RNG must be valid");
+        let rng = SmallRng::from_rng(&mut rand::rng());
         RandomBalancer::new_with_rng(items, rng)
     }
 
@@ -125,15 +125,15 @@ mod test {
             selected_items,
             vec![
                 Arc::clone(&expected_b3),
+                Arc::clone(&expected_b3),
                 Arc::clone(&expected_b1),
-                Arc::clone(&expected_b1),
-                Arc::clone(&expected_b2),
-                Arc::clone(&expected_b2),
                 Arc::clone(&expected_b3),
                 Arc::clone(&expected_b1),
                 Arc::clone(&expected_b2),
+                Arc::clone(&expected_b3),
+                Arc::clone(&expected_b2),
                 Arc::clone(&expected_b1),
-                Arc::clone(&expected_b3)
+                Arc::clone(&expected_b1)
             ]
         );
     }
@@ -150,7 +150,7 @@ mod test {
             counts[random_lb.next_item(None).map(|item| *item).unwrap()] += 1;
         }
 
-        assert_eq!(counts, vec![5, 6, 9]);
+        assert_eq!(counts, vec![7, 3, 10]);
     }
 
     #[test]
@@ -170,7 +170,7 @@ mod test {
             counts[*i] += 1;
         }
 
-        assert_eq!(counts, vec![2, 6, 12]);
+        assert_eq!(counts, vec![5, 4, 11]);
     }
 
     #[test]

@@ -36,7 +36,7 @@ use orion_configuration::config::{
     transport::BindDeviceOptions,
 };
 use orion_interner::StringInterner;
-use rand::{prelude::SliceRandom, thread_rng};
+use rand::seq::IndexedRandom;
 use std::{
     cell::RefCell,
     collections::{btree_map::Entry as BTreeEntry, BTreeMap},
@@ -154,7 +154,7 @@ pub fn resolve_cluster(selector: &ClusterSpecifierConfig) -> Option<ClusterID> {
     match selector {
         ClusterSpecifierConfig::Cluster(cluster_name) => Some(cluster_name.to_static_str()),
         ClusterSpecifierConfig::WeightedCluster(weighted_clusters) => weighted_clusters
-            .choose_weighted(&mut thread_rng(), |cluster| u32::from(cluster.weight))
+            .choose_weighted(&mut rand::rng(), |cluster| u32::from(cluster.weight))
             .ok()
             .map(|cluster| cluster.cluster.to_static_str()),
     }

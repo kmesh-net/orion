@@ -19,7 +19,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use orion_configuration::config::cluster::{health_check::ClusterHealthCheck, HealthStatus};
 use pingora_timeout::fast_timeout::fast_timeout;
-use rand::{distributions::Uniform, thread_rng, Rng};
+use rand::{distr::Uniform, Rng};
 use tokio::{
     select,
     sync::{mpsc, Notify},
@@ -227,7 +227,7 @@ async fn wait_was_cancelled_opt(interval: Option<Duration>, stop_signal: &Notify
         false
     }
 }
-
+#[allow(clippy::expect_used)]
 fn get_random_duration(max: Duration) -> Duration {
-    thread_rng().sample(Uniform::new_inclusive(Duration::from_secs(0), max))
+    rand::rng().sample(Uniform::new_inclusive(Duration::from_secs(0), max).expect("Should work"))
 }

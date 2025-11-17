@@ -21,13 +21,13 @@ mod r#static;
 
 use enum_dispatch::enum_dispatch;
 use http::uri::Authority;
+use rustls::pki_types::ServerName;
 
 use crate::clusters::clusters_manager::{RoutingContext, RoutingRequirement};
 use orion_configuration::config::cluster::{
     Cluster as ClusterConfig, ClusterDiscoveryType, ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthCheck,
 };
 use tracing::{debug, warn};
-use webpki::types::ServerName;
 
 use super::health::HealthStatus;
 use crate::{

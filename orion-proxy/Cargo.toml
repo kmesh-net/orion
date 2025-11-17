@@ -35,10 +35,10 @@ parking_lot                    = "0.12.5"
 tokio.workspace                = true
 tower.workspace                = true
 tracing.workspace              = true
-pingora-timeout                = "0.3.0"
+pingora-timeout                = "0.6.0"
 
 
-axum = "0.8.6"
+axum = "0.8.7"
 compact_str.workspace = true
 http.workspace = true
 opentelemetry.workspace = true
@@ -55,7 +55,7 @@ tracing-subscriber = { workspace = true, features = [
   "registry",
   "std",
 ] }
-tokio-util = "0.7.16"
+tokio-util = "0.7.17"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.6", optional = true }
@@ -65,7 +65,7 @@ caps = "0.5"
 affinity = "0.1.2"
 
 [dev-dependencies]
-axum-test              = "17.3.0"
+axum-test              = "18.2.1"
 orion-data-plane-api.workspace = true
 tracing-test.workspace = true
 

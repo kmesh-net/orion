@@ -73,7 +73,7 @@ impl LocalConnectorWithDNSResolver {
         let connection_timeout = self.timeout;
 
         async move {
-            let host = addr.host();
+            let host = addr.host().to_owned();
             let port = addr
                 .port_u16()
                 .ok_or(WithContext::new(io::Error::new(
