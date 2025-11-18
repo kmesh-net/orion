@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "hyper-util-fork",
   "envoy-data-plane-api",
   "orion-configuration",
   "orion-data-plane-api",
