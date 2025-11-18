@@ -87,7 +87,7 @@ static GLOBAL_DNS_RESOLVER: Lazy<TokioResolver> = Lazy::new(|| {
 });
 
 #[allow(clippy::expect_used)]
-pub async fn resolve<N: IntoName + Display + 'static>(host: N, port: u16) -> io::Result<SocketAddr> {
+pub async fn resolve<N: IntoName + Display + 'static>(host: N, port: u16) -> io::Result<Vec<SocketAddr>> {
     // Now we use the global resolver to perform a lookup_ip.
     let name = host.to_string();
     let result = GLOBAL_DNS_RESOLVER.lookup_ip(host).await;
@@ -97,13 +97,8 @@ pub async fn resolve<N: IntoName + Display + 'static>(host: N, port: u16) -> io:
             // we transform the error into a standard IO error for convenience
             io::Error::new(io::ErrorKind::AddrNotAvailable, format!("dns resolution error for {name}: {err}"))
         })
-        .map(move |lookup_ip| -> SocketAddr {
+        .map(move |lookup_ip| -> Vec<SocketAddr> {
             // we take all the IPs returned, and then send back the set of IPs
-            *lookup_ip
-                .iter()
-                .map(|ip| SocketAddr::new(ip, port))
-                .collect::<Vec<_>>()
-                .first()
-                .expect("We should be getting at least one IP address")
+            lookup_ip.iter().map(|ip| SocketAddr::new(ip, port)).collect::<Vec<_>>()
         })
 }

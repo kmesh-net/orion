@@ -91,7 +91,7 @@ impl LocalConnectorWithDNSResolver {
                     .map_into()
                 })?;
 
-            let addr = resolve(host, port).await.map_err(|e| {
+            let mut addr = resolve(host, port).await.map_err(|e| {
                 WithContext::new(e)
                     .with_context_data(TcpErrorContext {
                         upstream_addr: SocketAddr::from(([0, 0, 0, 0], port)),
@@ -100,6 +100,23 @@ impl LocalConnectorWithDNSResolver {
                     })
                     .map_into()
             })?;
+
+            let addr = addr
+                .pop()
+                .ok_or(WithContext::new(io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    format!("No addresses have been returned"),
+                )))
+                .map_err(|e| {
+                    // this error is difficult to categorize. It happens because the port is not set in the URI.
+                    // The host has not been resolved yet, so we cannot provide a specific address.
+                    e.with_context_data(TcpErrorContext {
+                        upstream_addr: SocketAddr::from(([0, 0, 0, 0], 0)),
+                        response_flags: ResponseFlags::UPSTREAM_CONNECTION_FAILURE,
+                        cluster_name,
+                    })
+                    .map_into()
+                })?;
 
             let sock = match addr {
                 std::net::SocketAddr::V4(_) => TcpSocket::new_v4().map_err(|e| {
