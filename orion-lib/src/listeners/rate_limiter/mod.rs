@@ -38,7 +38,12 @@ pub struct LocalRateLimit {
 }
 
 impl LocalRateLimit {
-    pub fn run<B>(&self, req: &Request<B>) -> FilterDecision {
+    pub fn run<B>(
+        &self,
+        req: &mut Request<B>,
+        _downstream_metadata: &crate::listeners::filter_state::DownstreamMetadata,
+        _format_evaluator: &crate::format_string::FormatStringEvaluator,
+    ) -> FilterDecision {
         if let Some(token_bucket) = &self.token_bucket {
             if !token_bucket.consume(1) {
                 let status = self.status;
