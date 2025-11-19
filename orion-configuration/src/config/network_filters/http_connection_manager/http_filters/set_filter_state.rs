@@ -23,6 +23,11 @@ use super::super::is_default;
 use crate::config::common::GenericError;
 use crate::typed_struct::TypedStructFilter;
 
+/// Helper function to check if a boolean is false (for serde skip_serializing_if)
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
 /// Set Filter State HTTP filter configuration
 ///
 /// This filter dynamically sets filter state objects based on request data.
@@ -59,7 +64,7 @@ pub struct FilterStateValue {
     pub format_string: FormatString,
 
     /// Make this value read-only (cannot be overridden by other filters)
-    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    #[serde(skip_serializing_if = "is_false", default)]
     pub read_only: bool,
 
     /// Share with upstream internal connections
@@ -67,7 +72,7 @@ pub struct FilterStateValue {
     pub shared_with_upstream: SharedWithUpstream,
 
     /// Skip setting the value if it evaluates to empty string
-    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    #[serde(skip_serializing_if = "is_false", default)]
     pub skip_if_empty: bool,
 }
 

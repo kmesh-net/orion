@@ -150,7 +150,8 @@ impl RequestContext {
 
     /// Gets a header value (case-insensitive)
     pub fn get_header(&self, name: &str) -> Option<&CompactString> {
-        self.headers.get(&name.to_lowercase() as &str)
+        let name_lower = name.to_lowercase();
+        self.headers.get(name_lower.as_str())
     }
 
     /// Gets the :authority header (or falls back to Host)
