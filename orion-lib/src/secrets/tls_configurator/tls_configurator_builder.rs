@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use compact_str::CompactString;
 use rustls::{
-    client::WebPkiServerVerifier, server::WebPkiClientVerifier, sign::CertifiedKey, ClientConfig, RootCertStore,
-    ServerConfig, SupportedProtocolVersion,
+    client::WebPkiServerVerifier, pki_types::CertificateDer, server::WebPkiClientVerifier, sign::CertifiedKey,
+    ClientConfig, RootCertStore, ServerConfig, SupportedProtocolVersion,
 };
 use rustls_platform_verifier::Verifier;
 use tracing::{debug, warn};
@@ -327,12 +327,20 @@ impl TlsContextBuilder<WantsToBuildClient> {
             builder.with_webpki_verifier(verifier)
         } else {
             warn!("TLS Client Context Builder using dangerous configuration to ignore server certificates");
-            builder.dangerous().with_custom_certificate_verifier(Arc::new(IgnoreCertVerifier(Verifier::new())))
+            if let Some(crypto_provider) = rustls::crypto::CryptoProvider::get_default().cloned() {
+                if let Ok(verifier) = Verifier::new(crypto_provider) {
+                    builder.dangerous().with_custom_certificate_verifier(Arc::new(IgnoreCertVerifier(verifier)))
+                } else {
+                    return Err(format!("Can't build the verifier").into());
+                }
+            } else {
+                return Err(format!("Can't get the default crypto provider").into());
+            }
         };
 
         if let Some(ClientCert { key, certs: auth_certs }) = self.state.client_certificate.as_deref() {
             debug!("UpstreamContext :  Selected Client Cert");
-            let certs: Vec<webpki::types::CertificateDer<'_>> = auth_certs.as_ref().clone();
+            let certs: Vec<CertificateDer<'_>> = auth_certs.as_ref().clone();
             Ok(builder.with_client_auth_cert(certs, key.clone_key())?)
         } else {
             Ok(builder.with_no_client_auth())

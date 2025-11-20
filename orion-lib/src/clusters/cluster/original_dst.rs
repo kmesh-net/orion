@@ -24,10 +24,8 @@ use orion_configuration::config::{
     transport::BindDeviceOptions,
 };
 
-use rustls::ClientConfig;
+use rustls::{pki_types::ServerName, ClientConfig};
 use tracing::{debug, warn};
-
-use webpki::types::ServerName;
 
 use crate::{
     clusters::{

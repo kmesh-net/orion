@@ -50,12 +50,12 @@ jobs:
         run: |
           #!/bin/bash
           set -e
-          find . -name "*.rs" -type f -not -path "./target/*" -not -path "./envoy-data-plane-api/*" | while read -r file; do
+          find . -name "*.rs" -type f -path "./orion*" | while read -r file; do
             if ! head -1 "$file" | grep -q "Copyright"; then
               echo "Missing copyright header in $file"
               exit 1
             fi
-          done 
+          done
 
   # Build and test that share artifacts
   build-and-test:

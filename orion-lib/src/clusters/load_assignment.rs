@@ -29,9 +29,9 @@ use orion_configuration::config::{
     core::envoy_conversions::{Address, InternalAddress},
     transport::BindDeviceOptions,
 };
+use rustls::pki_types::ServerName;
 use tracing::debug;
 use typed_builder::TypedBuilder;
-use webpki::types::ServerName;
 
 use super::{
     balancers::{

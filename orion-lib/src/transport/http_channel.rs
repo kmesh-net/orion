@@ -54,7 +54,7 @@ use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
 use orion_metrics::{metrics::clusters, with_metric};
 use pingora_timeout::fast_timeout::fast_timeout;
 use pretty_duration::pretty_duration;
-use rustls::ClientConfig;
+use rustls::{pki_types::ServerName, ClientConfig};
 use scopeguard::defer;
 use smol_str::ToSmolStr;
 use std::{
@@ -66,7 +66,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::{debug, info, warn};
-use webpki::types::ServerName;
 
 #[cfg(feature = "metrics")]
 use {

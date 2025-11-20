@@ -72,7 +72,7 @@ impl<E: EndpointWithLoad> WeightedLeastRequestBalancer<E> {
         active_request_bias: f32,
         p2c_choice_count: u32,
     ) -> Self {
-        let rng = SmallRng::from_rng(rand::thread_rng()).expect("RNG must be valid");
+        let rng = SmallRng::from_rng(&mut rand::rng());
         Self::new_with_settings_and_rng(items, active_request_bias, p2c_choice_count, rng)
     }
 
@@ -125,7 +125,7 @@ impl<E: EndpointWithLoad> WeightedLeastRequestBalancer<E> {
 
             // Randomly choose `choice_count` distinct healthy items
             let chosen_items = self.items.iter().choose_multiple(&mut self.rng, choice_count);
-            let random_offset = self.rng.gen_range(0..chosen_items.len());
+            let random_offset = self.rng.random_range(0..chosen_items.len());
 
             // Randomly rotate the list of chosen items, because `choose_multiple()`
             // chooses random items but the order in which they are produced is not.

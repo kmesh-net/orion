@@ -23,13 +23,13 @@ use orion_configuration::{
 };
 use rustc_hash::FxHashMap as HashMap;
 use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
+    pki_types::{CertificateDer, PrivateKeyDer, ServerName},
     RootCertStore,
 };
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::sync::Arc;
 use tracing::{debug, warn};
-use webpki::types::ServerName;
+
 use x509_parser::{self, extensions::GeneralName};
 
 #[derive(Clone, Debug)]

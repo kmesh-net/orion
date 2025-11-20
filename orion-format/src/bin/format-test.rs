@@ -15,13 +15,13 @@
 //
 //
 
-use criterion::black_box;
 use http::{Request, Response, StatusCode};
 use orion_format::{
     context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
     types::ResponseFlags,
     LogFormatter, LogFormatterLocal,
 };
+use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 const DEF_FMT: &str = r#"[%START_TIME%] "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%" %RESPONSE_CODE% %RESPONSE_FLAGS% %BYTES_RECEIVED% %BYTES_SENT% %DURATION% %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%" "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%""#;

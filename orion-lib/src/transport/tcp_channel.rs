@@ -25,10 +25,9 @@ use crate::{
 use futures::future::BoxFuture;
 use http::uri::Authority;
 use orion_configuration::config::transport::BindDeviceOptions;
-use rustls::ClientConfig;
+use rustls::{pki_types::ServerName, ClientConfig};
 use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
-use webpki::types::ServerName;
 
 #[derive(Debug, Clone)]
 pub struct TcpChannelConnector {

@@ -16,7 +16,7 @@
 //
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
     context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
@@ -24,6 +24,7 @@ use orion_format::{
     LogFormatter, LogFormatterLocal, DEFAULT_ACCESS_LOG_FORMAT,
 };
 use smol_str::ToSmolStr;
+use std::hint::black_box;
 use std::time::Duration;
 
 #[cfg(feature = "dhat-heap")]
