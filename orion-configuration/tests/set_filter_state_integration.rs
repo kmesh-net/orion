@@ -54,11 +54,12 @@ fn test_istio_waypoint_set_filter_state_config() -> Result<(), Error> {
         assert_eq!(set_filter_state_filter.name.as_str(), "istio.set_filter_state");
 
         // Verify filter type
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::FormatString;
         use orion_configuration::config::network_filters::http_connection_manager::http_filters::HttpFilterType;
         match &set_filter_state_filter.filter {
             HttpFilterType::SetFilterState(config) => {
                 // Verify on_request_headers configuration
-                let on_request_headers = config.on_request_headers.as_ref().expect("on_request_headers should exist");
+                let on_request_headers = &config.on_request_headers;
                 assert_eq!(on_request_headers.len(), 2);
 
                 // First entry: io.istio.connect_authority
@@ -66,36 +67,18 @@ fn test_istio_waypoint_set_filter_state_config() -> Result<(), Error> {
                 assert_eq!(connect_authority.object_key.as_str(), "io.istio.connect_authority");
 
                 // Verify format string
-                if let Some(format_string) = &connect_authority.format_string {
-                    if let Some(text_source) = &format_string.text_format_source {
-                        if let Some(inline_string) = &text_source.inline_string {
-                            assert_eq!(inline_string.as_str(), "%REQ(:authority)%");
-                        } else {
-                            panic!("Expected inline_string in text_format_source");
-                        }
-                    } else {
-                        panic!("Expected text_format_source");
-                    }
-                } else {
-                    panic!("Expected format_string");
+                match &connect_authority.format_string {
+                    FormatString::Text(s) => assert_eq!(s.as_str(), "%REQ(:authority)%"),
+                    _ => panic!("Expected Text format string for connect_authority"),
                 }
 
                 // Second entry: io.istio.client_address
                 let client_address = &on_request_headers[1];
                 assert_eq!(client_address.object_key.as_str(), "io.istio.client_address");
 
-                if let Some(format_string) = &client_address.format_string {
-                    if let Some(text_source) = &format_string.text_format_source {
-                        if let Some(inline_string) = &text_source.inline_string {
-                            assert_eq!(inline_string.as_str(), "%DOWNSTREAM_REMOTE_ADDRESS%");
-                        } else {
-                            panic!("Expected inline_string in text_format_source");
-                        }
-                    } else {
-                        panic!("Expected text_format_source");
-                    }
-                } else {
-                    panic!("Expected format_string");
+                match &client_address.format_string {
+                    FormatString::Text(s) => assert_eq!(s.as_str(), "%DOWNSTREAM_REMOTE_ADDRESS%"),
+                    _ => panic!("Expected Text format string for client_address"),
                 }
             },
             _ => panic!("Expected SetFilterState filter type"),
@@ -179,24 +162,16 @@ static_resources:
     if let MainFilter::Http(hcm_config) = &filter_chain.terminal_filter {
         let filter = &hcm_config.http_filters[0];
 
+        use orion_configuration::config::network_filters::http_connection_manager::http_filters::set_filter_state::FormatString;
         use orion_configuration::config::network_filters::http_connection_manager::http_filters::HttpFilterType;
         if let HttpFilterType::SetFilterState(config) = &filter.filter {
-            let on_request_headers = config.on_request_headers.as_ref().expect("on_request_headers should exist");
+            let on_request_headers = &config.on_request_headers;
             assert_eq!(on_request_headers.len(), 1);
             let entry = &on_request_headers[0];
 
-            if let Some(format_string) = &entry.format_string {
-                if let Some(text_source) = &format_string.text_format_source {
-                    if let Some(inline_string) = &text_source.inline_string {
-                        assert_eq!(inline_string.as_str(), "%REQ(x-custom-header)%");
-                    } else {
-                        panic!("Expected inline_string");
-                    }
-                } else {
-                    panic!("Expected text_format_source");
-                }
-            } else {
-                panic!("Expected format_string");
+            match &entry.format_string {
+                FormatString::Text(s) => assert_eq!(s.as_str(), "%REQ(x-custom-header)%"),
+                _ => panic!("Expected Text format string"),
             }
         }
     }
@@ -271,7 +246,7 @@ static_resources:
     if let MainFilter::Http(hcm_config) = &filter_chain.terminal_filter {
         use orion_configuration::config::network_filters::http_connection_manager::http_filters::HttpFilterType;
         if let HttpFilterType::SetFilterState(config) = &hcm_config.http_filters[0].filter {
-            let on_request_headers = config.on_request_headers.as_ref().expect("on_request_headers should exist");
+            let on_request_headers = &config.on_request_headers;
             let entry = &on_request_headers[0];
 
             // Verify basic parsing worked

@@ -16,7 +16,7 @@
 //
 
 use super::peer_metadata::PeerMetadataConfig;
-use super::set_filter_state::SetFilterStateConfig;
+use super::set_filter_state::SetFilterState;
 use crate::config::common::GenericError;
 use crate::typed_struct::registry::{global_registry, GenericFilterParser};
 use crate::typed_struct::TypedStructFilter;
@@ -27,7 +27,7 @@ pub fn register_all_filters() -> Result<(), GenericError> {
     let peer_metadata_parser = GenericFilterParser::<PeerMetadataConfig>::new(PeerMetadataConfig::TYPE_URL);
     registry.register_dynamic(peer_metadata_parser)?;
 
-    let set_filter_state_parser = GenericFilterParser::<SetFilterStateConfig>::new(SetFilterStateConfig::TYPE_URL);
+    let set_filter_state_parser = GenericFilterParser::<SetFilterState>::new(SetFilterState::TYPE_URL);
     registry.register_dynamic(set_filter_state_parser)?;
 
     Ok(())
@@ -53,7 +53,7 @@ mod tests {
 
         let registry = global_registry();
         assert!(registry.is_supported(PeerMetadataConfig::TYPE_URL));
-        assert!(registry.is_supported(SetFilterStateConfig::TYPE_URL));
+        assert!(registry.is_supported(SetFilterState::TYPE_URL));
     }
 
     #[test]
@@ -63,6 +63,6 @@ mod tests {
 
         let registry = global_registry();
         assert!(registry.is_supported(PeerMetadataConfig::TYPE_URL));
-        assert!(registry.is_supported(SetFilterStateConfig::TYPE_URL));
+        assert!(registry.is_supported(SetFilterState::TYPE_URL));
     }
 }
