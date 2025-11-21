@@ -18,16 +18,14 @@
 use super::{RequestHandler, TransactionHandler};
 
 use crate::{
-    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
-    listeners::access_log::AccessLogContext,
-    Error, PolyBody, Result,
+    body::body_with_metrics::BodyWithMetrics, listeners::access_log::AccessLogContext, Error, PolyBody, Result,
 };
 use http::{
     header::LOCATION,
     uri::{Authority, Parts as UriParts, PathAndQuery, Scheme},
     HeaderValue, StatusCode, Uri,
 };
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::route::{
     AuthorityRedirect, RedirectAction, RouteMatchResult,
 };
@@ -35,17 +33,11 @@ use orion_error::Context;
 use orion_format::context::UpstreamContext;
 use std::str::FromStr;
 
-impl<'a> RequestHandler<(Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, RouteMatchResult, &'a str)>
-    for &RedirectAction
-{
+impl<'a> RequestHandler<(Request<BodyWithMetrics<PolyBody>>, RouteMatchResult, &'a str)> for &RedirectAction {
     async fn to_response(
         self,
         trans_handler: &TransactionHandler,
-        (request, route_match_result, route_name): (
-            Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
-            RouteMatchResult,
-            &'a str,
-        ),
+        (request, route_match_result, route_name): (Request<BodyWithMetrics<PolyBody>>, RouteMatchResult, &'a str),
     ) -> Result<Response<PolyBody>> {
         if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
             ctx.lock().loggers.with_context(&UpstreamContext { authority: None, cluster_name: None, route_name })

@@ -24,6 +24,8 @@ use orion_configuration::config::{
     transport::BindDeviceOptions,
 };
 
+use orion_error::Context;
+use orion_http_header::X_ENVOY_ORIGINAL_DST_HOST;
 use rustls::{pki_types::ServerName, ClientConfig};
 use tracing::{debug, warn};
 
@@ -34,11 +36,12 @@ use crate::{
     },
     secrets::{TlsConfigurator, TransportSecret, WantsToBuildClient},
     transport::{
-        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
+        GrpcService, HttpChannel, HttpChannelBuilder, HttpChannels, TcpChannelConnector,
+        UpstreamTransportSocketConfigurator,
     },
     Result,
 };
-use http::{uri::Authority, HeaderName, HeaderValue};
+use http::{uri::Authority, HeaderValue};
 use orion_configuration::config::cluster::HttpProtocolOptions;
 
 use super::{ClusterOps, ClusterType};
@@ -77,9 +80,8 @@ impl OriginalDstClusterBuilder {
             if let ClusterDiscoveryType::OriginalDst(ref original_dst_config) = config.discovery_settings {
                 let routing_req = match &original_dst_config.routing_method {
                     OriginalDstRoutingMethod::HttpHeader { http_header_name } => {
-                        let header_name = http_header_name
-                            .to_owned()
-                            .unwrap_or_else(|| HeaderName::from_static("x-envoy-original-dst-host"));
+                        let header_name = http_header_name.to_owned().unwrap_or_else(|| X_ENVOY_ORIGINAL_DST_HOST);
+                        debug!("ORIGINAL_DST cluster {} routing by header {}", name, header_name);
                         RoutingRequirement::Header(header_name)
                     },
                     OriginalDstRoutingMethod::MetadataKey(_) => {
@@ -171,13 +173,16 @@ impl ClusterOps for OriginalDstCluster {
         // ORIGINAL_DST clusters do not support health checks
     }
 
-    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel> {
-        warn!("OriginalDstCluster get HTTP connection for {:?}", context);
+    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannels> {
         match context {
             RoutingContext::Authority(authority, original_dst_address) => {
-                self.get_http_connection_by_authority(authority, Some(original_dst_address))
+                debug!("get HTTP connection by authority {authority:?}...");
+                self.get_http_connection_by_authority(authority, Some(original_dst_address)).map(HttpChannels::Single)
             },
-            RoutingContext::Header(header_value) => self.get_http_connection_by_header(header_value),
+            RoutingContext::Header(header_value) => {
+                debug!("get HTTP connection by header {header_value:?}...");
+                self.get_http_connection_by_header(header_value).map(HttpChannels::Single)
+            },
             _ => Err(format!("ORIGINAL_DST cluster {} requires authority or header routing context", self.name).into()),
         }
     }
@@ -211,9 +216,12 @@ impl OriginalDstCluster {
         match self.upstream_port_override {
             Some(port_override) => {
                 let host = authority.host();
-                format!("{host}:{port_override}").parse::<Authority>().map_err(|e| {
-                    format!("Failed to apply port override {} for cluster {}: {}", port_override, self.name, e).into()
-                })
+                let upd_auth = format!("{host}:{port_override}").parse::<Authority>().with_context_msg(format!(
+                    "Failed to apply port override {port_override} for cluster {}",
+                    self.name
+                ))?;
+
+                Ok(upd_auth)
             },
             None => Ok(authority),
         }
@@ -261,7 +269,7 @@ impl OriginalDstCluster {
             return Ok(endpoint.tcp_channel.clone());
         }
 
-        warn!("Original Dst Cluster using authority {authority}");
+        debug!("Original Dst Cluster adding endpoint to cache using authority {authority}");
 
         let endpoint = Endpoint::try_new(
             &authority,
@@ -303,7 +311,7 @@ impl OriginalDstCluster {
             return Ok(endpoint.http_channel.clone());
         }
 
-        warn!("Original Dst Cluster using authority {authority}");
+        debug!("Original Dst Cluster adding endpoint to cache using authority {authority}");
         let endpoint = Endpoint::try_new(
             &authority,
             &self.http_config,
@@ -503,6 +511,7 @@ mod tests {
     use crate::secrets::SecretManager;
     use orion_configuration::config::cluster::{
         http_protocol_options::Codec, Cluster as ClusterConfig, ClusterDiscoveryType, LbPolicy, OriginalDstConfig,
+        StandardLbPolicy,
     };
     use std::str::FromStr;
 
@@ -522,7 +531,7 @@ mod tests {
             transport_socket: None,
             bind_device_options: BindDeviceOptions::default(),
             internal_transport_socket: None,
-            load_balancing_policy: LbPolicy::ClusterProvided,
+            load_balancing_policy: LbPolicy::Standard(StandardLbPolicy::ClusterProvided),
             http_protocol_options: HttpProtocolOptions::default(),
             health_check: None,
             connect_timeout: None,
@@ -544,18 +553,9 @@ mod tests {
         let mut cluster = build_original_dst_cluster(config);
 
         let authority = Authority::from_str("localhost:52000").unwrap();
-        let channel1 = cluster
-            .get_http_connection(RoutingContext::Authority(
-                authority.clone(),
-                "127.0.0.1:9000".parse().expect("Do expect this to work"),
-            ))
-            .unwrap();
-        let channel2 = cluster
-            .get_http_connection(RoutingContext::Authority(
-                authority,
-                "127.0.0.1:9000".parse().expect("Do expect this to work"),
-            ))
-            .unwrap();
+        let channel1 =
+            cluster.get_http_connection_by_authority(authority.clone(), "127.0.0.1:9000".parse().ok()).unwrap();
+        let channel2 = cluster.get_http_connection_by_authority(authority, "127.0.0.1:9000".parse().ok()).unwrap();
         assert_eq!(channel1.upstream_authority, channel2.upstream_authority);
         assert_eq!(cluster.endpoints.len(), 1);
 
@@ -566,13 +566,10 @@ mod tests {
             None,
         );
         let mut cluster = build_original_dst_cluster(config);
-        assert_eq!(
-            cluster.get_routing_requirements(),
-            RoutingRequirement::Header(HeaderName::from_static("x-envoy-original-dst-host"))
-        );
+        assert_eq!(cluster.get_routing_requirements(), RoutingRequirement::Header(X_ENVOY_ORIGINAL_DST_HOST));
 
         let header_value = HeaderValue::from_str("localhost:52000").unwrap();
-        let channel = cluster.get_http_connection(RoutingContext::Header(&header_value)).unwrap();
+        let channel = cluster.get_http_connection_by_header(&header_value).unwrap();
         assert_eq!(channel.upstream_authority.as_str(), "localhost:50001");
 
         let http_no_dest = cluster.get_http_connection(RoutingContext::None);

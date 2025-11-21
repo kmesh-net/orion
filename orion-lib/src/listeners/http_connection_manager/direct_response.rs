@@ -15,23 +15,20 @@
 //
 //
 use super::{RequestHandler, TransactionHandler};
-use crate::{
-    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
-    PolyBody, Result,
-};
+use crate::{body::body_with_metrics::BodyWithMetrics, PolyBody, Result};
 use http_body_util::Full;
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response};
 use orion_configuration::config::network_filters::http_connection_manager::route::DirectResponseAction;
 
 use orion_format::context::UpstreamContext;
 
 use crate::listeners::access_log::AccessLogContext;
 
-impl<'a> RequestHandler<(Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, &'a str)> for &DirectResponseAction {
+impl<'a> RequestHandler<(Request<BodyWithMetrics<PolyBody>>, &'a str)> for &DirectResponseAction {
     async fn to_response(
         self,
         trans_handler: &TransactionHandler,
-        (request, route_name): (Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>, &'a str),
+        (request, route_name): (Request<BodyWithMetrics<PolyBody>>, &'a str),
     ) -> Result<Response<PolyBody>> {
         if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
             ctx.lock().loggers.with_context(&UpstreamContext { authority: None, cluster_name: None, route_name })
