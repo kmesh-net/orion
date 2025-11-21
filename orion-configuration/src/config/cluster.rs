@@ -229,9 +229,16 @@ pub enum TlsSecret {
     Certificate(TlsCertificate),
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum LbPolicy {
+    Standard(StandardLbPolicy),
+    Extended(ExtendedLbPolicy),
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
-pub enum LbPolicy {
+pub enum StandardLbPolicy {
     #[default]
     RoundRobin,
     Random,
@@ -241,17 +248,56 @@ pub enum LbPolicy {
     ClusterProvided,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct OverrideHostConfig {
+    pub override_host_source: OverrideHostSource,
+    pub fallback_policy: StandardLbPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum OverrideHostSource {
+    Header {
+        #[serde(with = "http_serde_ext::header_name")]
+        name: HeaderName,
+    },
+    Metadata {
+        key: MetadataKey,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtendedLbPolicy {
+    OverrideHost(OverrideHostConfig),
+}
+
+impl Default for LbPolicy {
+    fn default() -> Self {
+        LbPolicy::Standard(StandardLbPolicy::default())
+    }
+}
+
+impl LbPolicy {
+    pub fn requires_hash(&self) -> bool {
+        match self {
+            LbPolicy::Standard(StandardLbPolicy::RingHash | StandardLbPolicy::Maglev) => true,
+            LbPolicy::Standard(_) | LbPolicy::Extended(_) => false,
+        }
+    }
+}
+
 #[cfg(feature = "envoy-conversions")]
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::{
         health_check::{ClusterHostnameError, HealthCheck, HealthCheckProtocol},
-        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, HealthStatus, HttpProtocolOptions,
-        InternalUpstreamTransport, LbEndpoint, LbPolicy, LocalityLbEndpoints, MetadataKind, MetadataValueSource,
-        OriginalDstConfig, OriginalDstRoutingMethod, TlsConfig, TlsSecret, TransportSocket,
+        Cluster, ClusterDiscoveryType, ClusterLoadAssignment, ExtendedLbPolicy, HealthStatus, HttpProtocolOptions,
+        LbEndpoint, LbPolicy, LocalityLbEndpoints, OriginalDstConfig, OriginalDstRoutingMethod, OverrideHostConfig,
+        OverrideHostSource, StandardLbPolicy, TlsConfig, TlsSecret, TransportSocket,
     };
     use crate::config::{
-        cluster::EdsClusterConfig,
+        cluster::{EdsClusterConfig, InternalUpstreamTransport, MetadataKind, MetadataValueSource},
         common::*,
         core::Address,
         transport::{
@@ -262,6 +308,8 @@ mod envoy_conversions {
         ConfigSource,
     };
     use compact_str::CompactString;
+    use http::HeaderName;
+    use orion_data_plane_api::envoy_data_plane_api::prost::Message;
     use orion_data_plane_api::envoy_data_plane_api::{
         envoy::{
             config::{
@@ -271,7 +319,8 @@ mod envoy_conversions {
                         EdsClusterConfig as EnvoyEdsClusterConfig, LbConfig as EnvoyLbConfig,
                         LbPolicy as EnvoyLbPolicy,
                     },
-                    Cluster as EnvoyCluster,
+                    load_balancing_policy::Policy,
+                    Cluster as EnvoyCluster, LoadBalancingPolicy,
                 },
                 core::v3::{
                     BindConfig as EnvoyBindConfig, HealthStatus as EnvoyHealthStatus,
@@ -283,12 +332,20 @@ mod envoy_conversions {
                     LbEndpoint as EnvoyLbEndpoint, LocalityLbEndpoints as EnvoyLocalityLbEndpoints,
                 },
             },
-            extensions::transport_sockets::{
-                internal_upstream::v3::{
-                    internal_upstream_transport::MetadataValueSource as EnvoyMetadataValueSource,
-                    InternalUpstreamTransport as EnvoyInternalUpstreamTransport,
+            extensions::{
+                load_balancing_policies::{
+                    least_request::v3::LeastRequest as EnvoyLeastRequest, maglev::v3::Maglev as EnvoyMaglev,
+                    override_host::v3::override_host::OverrideHostSource as EnvoyOverrideHostSource,
+                    override_host::v3::OverrideHost as EnvoyOverrideHost, random::v3::Random as EnvoyRandom,
+                    ring_hash::v3::RingHash as EnvoyRingHash, round_robin::v3::RoundRobin as EnvoyRoundRobin,
                 },
-                tls::v3::UpstreamTlsContext,
+                transport_sockets::{
+                    internal_upstream::v3::{
+                        internal_upstream_transport::MetadataValueSource as EnvoyMetadataValueSource,
+                        InternalUpstreamTransport as EnvoyInternalUpstreamTransport,
+                    },
+                    tls::v3::UpstreamTlsContext,
+                },
             },
             r#type::metadata::v3::{
                 metadata_key::path_segment::Segment, metadata_kind::Kind as EnvoyMetadataKindType,
@@ -296,10 +353,8 @@ mod envoy_conversions {
             },
         },
         google::protobuf::Any,
-        prost::Message,
     };
 
-    use http::HeaderName;
     use std::{collections::BTreeSet, num::NonZeroU32};
     use tracing::warn;
 
@@ -396,7 +451,7 @@ mod envoy_conversions {
                     close_connections_on_host_health_failure,
                     ignore_health_on_host_removal,
                     //filters,
-                    load_balancing_policy,
+                    //load_balancing_policy,
                     lrs_server,
                     track_timeout_budgets,
                     upstream_config,
@@ -523,7 +578,13 @@ mod envoy_conversions {
                     (None, None)
                 };
 
-                let load_balancing_policy = lb_policy.try_into().with_node("lb_policy")?;
+                let load_balancing_policy = if let Some(lb_policy_config) = load_balancing_policy {
+                    SupportedEnvoyLoadBalancingPolicy::try_from(lb_policy_config)?
+                        .try_into()
+                        .with_node("load_balancing_policy")?
+                } else {
+                    lb_policy.try_into().with_node("lb_policy")?
+                };
                 let http_protocol_options = typed_extension_protocol_options
                     .into_values()
                     .map(HttpProtocolOptions::try_from)
@@ -760,7 +821,7 @@ mod envoy_conversions {
                                 })
                                 .collect::<Vec<_>>()
                         })
-                        .filter(std::result::Result::is_err)
+                        .filter(Result::is_err)
                         .collect::<Vec<_>>()
                         .is_empty()
                     {
@@ -922,7 +983,60 @@ mod envoy_conversions {
         }
     }
 
-    impl TryFrom<EnvoyLbPolicy> for LbPolicy {
+    impl TryFrom<EnvoyOverrideHostSource> for OverrideHostSource {
+        type Error = GenericError;
+        fn try_from(source: EnvoyOverrideHostSource) -> Result<Self, Self::Error> {
+            if !source.header.is_empty() {
+                if source.metadata.is_some() {
+                    return Err(GenericError::from_msg(
+                        "header and metadata cannot both be specified - they are mutually exclusive",
+                    ));
+                }
+                HeaderName::try_from(&source.header).map(|name| OverrideHostSource::Header { name }).map_err(|e| {
+                    GenericError::from_msg_with_cause(format!("Invalid header name: '{}'", source.header), e)
+                })
+            } else if source.metadata.is_some() {
+                Err(GenericError::from_msg("metadata source is not currently supported as override host source"))
+            } else {
+                Err(GenericError::from_msg(
+                    "override host source must specify header source (metadata is not yet supported)",
+                ))
+            }
+        }
+    }
+
+    impl TryFrom<EnvoyOverrideHost> for OverrideHostConfig {
+        type Error = GenericError;
+        fn try_from(value: EnvoyOverrideHost) -> Result<Self, Self::Error> {
+            let EnvoyOverrideHost { override_host_sources, fallback_policy } = value;
+            let override_host_sources = convert_vec!(override_host_sources)?;
+            if override_host_sources.is_empty() || override_host_sources.len() > 1 {
+                return Err(GenericError::from_msg(
+                    "Orion currently only supports exactly one source in override_host_sources field",
+                ));
+            }
+            let override_host_source = override_host_sources
+                .into_iter()
+                .next()
+                .ok_or_else(|| GenericError::from_msg("override_host_sources should contain exactly one element"))?;
+            let fallback_policy = fallback_policy
+                .ok_or_else(|| GenericError::from_msg("fallback_policy is required for OverrideHost"))
+                .and_then(SupportedEnvoyLoadBalancingPolicy::try_from)
+                .and_then(|supported_policy| match supported_policy {
+                    SupportedEnvoyLoadBalancingPolicy::RoundRobin(_) => Ok(StandardLbPolicy::RoundRobin),
+                    SupportedEnvoyLoadBalancingPolicy::Random(_) => Ok(StandardLbPolicy::Random),
+                    SupportedEnvoyLoadBalancingPolicy::LeastRequest(_) => Ok(StandardLbPolicy::LeastRequest),
+                    SupportedEnvoyLoadBalancingPolicy::RingHash(_) => Ok(StandardLbPolicy::RingHash),
+                    SupportedEnvoyLoadBalancingPolicy::Maglev(_) => Ok(StandardLbPolicy::Maglev),
+                    SupportedEnvoyLoadBalancingPolicy::OverrideHost(_) => {
+                        Err(GenericError::from_msg("OverrideHost cannot be used as a fallback policy for OverrideHost"))
+                    },
+                })?;
+            Ok(OverrideHostConfig { override_host_source, fallback_policy })
+        }
+    }
+
+    impl TryFrom<EnvoyLbPolicy> for StandardLbPolicy {
         type Error = GenericError;
         fn try_from(value: EnvoyLbPolicy) -> Result<Self, Self::Error> {
             Ok(match value {
@@ -933,7 +1047,9 @@ mod envoy_conversions {
                 EnvoyLbPolicy::Maglev => Self::Maglev,
                 EnvoyLbPolicy::ClusterProvided => Self::ClusterProvided,
                 EnvoyLbPolicy::LoadBalancingPolicyConfig => {
-                    return Err(GenericError::unsupported_variant("LoadBalancingPolicyConfig"));
+                    return Err(GenericError::unsupported_variant(
+                        "LoadBalancingPolicyConfig - use load_balancing_policy field instead",
+                    ));
                 },
             })
         }
@@ -942,9 +1058,145 @@ mod envoy_conversions {
     impl TryFrom<i32> for LbPolicy {
         type Error = GenericError;
         fn try_from(value: i32) -> Result<Self, Self::Error> {
-            EnvoyLbPolicy::from_i32(value)
+            let standard_policy = EnvoyLbPolicy::from_i32(value)
                 .ok_or_else(|| GenericError::unsupported_variant(format!("[unknown LbPolicy {value}]")))?
-                .try_into()
+                .try_into()?;
+            Ok(LbPolicy::Standard(standard_policy))
+        }
+    }
+
+    #[allow(clippy::large_enum_variant)]
+    enum SupportedEnvoyLoadBalancingPolicy {
+        RoundRobin(EnvoyRoundRobin),
+        Random(EnvoyRandom),
+        LeastRequest(EnvoyLeastRequest),
+        RingHash(EnvoyRingHash),
+        Maglev(EnvoyMaglev),
+        OverrideHost(EnvoyOverrideHost),
+    }
+
+    impl TryFrom<Any> for SupportedEnvoyLoadBalancingPolicy {
+        type Error = GenericError;
+        fn try_from(typed_config: Any) -> Result<Self, Self::Error> {
+            match typed_config.type_url.as_str() {
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.round_robin.v3.RoundRobin" => {
+                    EnvoyRoundRobin::decode(typed_config.value.as_slice()).map(Self::RoundRobin)
+                },
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.random.v3.Random" => {
+                    EnvoyRandom::decode(typed_config.value.as_slice()).map(Self::Random)
+                },
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.least_request.v3.LeastRequest" => {
+                    EnvoyLeastRequest::decode(typed_config.value.as_slice()).map(Self::LeastRequest)
+                },
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.ring_hash.v3.RingHash" => {
+                    EnvoyRingHash::decode(typed_config.value.as_slice()).map(Self::RingHash)
+                },
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.maglev.v3.Maglev" => {
+                    EnvoyMaglev::decode(typed_config.value.as_slice()).map(Self::Maglev)
+                },
+                "type.googleapis.com/envoy.extensions.load_balancing_policies.override_host.v3.OverrideHost" => {
+                    EnvoyOverrideHost::decode(typed_config.value.as_slice()).map(Self::OverrideHost)
+                },
+                _ => return Err(GenericError::unsupported_variant(typed_config.type_url)),
+            }
+            .map_err(|e| {
+                GenericError::from_msg_with_cause(
+                    format!("failed to parse protobuf for \"{}\"", typed_config.type_url),
+                    e,
+                )
+            })
+        }
+    }
+
+    impl TryFrom<SupportedEnvoyLoadBalancingPolicy> for LbPolicy {
+        type Error = GenericError;
+        fn try_from(value: SupportedEnvoyLoadBalancingPolicy) -> Result<Self, Self::Error> {
+            match value {
+                SupportedEnvoyLoadBalancingPolicy::RoundRobin(EnvoyRoundRobin { slow_start_config, .. }) => {
+                    unsupported_field!(slow_start_config)?;
+                    Ok(LbPolicy::Standard(StandardLbPolicy::RoundRobin))
+                },
+                SupportedEnvoyLoadBalancingPolicy::Random(EnvoyRandom { locality_lb_config, .. }) => {
+                    unsupported_field!(locality_lb_config)?;
+                    Ok(LbPolicy::Standard(StandardLbPolicy::Random))
+                },
+                SupportedEnvoyLoadBalancingPolicy::LeastRequest(EnvoyLeastRequest {
+                    active_request_bias,
+                    slow_start_config,
+                    locality_lb_config,
+                    choice_count,
+                    enable_full_scan,
+                    selection_method,
+                    ..
+                }) => {
+                    unsupported_field!(
+                        active_request_bias,
+                        slow_start_config,
+                        locality_lb_config,
+                        choice_count,
+                        enable_full_scan,
+                        selection_method
+                    )?;
+                    Ok(LbPolicy::Standard(StandardLbPolicy::LeastRequest))
+                },
+                SupportedEnvoyLoadBalancingPolicy::RingHash(EnvoyRingHash {
+                    hash_function,
+                    minimum_ring_size,
+                    maximum_ring_size,
+                    consistent_hashing_lb_config,
+                    use_hostname_for_hashing,
+                    hash_balance_factor,
+                    locality_weighted_lb_config,
+                    ..
+                }) => {
+                    unsupported_field!(
+                        hash_function,
+                        minimum_ring_size,
+                        maximum_ring_size,
+                        consistent_hashing_lb_config,
+                        use_hostname_for_hashing,
+                        hash_balance_factor,
+                        locality_weighted_lb_config
+                    )?;
+                    Ok(LbPolicy::Standard(StandardLbPolicy::RingHash))
+                },
+                SupportedEnvoyLoadBalancingPolicy::Maglev(EnvoyMaglev {
+                    table_size,
+                    consistent_hashing_lb_config,
+                    locality_weighted_lb_config,
+                    ..
+                }) => {
+                    unsupported_field!(table_size, consistent_hashing_lb_config, locality_weighted_lb_config)?;
+                    Ok(LbPolicy::Standard(StandardLbPolicy::Maglev))
+                },
+                SupportedEnvoyLoadBalancingPolicy::OverrideHost(envoy_override_host) => {
+                    OverrideHostConfig::try_from(envoy_override_host)
+                        .map(|config| LbPolicy::Extended(ExtendedLbPolicy::OverrideHost(config)))
+                },
+            }
+        }
+    }
+
+    impl TryFrom<LoadBalancingPolicy> for SupportedEnvoyLoadBalancingPolicy {
+        type Error = GenericError;
+        fn try_from(value: LoadBalancingPolicy) -> Result<Self, Self::Error> {
+            let LoadBalancingPolicy { policies } = value;
+            match policies.len() {
+                0 => Err(GenericError::from_msg("load_balancing_policy cannot be empty")),
+                1 => {
+                    #[allow(clippy::expect_used)]
+                    let policy =
+                        policies.into_iter().next().expect("policies vec is guaranteed to have exactly 1 element");
+                    let Policy { typed_extension_config } = policy;
+                    let typed_config = typed_extension_config.and_then(|cfg| cfg.typed_config).ok_or_else(|| {
+                        GenericError::from_msg("failed to extract typed_config from load balancing policy")
+                    })?;
+                    SupportedEnvoyLoadBalancingPolicy::try_from(typed_config)
+                },
+                n => Err(GenericError::from_msg(format!(
+                    "only one load balancing policy is currently supported, but {n} were provided"
+                ))),
+            }
         }
     }
 

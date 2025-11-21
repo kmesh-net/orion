@@ -60,13 +60,7 @@ macro_rules! with_metric {
 #[cfg(not(feature = "metrics"))]
 macro_rules! with_metric {
     ($counter: expr, $method: ident, $($args: expr),*) => {
-        // No-op if metrics feature is not enabled
-        if false {
-            // This creates a tuple containing the results of the expressions,
-            // effectively "using" them without generating runtime code.
-            let _ = $counter;
-            let _ = ($($args),*);
-        }
+        ();
     };
 }
 

@@ -33,7 +33,7 @@ use super::health::HealthStatus;
 use crate::{
     clusters::load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
     secrets::TransportSecret,
-    transport::{GrpcService, HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
+    transport::{GrpcService, HttpChannel, HttpChannels, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     Error, Result, SecretManager,
 };
 
@@ -161,7 +161,7 @@ pub trait ClusterOps {
     fn all_grpc_channels(&mut self) -> Vec<Result<(Authority, GrpcService)>>;
     fn change_tls_context(&mut self, secret_id: &str, secret: TransportSecret) -> Result<()>;
     fn update_health(&mut self, endpoint: &http::uri::Authority, health: HealthStatus);
-    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel>;
+    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannels>;
     fn get_tcp_connection(&mut self, context: RoutingContext) -> Result<TcpChannelConnector>;
     fn get_grpc_connection(&mut self, context: RoutingContext) -> Result<GrpcService>;
     fn get_routing_requirements(&self) -> RoutingRequirement;

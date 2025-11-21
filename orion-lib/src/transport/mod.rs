@@ -32,7 +32,7 @@ pub mod transport_socket;
 
 pub use self::{
     grpc_channel::{GrpcService, SimpleRoundRobinGrpcServiceLB},
-    http_channel::{HttpChannel, HttpChannelBuilder},
+    http_channel::{HttpChannel, HttpChannelBuilder, HttpChannels},
     proxy_protocol::ProxyProtocolReader,
     tcp_channel::TcpChannelConnector,
     tlv_listener_filter::TlvListenerFilter,

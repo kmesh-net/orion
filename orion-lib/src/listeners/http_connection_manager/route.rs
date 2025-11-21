@@ -17,7 +17,7 @@
 use super::{http_modifiers, upgrades as upgrade_utils, RequestHandler, TransactionHandler};
 use crate::event_error::{EventError, EventKind, TryInferFrom};
 use crate::{
-    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout, response_flags::ResponseFlags},
+    body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
     clusters::{
         balancers::hash_policy::HashState,
         clusters_manager::{self, RoutingContext},
@@ -31,7 +31,7 @@ use crate::{
 };
 
 use http::{uri::Parts as UriParts, Uri};
-use hyper::{body::Incoming, Request, Response};
+use hyper::{Request, Response};
 use opentelemetry::trace::Span;
 use opentelemetry::KeyValue;
 use orion_configuration::config::network_filters::http_connection_manager::{
@@ -47,10 +47,10 @@ use orion_tracing::attributes::{UPSTREAM_ADDRESS, UPSTREAM_CLUSTER_NAME};
 use orion_tracing::http_tracer::{SpanKind, SpanName};
 use smol_str::ToSmolStr;
 use std::net::SocketAddr;
-use tracing::{debug, info};
+use tracing::debug;
 
 pub struct MatchedRequest<'a> {
-    pub request: Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
+    pub request: Request<BodyWithMetrics<PolyBody>>,
     pub retry_policy: Option<&'a RetryPolicy>,
     pub route_name: &'a str,
     pub remote_address: SocketAddr,
@@ -77,7 +77,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
         } = request;
         let uri = downstream_request.uri().clone();
 
-        info!("Handling request for {} {:?}", uri, &self.cluster_specifier);
+        debug!("Handling request for {} {:?}", uri, &self.cluster_specifier);
         let cluster_id = clusters_manager::resolve_cluster(&self.cluster_specifier)
             .ok_or_else(|| "Failed to resolve cluster from specifier".to_owned())?;
         let routing_requirement = clusters_manager::get_cluster_routing_requirements(cluster_id);
@@ -89,7 +89,10 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             original_destination_address,
         ))?;
 
-        info!("Handling request for {} {} {} routing req = {:?}", uri, cluster_id, remote_address, routing_requirement);
+        debug!(
+            "Handling request for {} {} {} routing req = {:?}",
+            uri, cluster_id, remote_address, routing_requirement
+        );
 
         let maybe_channel = clusters_manager::get_http_connection(cluster_id, routing_context);
 
@@ -97,8 +100,8 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
             Ok(svc_channel) => {
                 if let Some(ctx) = trans_handler.access_log_ctx.as_ref() {
                     ctx.lock().loggers.with_context(&UpstreamContext {
-                        authority: Some(&svc_channel.upstream_authority),
-                        cluster_name: Some(svc_channel.cluster_name),
+                        authority: Some(&svc_channel.upstream_authority()),
+                        cluster_name: Some(svc_channel.cluster_name()),
                         route_name,
                     })
                 }
@@ -116,7 +119,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     };
 
                     let authority_replacement = if let Some(authority_rewrite) = &self.authority_rewrite {
-                        authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority)
+                        authority_rewrite.apply(&parts.uri, &parts.headers, &svc_channel.upstream_authority())
                     } else {
                         None
                     };
@@ -145,7 +148,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                     trans_handler.trace_ctx.as_ref(),
                     &connection_manager.get_tracing_key(),
                     SpanKind::Client,
-                    SpanName::Str::<()>(svc_channel.upstream_authority.as_str()),
+                    SpanName::Str::<()>(svc_channel.upstream_authority().as_str()),
                 );
 
                 if let Some(ref mut client_span) = client_span {
@@ -154,8 +157,8 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
 
                     // set additional attributes for client span...
                     client_span.set_attributes([
-                        KeyValue::new(UPSTREAM_CLUSTER_NAME, svc_channel.cluster_name),
-                        KeyValue::new(UPSTREAM_ADDRESS, svc_channel.upstream_authority.to_string()),
+                        KeyValue::new(UPSTREAM_CLUSTER_NAME, svc_channel.cluster_name()),
+                        KeyValue::new(UPSTREAM_ADDRESS, svc_channel.upstream_authority().to_string()),
                     ]);
                 }
 

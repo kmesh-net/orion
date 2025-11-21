@@ -16,6 +16,9 @@
 //
 
 #![recursion_limit = "128"]
+#[allow(unused_imports)]
+#[macro_use]
+extern crate assert_matches;
 
 pub mod configuration;
 pub mod event_error;

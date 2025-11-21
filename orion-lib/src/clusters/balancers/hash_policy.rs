@@ -18,14 +18,13 @@
 use std::{hash::Hasher, net::SocketAddr, ops::ControlFlow};
 
 use http::Request;
-use hyper::body::Incoming;
 use orion_configuration::config::network_filters::http_connection_manager::route::{HashPolicy, HashPolicyResult};
 use twox_hash::XxHash64;
 
-use crate::body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout};
+use crate::{body::body_with_metrics::BodyWithMetrics, PolyBody};
 
 #[derive(Clone, Debug)]
-pub struct HashState<'a, B = BodyWithMetrics<BodyWithTimeout<Incoming>>> {
+pub struct HashState<'a, B = BodyWithMetrics<PolyBody>> {
     policies: &'a [HashPolicy],
     req: &'a Request<B>,
     src_addr: SocketAddr,
@@ -78,8 +77,9 @@ impl DeterministicBuildHasher {
 #[cfg(test)]
 mod test {
     use super::{DeterministicBuildHasher, HashPolicy, HashState};
-    use http::{request::Builder, HeaderName, HeaderValue, Request};
+    use http::{request::Builder, HeaderValue, Request};
     use orion_configuration::config::network_filters::http_connection_manager::route::PolicySpecifier;
+    use orion_http_header::LB_HEADER;
     use std::{
         hash::{Hash, Hasher},
         net::SocketAddr,
@@ -123,7 +123,7 @@ mod test {
     fn hash_policy() {
         let source_ip = SocketAddr::from(([192, 168, 0, 1], 8000));
 
-        let policy_header = PolicySpecifier::Header(HeaderName::from_static("lb-header"));
+        let policy_header = PolicySpecifier::Header(LB_HEADER);
         let policy_query = PolicySpecifier::QueryParameter("lb-param".into());
         let policy_addr = PolicySpecifier::SourceIp(true);
 

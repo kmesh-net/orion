@@ -23,11 +23,11 @@ use crate::{
         GrpcService,
     },
     secrets::TransportSecret,
-    transport::{HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
+    transport::{HttpChannel, HttpChannels, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     Result,
 };
 use http::uri::Authority;
-use orion_configuration::config::cluster::{HealthCheck, HealthStatus, LbPolicy};
+use orion_configuration::config::cluster::{HealthCheck, HealthStatus};
 use tracing::debug;
 
 #[derive(Debug, Clone)]
@@ -96,12 +96,9 @@ impl ClusterOps for StaticCluster {
         self.load_assignment.update_endpoint_health(endpoint, health);
     }
 
-    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel> {
+    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannels> {
         debug!("{} : Getting connection", self.name);
-        match context {
-            RoutingContext::Hash(hash_state) => self.load_assignment.get_http_channel(Some(hash_state)),
-            _ => self.load_assignment.get_http_channel(None),
-        }
+        self.load_assignment.get_http_channel(context)
     }
 
     fn get_tcp_connection(&mut self, _context: RoutingContext) -> Result<TcpChannelConnector> {
@@ -113,9 +110,6 @@ impl ClusterOps for StaticCluster {
     }
 
     fn get_routing_requirements(&self) -> RoutingRequirement {
-        match self.config.load_balancing_policy {
-            LbPolicy::RingHash | LbPolicy::Maglev => RoutingRequirement::Hash,
-            _ => RoutingRequirement::None,
-        }
+        self.load_assignment.get_routing_requirements()
     }
 }

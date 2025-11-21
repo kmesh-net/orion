@@ -32,7 +32,7 @@ use crate::{
         GrpcService,
     },
     secrets::TransportSecret,
-    transport::{HttpChannel, TcpChannelConnector, UpstreamTransportSocketConfigurator},
+    transport::{HttpChannel, HttpChannels, TcpChannelConnector, UpstreamTransportSocketConfigurator},
     Result,
 };
 
@@ -124,12 +124,9 @@ impl ClusterOps for DynamicCluster {
         }
     }
 
-    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannel> {
+    fn get_http_connection(&mut self, context: RoutingContext) -> Result<HttpChannels> {
         if let Some(cla) = self.load_assignment.as_mut() {
-            match context {
-                RoutingContext::Hash(hash_state) => cla.get_http_channel(Some(hash_state)),
-                _ => cla.get_http_channel(None),
-            }
+            cla.get_http_channel(context)
         } else {
             Err(format!("{} No channels available", self.name).into())
         }
@@ -152,9 +149,12 @@ impl ClusterOps for DynamicCluster {
     }
 
     fn get_routing_requirements(&self) -> RoutingRequirement {
-        match self.load_balancing_policy {
-            LbPolicy::RingHash | LbPolicy::Maglev => RoutingRequirement::Hash,
-            _ => RoutingRequirement::None,
+        if let Some(cla) = &self.load_assignment {
+            cla.get_routing_requirements()
+        } else if self.load_balancing_policy.requires_hash() {
+            RoutingRequirement::Hash
+        } else {
+            RoutingRequirement::None
         }
     }
 }

@@ -22,6 +22,7 @@ pub(crate) mod hash_policy;
 pub(crate) mod healthy;
 pub(crate) mod least;
 pub(crate) mod maglev;
+pub(crate) mod override_host;
 pub(crate) mod priority;
 pub(crate) mod random;
 pub(crate) mod ring;

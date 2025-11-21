@@ -17,12 +17,13 @@
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use criterion::{criterion_group, criterion_main, Criterion};
-use http::{HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode, Version};
+use http::{HeaderMap, HeaderValue, Request, Response, StatusCode, Version};
 use orion_format::{
     context::{Context, DownstreamContext, DownstreamResponse, FinishContext, InitContext},
     types::{ResponseFlags, ResponseFlagsShort},
     LogFormatter, LogFormatterLocal, DEFAULT_ACCESS_LOG_FORMAT,
 };
+use orion_http_header::X_ENVOY_ORIGINAL_PATH;
 use smol_str::ToSmolStr;
 use std::hint::black_box;
 use std::time::Duration;
@@ -133,7 +134,7 @@ fn benchmark_rust_format(c: &mut Criterion) {
 
             let path: String = request
                 .headers()
-                .get(HeaderName::from_static("x-envoy-original-path"))
+                .get(X_ENVOY_ORIGINAL_PATH)
                 .and_then(|p| p.to_str().ok())
                 .unwrap_or_else(|| request.uri().path())
                 .into();

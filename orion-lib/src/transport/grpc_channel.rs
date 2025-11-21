@@ -21,6 +21,7 @@ use http::{
     Request, Uri,
 };
 use std::{iter::Cycle, sync::Arc, vec::IntoIter};
+use tracing::debug;
 
 use orion_xds::grpc_deps::GrpcBody;
 use tower::Service;
@@ -64,7 +65,7 @@ impl GrpcService {
         let http_req = Request::from_parts(
             parts,
             BodyWithMetrics::new(BodyKind::Request, grpc_body.into(), |_bytes, _event_error, _flags| {
-                println!("gRPC request body finalized")
+                debug!("gRPC request body finalized")
             }),
         );
 

@@ -613,7 +613,7 @@ impl Listener {
         )?;
 
         if let Some(filterchain) = selected_filterchain {
-            info!(
+            debug!(
                 "{listener_name} : mapping connection from {peer_addr}->{} {:?} to filter chain {}",
                 downstream_metadata.local_address(),
                 server_name.as_deref(),

@@ -94,9 +94,11 @@ impl From<(&'_ PolyBodyError, BodyKind)> for ResponseFlags {
     fn from((err, kind): (&PolyBodyError, BodyKind)) -> Self {
         match err {
             PolyBodyError::Hyper(error) => (error, kind).into(),
-            PolyBodyError::Infallible(_) | PolyBodyError::Grpc(_) | PolyBodyError::Boxed(_) => {
-                ResponseFlags(FmtResponseFlags::empty())
-            },
+            PolyBodyError::Infallible(_)
+            | PolyBodyError::Grpc(_)
+            | PolyBodyError::Boxed(_)
+            | PolyBodyError::BadVariant
+            | PolyBodyError::Trailers(_) => ResponseFlags(FmtResponseFlags::empty()),
             PolyBodyError::TimedOut => match kind {
                 BodyKind::Request => ResponseFlags(FmtResponseFlags::UPSTREAM_REQUEST_TIMEOUT),
                 BodyKind::Response => ResponseFlags(FmtResponseFlags::STREAM_IDLE_TIMEOUT),

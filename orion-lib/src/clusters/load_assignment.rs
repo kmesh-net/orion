@@ -22,9 +22,9 @@ use http::uri::Authority;
 
 use orion_configuration::config::{
     cluster::{
-        ClusterLoadAssignment as ClusterLoadAssignmentConfig, HealthStatus, HttpProtocolOptions,
+        ClusterLoadAssignment as ClusterLoadAssignmentConfig, ExtendedLbPolicy, HealthStatus, HttpProtocolOptions,
         InternalEndpointAddress, LbEndpoint as LbEndpointConfig, LbPolicy,
-        LocalityLbEndpoints as LocalityLbEndpointsConfig,
+        LocalityLbEndpoints as LocalityLbEndpointsConfig, OverrideHostSource, StandardLbPolicy,
     },
     core::envoy_conversions::{Address, InternalAddress},
     transport::BindDeviceOptions,
@@ -42,8 +42,10 @@ use super::{
     health::{EndpointHealth, ValueUpdated},
 };
 use crate::{
+    clusters::{balancers::override_host::OverrideHostLoadBalancer, RoutingContext, RoutingRequirement},
     transport::{
-        GrpcService, HttpChannel, HttpChannelBuilder, TcpChannelConnector, UpstreamTransportSocketConfigurator,
+        GrpcService, HttpChannel, HttpChannelBuilder, HttpChannels, TcpChannelConnector,
+        UpstreamTransportSocketConfigurator,
     },
     Result,
 };
@@ -520,6 +522,7 @@ pub enum BalancerType {
     LeastRequests(DefaultBalancer<WeightedLeastRequestBalancer<LbEndpoint>, LbEndpoint>),
     RingHash(DefaultBalancer<RingHashBalancer<LbEndpoint>, LbEndpoint>),
     Maglev(DefaultBalancer<MaglevBalancer<LbEndpoint>, LbEndpoint>),
+    OverrideHost(OverrideHostLoadBalancer),
 }
 
 impl BalancerType {
@@ -530,15 +533,32 @@ impl BalancerType {
             BalancerType::LeastRequests(balancer) => balancer.update_health(endpoint, health),
             BalancerType::RingHash(balancer) => balancer.update_health(endpoint, health),
             BalancerType::Maglev(balancer) => balancer.update_health(endpoint, health),
+            BalancerType::OverrideHost(balancer) => balancer.update_health(endpoint, health),
         }
     }
-    fn next_item(&mut self, maybe_hash: Option<HashState>) -> Option<Arc<LbEndpoint>> {
+    pub(crate) fn next_item(&mut self, hash: Option<u64>) -> Option<Arc<LbEndpoint>> {
         match self {
-            BalancerType::RoundRobin(balancer) => balancer.next_item(None),
-            BalancerType::Random(balancer) => balancer.next_item(None),
-            BalancerType::LeastRequests(balancer) => balancer.next_item(None),
-            BalancerType::RingHash(balancer) => balancer.next_item(maybe_hash.and_then(HashState::compute)),
-            BalancerType::Maglev(balancer) => balancer.next_item(maybe_hash.and_then(HashState::compute)),
+            BalancerType::RoundRobin(balancer) => balancer.next_item(hash),
+            BalancerType::Random(balancer) => balancer.next_item(hash),
+            BalancerType::LeastRequests(balancer) => balancer.next_item(hash),
+            BalancerType::RingHash(balancer) => balancer.next_item(hash),
+            BalancerType::Maglev(balancer) => balancer.next_item(hash),
+            BalancerType::OverrideHost(balancer) => balancer.next_item(hash),
+        }
+    }
+
+    pub(crate) fn requires_hash(&self) -> bool {
+        match self {
+            BalancerType::RingHash(_) | BalancerType::Maglev(_) => true,
+            BalancerType::OverrideHost(balancer) => balancer.fallback_requires_hash(),
+            _ => false,
+        }
+    }
+
+    fn rebuild(self, endpoints: &[LocalityLbEndpoints]) -> Self {
+        match self {
+            BalancerType::OverrideHost(balancer) => BalancerType::OverrideHost(balancer.rebuild(endpoints)),
+            other => other,
         }
     }
 }
@@ -564,9 +584,42 @@ impl PartialClusterLoadAssignment {
 }
 
 impl ClusterLoadAssignment {
-    pub fn get_http_channel(&mut self, hash: Option<HashState>) -> Result<HttpChannel> {
-        let endpoint = self.balancer.next_item(hash).ok_or("No active endpoint")?;
-        Ok(endpoint.http_channel().ok_or("No HTTP channel available for this endpoint")?.clone())
+    pub fn get_routing_requirements(&self) -> RoutingRequirement {
+        if let BalancerType::OverrideHost(balancer) = &self.balancer {
+            RoutingRequirement::OverrideHost {
+                header: balancer.header(),
+                fallback_requires_hash: balancer.fallback_requires_hash(),
+            }
+        } else if self.balancer.requires_hash() {
+            RoutingRequirement::Hash
+        } else {
+            RoutingRequirement::None
+        }
+    }
+
+    pub fn get_http_channel(&mut self, context: RoutingContext) -> Result<HttpChannels> {
+        match context {
+            RoutingContext::OverrideHost { header, fallback_hash } => {
+                let hash = fallback_hash.and_then(HashState::compute);
+                if let BalancerType::OverrideHost(balancer) = &mut self.balancer {
+                    balancer.select_override(header, hash)
+                } else {
+                    let endpoint = self.balancer.next_item(hash).ok_or("No active endpoint")?;
+                    let channel = endpoint.http_channel().ok_or("No HTTP channel available for this endpoint")?;
+                    Ok(HttpChannels::Single(channel.clone()))
+                }
+            },
+            RoutingContext::Hash(hash_state) => {
+                let endpoint = self.balancer.next_item(hash_state.compute()).ok_or("No active endpoint")?;
+                let channel = endpoint.http_channel().ok_or("No HTTP channel available for this endpoint")?;
+                Ok(HttpChannels::Single(channel.clone()))
+            },
+            _ => {
+                let endpoint = self.balancer.next_item(None).ok_or("No active endpoint")?;
+                let channel = endpoint.http_channel().ok_or("No HTTP channel available for this endpoint")?;
+                Ok(HttpChannels::Single(channel.clone()))
+            },
+        }
     }
 
     pub fn get_tcp_channel(&mut self) -> Result<TcpChannelConnector> {
@@ -620,8 +673,14 @@ impl ClusterLoadAssignment {
                 e.rebuild()
             })
             .collect::<Result<Vec<_>>>()?;
-        let balancer = self.balancer;
-        Ok(Self { endpoints, balancer, ..self })
+        let balancer = self.balancer.rebuild(&endpoints);
+        Ok(Self {
+            cluster_name: self.cluster_name,
+            transport_socket: self.transport_socket,
+            protocol_options: self.protocol_options,
+            balancer,
+            endpoints,
+        })
     }
 
     fn all_endpoints_iter(&self) -> impl Iterator<Item = &LbEndpoint> {
@@ -669,14 +728,18 @@ impl ClusterLoadAssignmentBuilder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let balancer = match self.lb_policy {
-            LbPolicy::Random | LbPolicy::ClusterProvided => {
-                BalancerType::Random(DefaultBalancer::from_slice(&endpoints))
+        let balancer = match &self.lb_policy {
+            LbPolicy::Standard(policy) => Self::build_balancer_from_policy(*policy, &endpoints),
+            LbPolicy::Extended(ExtendedLbPolicy::OverrideHost(config)) => {
+                let header = match &config.override_host_source {
+                    OverrideHostSource::Header { name } => name.clone(),
+                    OverrideHostSource::Metadata { .. } => {
+                        return Err("Metadata override host source is not supported".into());
+                    },
+                };
+                let fallback = Self::build_balancer_from_policy(config.fallback_policy, &endpoints);
+                BalancerType::OverrideHost(OverrideHostLoadBalancer::new(header, fallback, &endpoints))
             },
-            LbPolicy::RoundRobin => BalancerType::RoundRobin(DefaultBalancer::from_slice(&endpoints)),
-            LbPolicy::LeastRequest => BalancerType::LeastRequests(DefaultBalancer::from_slice(&endpoints)),
-            LbPolicy::RingHash => BalancerType::RingHash(DefaultBalancer::from_slice(&endpoints)),
-            LbPolicy::Maglev => BalancerType::Maglev(DefaultBalancer::from_slice(&endpoints)),
         };
 
         Ok(ClusterLoadAssignment {
@@ -686,6 +749,18 @@ impl ClusterLoadAssignmentBuilder {
             transport_socket: self.transport_socket,
             endpoints,
         })
+    }
+
+    fn build_balancer_from_policy(policy: StandardLbPolicy, endpoints: &[LocalityLbEndpoints]) -> BalancerType {
+        match policy {
+            StandardLbPolicy::Random | StandardLbPolicy::ClusterProvided => {
+                BalancerType::Random(DefaultBalancer::from_slice(endpoints))
+            },
+            StandardLbPolicy::RoundRobin => BalancerType::RoundRobin(DefaultBalancer::from_slice(endpoints)),
+            StandardLbPolicy::LeastRequest => BalancerType::LeastRequests(DefaultBalancer::from_slice(endpoints)),
+            StandardLbPolicy::RingHash => BalancerType::RingHash(DefaultBalancer::from_slice(endpoints)),
+            StandardLbPolicy::Maglev => BalancerType::Maglev(DefaultBalancer::from_slice(endpoints)),
+        }
     }
 }
 
