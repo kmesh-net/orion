@@ -204,6 +204,14 @@ mod envoy_conversions {
                     "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
                         EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
                     },
+                    url if url == super::set_filter_state::SetFilterState::TYPE_URL => {
+                        return super::set_filter_state::SetFilterState::try_from_raw_protobuf(&typed_config.value)
+                            .map(Self::SetFilterState)
+                    },
+                    url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
+                        return super::peer_metadata::PeerMetadataConfig::try_from_raw_protobuf(&typed_config.value)
+                            .map(Self::PeerMetadata)
+                    },
                     "type.googleapis.com/udpa.type.v1.TypedStruct"
                     | "type.googleapis.com/stats.PluginConfig"
                     | "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig"

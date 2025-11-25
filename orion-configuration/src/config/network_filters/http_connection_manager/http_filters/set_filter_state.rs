@@ -23,7 +23,6 @@ use super::super::is_default;
 use crate::config::common::GenericError;
 use crate::typed_struct::TypedStructFilter;
 
-/// Helper function to check if a boolean is false (for serde skip_serializing_if)
 fn is_false(b: &bool) -> bool {
     !b
 }
@@ -262,6 +261,18 @@ impl TypedStructFilter for SetFilterState {
     fn from_json_value(value: JsonValue) -> Result<Self, GenericError> {
         serde_json::from_value(value)
             .map_err(|e| GenericError::from_msg_with_cause("Failed to deserialize SetFilterState from JSON", e))
+    }
+}
+
+#[cfg(feature = "envoy-conversions")]
+impl SetFilterState {
+    pub fn try_from_raw_protobuf(bytes: &[u8]) -> Result<Self, GenericError> {
+        use orion_data_plane_api::envoy_data_plane_api::envoy::extensions::filters::http::set_filter_state::v3::Config as EnvoySetFilterStateConfig;
+        use orion_data_plane_api::envoy_data_plane_api::prost::Message;
+
+        EnvoySetFilterStateConfig::decode(bytes)
+            .map_err(|e| GenericError::from_msg_with_cause("Failed to decode SetFilterState protobuf", e))
+            .and_then(Self::try_from)
     }
 }
 

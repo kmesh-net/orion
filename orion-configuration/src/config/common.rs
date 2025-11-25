@@ -341,26 +341,28 @@ pub(crate) mod envoy_conversions {
     // it would be nice to allow for x = "y" syntax to overwrite the field name, since some fields are
     // named differently in the code vs config file and having the code-local name might confuse an end-user
     macro_rules! unsupported_field {
-        ($field:ident) => {
+        ($field:ident) => {{
             if $field.is_used() {
-                #[allow(dropping_copy_types, clippy::drop_non_drop)]
-                drop($field);
-                Err(GenericError::UnsupportedField(stringify!($field)))
-            } else {
-                #[allow(dropping_copy_types, clippy::drop_non_drop)]
-                drop($field);
-                Ok(())
+                tracing::warn!(
+                    "unsupported field '{}' used in configuration. This field will be ignored.",
+                    stringify!($field)
+                );
             }
-        };
-        ($field:ident, $($tail:ident),+) => {
-             if $field.is_used() {
-                #[allow(dropping_copy_types, clippy::drop_non_drop)]
-                drop($field);
-                Err(GenericError::UnsupportedField(stringify!($field)))
-            } else {
-                unsupported_field! ($($tail),+)
+            #[allow(dropping_copy_types, clippy::drop_non_drop)]
+            drop($field);
+            Ok::<(), GenericError>(())
+        }};
+        ($field:ident, $($tail:ident),+) => {{
+            if $field.is_used() {
+                tracing::warn!(
+                    "unsupported field '{}' used in configuration. This field will be ignored.",
+                    stringify!($field)
+                );
             }
-        };
+            #[allow(dropping_copy_types, clippy::drop_non_drop)]
+            drop($field);
+            unsupported_field!($($tail),+)
+        }};
 
     }
     pub(crate) use unsupported_field;
