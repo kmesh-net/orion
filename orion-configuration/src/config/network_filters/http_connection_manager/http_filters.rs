@@ -67,7 +67,7 @@ pub enum HttpFilterType {
     /// Istio peer metadata filter (parsed but may not be executed)
     PeerMetadata(peer_metadata::PeerMetadataConfig),
     /// Envoy set filter state filter (parsed but may not be executed)
-    SetFilterState(set_filter_state::SetFilterStateConfig),
+    SetFilterState(set_filter_state::SetFilterState),
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -158,7 +158,7 @@ mod envoy_conversions {
         Router(EnvoyRouter),
         Ignored,
         PeerMetadata(super::peer_metadata::PeerMetadataConfig),
-        SetFilterState(super::set_filter_state::SetFilterStateConfig),
+        SetFilterState(super::set_filter_state::SetFilterState),
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -178,8 +178,8 @@ mod envoy_conversions {
                         url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
                             super::peer_metadata::PeerMetadataConfig::from_typed_struct(&parsed).map(Self::PeerMetadata)
                         },
-                        url if url == super::set_filter_state::SetFilterStateConfig::TYPE_URL => {
-                            super::set_filter_state::SetFilterStateConfig::from_typed_struct(&parsed)
+                        url if url == super::set_filter_state::SetFilterState::TYPE_URL => {
+                            super::set_filter_state::SetFilterState::from_typed_struct(&parsed)
                                 .map(Self::SetFilterState)
                         },
                         _ => Err(GenericError::unsupported_variant(format!(
@@ -203,6 +203,14 @@ mod envoy_conversions {
                     },
                     "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
                         EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
+                    },
+                    url if url == super::set_filter_state::SetFilterState::TYPE_URL => {
+                        return super::set_filter_state::SetFilterState::try_from_raw_protobuf(&typed_config.value)
+                            .map(Self::SetFilterState)
+                    },
+                    url if url == super::peer_metadata::PeerMetadataConfig::TYPE_URL => {
+                        return super::peer_metadata::PeerMetadataConfig::try_from_raw_protobuf(&typed_config.value)
+                            .map(Self::PeerMetadata)
                     },
                     "type.googleapis.com/udpa.type.v1.TypedStruct"
                     | "type.googleapis.com/stats.PluginConfig"
@@ -385,14 +393,17 @@ mod typed_struct_integration_tests {
 
     #[test]
     fn test_try_from_any_typed_struct_set_filter_state() {
-        // Build inner Struct for SetFilterStateConfig with one action
-        let mut action_fields = BTreeMap::new();
-        action_fields.insert("object_key".to_string(), Value { kind: Some(Kind::StringValue("test_key".to_string())) });
-
-        let mut list_values = Vec::new();
+        // Build inner Struct for SetFilterState with one action including format_string
         let mut struct_fields = BTreeMap::new();
         struct_fields.insert("object_key".to_string(), Value { kind: Some(Kind::StringValue("test_key".to_string())) });
+        struct_fields.insert(
+            "format_string".to_string(),
+            Value { kind: Some(Kind::StringValue("%REQ(:authority)%".to_string())) },
+        );
+
         let action_struct = Value { kind: Some(Kind::StructValue(Struct { fields: struct_fields })) };
+
+        let mut list_values = Vec::new();
         list_values.push(action_struct);
 
         let mut fields = BTreeMap::new();
@@ -402,7 +413,7 @@ mod typed_struct_integration_tests {
         );
 
         let typed_struct = TypedStruct {
-            type_url: super::set_filter_state::SetFilterStateConfig::TYPE_URL.to_string(),
+            type_url: super::set_filter_state::SetFilterState::TYPE_URL.to_string(),
             value: Some(Struct { fields }),
         };
 
@@ -414,8 +425,8 @@ mod typed_struct_integration_tests {
         let parsed = SupportedEnvoyFilter::try_from(any).expect("should parse typed struct");
         match parsed {
             SupportedEnvoyFilter::SetFilterState(cfg) => {
-                assert!(cfg.on_request_headers.is_some());
-                let actions = cfg.on_request_headers.unwrap();
+                assert!(!cfg.on_request_headers.is_empty());
+                let actions = &cfg.on_request_headers;
                 assert_eq!(actions.len(), 1);
                 assert_eq!(actions[0].object_key, "test_key");
             },

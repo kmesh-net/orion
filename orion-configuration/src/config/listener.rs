@@ -481,30 +481,44 @@ mod envoy_conversions {
             (|| -> Result<_, GenericError> {
                 let name = name.clone();
 
-                let address_result = convert_opt!(address)?;
-                let address = match address_result {
-                    Address::Socket(_, _) => {
-                        crate::config::listener::ListenerAddress::Socket(address_result.into_socket_addr()?)
-                    },
-                    Address::Internal(_internal_addr) => {
-                        crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
-                            buffer_size_kb: None, // Default buffer size, can be configured via bootstrap extension
-                        })
-                    },
-                    Address::Pipe(_, _) => {
-                        return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
-                    },
+                let address = if let Some(ref listener_spec) = listener_specifier {
+                    use orion_data_plane_api::envoy_data_plane_api::envoy::config::listener::v3::listener::ListenerSpecifier;
+                    match listener_spec {
+                        ListenerSpecifier::InternalListener(_config) => {
+                            crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
+                                buffer_size_kb: None
+                            })
+                        }
+                    }
+                } else {
+                    let address_result = convert_opt!(address)?;
+                    match address_result {
+                        Address::Socket(_, _) => {
+                            crate::config::listener::ListenerAddress::Socket(address_result.into_socket_addr()?)
+                        },
+                        Address::Internal(_internal_addr) => {
+                            crate::config::listener::ListenerAddress::Internal(crate::config::listener::InternalListener {
+                                buffer_size_kb: None,
+                            })
+                        },
+                        Address::Pipe(_, _) => {
+                            return Err(GenericError::unsupported_variant("Pipe addresses are not supported for listeners"))
+                        },
+                    }
                 };
                 let filter_chains = envoy_filter_chains.clone();
                 let filter_chains: Vec<FilterChainWrapper> = convert_non_empty_vec!(filter_chains)?;
                 let n_filter_chains = filter_chains.len();
                 let filter_chains: HashMap<_, _> = filter_chains.into_iter().map(|x| x.0).collect();
 
-                // This is a hard requirement from Envoy as otherwise it can't pick which filterchain to use.
                 if filter_chains.len() != n_filter_chains {
-                    warn!("Duplicate filter chains {:?}", envoy_filter_chains);
-                    return Err(GenericError::from_msg("filter chain contains duplicate filter_chain_match entries")
-                        .with_node("filter_chains"));
+                    warn!(
+                        "Duplicate filter chains detected ({} unique out of {}), using last one for each match. \
+                        Filter chain names: {:?}",
+                        filter_chains.len(),
+                        n_filter_chains,
+                        envoy_filter_chains.iter().map(|fc| &fc.name).collect::<Vec<_>>()
+                    );
                 }
                 let listener_filters: Vec<ListenerFilter> = convert_vec!(listener_filters)?;
                 let mut with_tls_inspector = false;
@@ -796,7 +810,9 @@ mod envoy_conversions {
             "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy" => {
                 EnvoyTcpProxy::decode(typed_config.value.as_slice()).map(Self::TcpProxy)
             },
-            "type.googleapis.com/stats.PluginConfig" | "type.googleapis.com/udpa.type.v1.TypedStruct"=> {
+            "type.googleapis.com/stats.PluginConfig" | 
+            "type.googleapis.com/udpa.type.v1.TypedStruct" |
+            "type.googleapis.com/envoy.extensions.filters.network.set_filter_state.v3.Config" => {
                 Ok(Self::Ignored)
             }
             _ => {

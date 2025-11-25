@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orion-waypoint
+  namespace: bookinfo
+  labels:
+    app: orion-waypoint
+    gateway.networking.k8s.io/gateway-name: orion-waypoint
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orion-waypoint
+  namespace: bookinfo
+  labels:
+    app: orion-waypoint
+    gateway.networking.k8s.io/gateway-name: orion-waypoint
+    gateway.istio.io/managed: istio.io-mesh-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orion-waypoint
+  template:
+    metadata:
+      labels:
+        app: orion-waypoint
+        gateway.networking.k8s.io/gateway-name: orion-waypoint
+        service.istio.io/canonical-name: orion-waypoint
+        service.istio.io/canonical-revision: latest
+        istio.io/dataplane-mode: none
+        sidecar.istio.io/inject: "false"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15090"
+        prometheus.io/path: "/stats/prometheus"
+    spec:
+      serviceAccountName: orion-waypoint
+      containers:
+      - name: orion
+        image: orion-waypoint:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.serviceAccountName
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_ID
+          value: "waypoint~$(POD_IP)~$(POD_NAME).$(NAMESPACE)~$(NAMESPACE).svc.cluster.local"
+        
+        ports:
+        - name: admin
+          containerPort: 15000
+          protocol: TCP
+        - name: inbound
+          containerPort: 15006
+          protocol: TCP
+        - name: hbone
+          containerPort: 15008
+          protocol: TCP
+        - name: health
+          containerPort: 15020
+          protocol: TCP
+        - name: status
+          containerPort: 15021
+          protocol: TCP
+        - name: metrics
+          containerPort: 15090
+          protocol: TCP
+        
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1Gi
+        
+        volumeMounts:
+        - name: config
+          mountPath: /etc/orion
+          readOnly: true
+      
+      volumes:
+      - name: config
+        configMap:
+          name: orion-waypoint-config
+      
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orion-waypoint-config
+  namespace: bookinfo
+  labels:
+    app: orion-waypoint
+data:
+  config.yaml: |
+    runtime:
+      num_cpus: 2
+      num_runtimes: 2
+
+    logging:
+      log_level: "info"
+
+    envoy_bootstrap:
+      node:
+        id: "${NODE_ID}"
+        cluster: "waypoint.${NAMESPACE}"
+        metadata:
+          NAMESPACE: "${NAMESPACE}"
+          NODE_NAME: "${NODE_NAME}"
+          ENABLE_HBONE: "true"
+          LABELS:
+            gateway.networking.k8s.io/gateway-name: "orion-waypoint"
+            istio.io/dataplane-mode: "none"
+            service.istio.io/canonical-name: "orion-waypoint"
+            sidecar.istio.io/inject: "false"
+          INSTANCE_IPS: "${POD_IP}"
+          METADATA_DISCOVERY: "true"
+          SERVICE_ACCOUNT: "${SERVICE_ACCOUNT}"
+          CLUSTER_ID: "Kubernetes"
+          NAME: "${POD_NAME}"
+          MESH_ID: "cluster.local"
+          WORKLOAD_NAME: "orion-waypoint"
+          ISTIO_VERSION: "1.27.3"
+
+      dynamic_resources:
+        ads_config:
+          api_type: GRPC
+          transport_api_version: V3
+          grpc_services:
+            - envoy_grpc:
+                cluster_name: xds_cluster
+
+      static_resources:
+        clusters:
+          - name: xds_cluster
+            connect_timeout: 0.25s
+            type: STRICT_DNS
+            lb_policy: ROUND_ROBIN
+            typed_extension_protocol_options:
+              envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+                "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+                explicit_http_config:
+                  http2_protocol_options: {}
+            load_assignment:
+              cluster_name: xds_cluster
+              endpoints:
+                - lb_endpoints:
+                    - endpoint:
+                        address:
+                          socket_address:
+                            address: istiod.istio-system.svc.cluster.local
+                            port_value: 15010

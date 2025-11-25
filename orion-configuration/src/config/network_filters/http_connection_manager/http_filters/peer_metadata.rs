@@ -55,6 +55,12 @@ impl TypedStructFilter for PeerMetadataConfig {
     }
 }
 
+impl PeerMetadataConfig {
+    pub fn try_from_raw_protobuf(_bytes: &[u8]) -> Result<Self, GenericError> {
+        Ok(Self::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,0 +1,38 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orion-waypoint
+  namespace: bookinfo
+  labels:
+    app: orion-waypoint
+    gateway.networking.k8s.io/gateway-name: orion-waypoint
+spec:
+  type: ClusterIP
+  selector:
+    app: orion-waypoint
+  ports:
+  - name: admin
+    port: 15000
+    targetPort: 15000
+    protocol: TCP
+  - name: inbound
+    port: 15006
+    targetPort: 15006
+    protocol: TCP
+  - name: hbone
+    port: 15008
+    targetPort: 15008
+    protocol: TCP
+  - name: health
+    port: 15020
+    targetPort: 15020
+    protocol: TCP
+  - name: status
+    port: 15021
+    targetPort: 15021
+    protocol: TCP
+  - name: metrics
+    port: 15090
+    targetPort: 15090
+    protocol: TCP
