@@ -23,16 +23,15 @@ use super::{
     load_assignment::{ClusterLoadAssignmentBuilder, PartialClusterLoadAssignment},
 };
 use crate::{
-    body::{body_with_metrics::BodyWithMetrics, body_with_timeout::BodyWithTimeout},
+    body::body_with_metrics::BodyWithMetrics,
     clusters::cluster::{ClusterOps, PartialClusterType},
     secrets::TransportSecret,
-    transport::{GrpcService, HttpChannel, TcpChannelConnector},
-    Result,
+    transport::{GrpcService, HttpChannel, HttpChannels, TcpChannelConnector},
+    PolyBody, Result,
 };
 use http::{uri::Authority, HeaderName, HeaderValue, Request};
-use hyper::body::Incoming;
 use orion_configuration::config::{
-    cluster::{Cluster as ClusterConfig, ClusterSpecifier as ClusterSpecifierConfig},
+    cluster::{Cluster as ClusterConfig, ClusterSpecifier, LbPolicy, StandardLbPolicy},
     transport::BindDeviceOptions,
 };
 use orion_interner::StringInterner;
@@ -53,6 +52,7 @@ pub enum RoutingRequirement {
     Header(HeaderName),
     Authority,
     Hash,
+    OverrideHost { header: HeaderName, fallback_requires_hash: bool },
 }
 
 pub enum RoutingContext<'a> {
@@ -60,6 +60,7 @@ pub enum RoutingContext<'a> {
     Header(&'a HeaderValue),
     Authority(Authority, SocketAddr),
     Hash(HashState<'a>),
+    OverrideHost { header: &'a HeaderValue, fallback_hash: Option<HashState<'a>> },
 }
 
 impl std::fmt::Debug for RoutingContext<'_> {
@@ -69,6 +70,9 @@ impl std::fmt::Debug for RoutingContext<'_> {
             Self::Header(arg0) => f.debug_tuple("Header").field(arg0).finish(),
             Self::Authority(arg0, _) => f.debug_tuple("Authority").field(arg0).finish(),
             Self::Hash(_) => f.debug_tuple("Hash").finish(),
+            Self::OverrideHost { header, fallback_hash } => {
+                f.debug_tuple("OverrideHost").field(header).field(fallback_hash).finish()
+            },
         }
     }
 }
@@ -80,30 +84,33 @@ impl std::fmt::Display for RoutingContext<'_> {
             Self::Header(arg0) => Ok(f.write_str(&format!("RoutingContext header: {arg0:?}"))?),
             Self::Authority(arg0, _) => Ok(f.write_str(&format!("RoutingContext authority: {arg0:?}"))?),
             Self::Hash(_) => Ok(f.write_str("RoutingContext Hash")?),
+            Self::OverrideHost { header, fallback_hash } => {
+                Ok(f.write_str(&format!("RoutingContext override host: {header:?}, fallback hash: {fallback_hash:?}"))?)
+            },
         }
     }
 }
 
-impl<'a>
-    TryFrom<(
-        &'a RoutingRequirement,
-        &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
-        HashState<'a>,
-        SocketAddr,
-    )> for RoutingContext<'a>
+impl<'a> TryFrom<(&'a RoutingRequirement, &'a Request<BodyWithMetrics<PolyBody>>, HashState<'a>, SocketAddr)>
+    for RoutingContext<'a>
 {
     type Error = String;
 
     fn try_from(
-        value: (
-            &'a RoutingRequirement,
-            &'a Request<BodyWithMetrics<BodyWithTimeout<Incoming>>>,
-            HashState<'a>,
-            SocketAddr,
-        ),
+        value: (&'a RoutingRequirement, &'a Request<BodyWithMetrics<PolyBody>>, HashState<'a>, SocketAddr),
     ) -> std::result::Result<Self, Self::Error> {
         let (routing_requirement, request, hash_state, original_destination_address) = value;
         match routing_requirement {
+            RoutingRequirement::OverrideHost { header, fallback_requires_hash } => {
+                if let Some(header_value) = request.headers().get(header) {
+                    let fallback_hash = fallback_requires_hash.then_some(hash_state);
+                    Ok(RoutingContext::OverrideHost { header: header_value, fallback_hash })
+                } else if *fallback_requires_hash {
+                    Ok(RoutingContext::Hash(hash_state))
+                } else {
+                    Ok(RoutingContext::None)
+                }
+            },
             RoutingRequirement::Header(header_name) => {
                 let header_value = request
                     .headers()
@@ -150,10 +157,10 @@ thread_local! {
     static CLUSTERS_MAP_CACHE : RefCell<CachedWatcher<'static, ClustersMap>> = RefCell::new(CLUSTERS_MAP.watcher());
 }
 
-pub fn resolve_cluster(selector: &ClusterSpecifierConfig) -> Option<ClusterID> {
+pub fn resolve_cluster(selector: &ClusterSpecifier) -> Option<ClusterID> {
     match selector {
-        ClusterSpecifierConfig::Cluster(cluster_name) => Some(cluster_name.to_static_str()),
-        ClusterSpecifierConfig::WeightedCluster(weighted_clusters) => weighted_clusters
+        ClusterSpecifier::Cluster(cluster_name) => Some(cluster_name.to_static_str()),
+        ClusterSpecifier::WeightedCluster(weighted_clusters) => weighted_clusters
             .choose_weighted(&mut rand::rng(), |cluster| u32::from(cluster.weight))
             .ok()
             .map(|cluster| cluster.cluster.to_static_str()),
@@ -174,7 +181,7 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                         .with_transport_socket(dynamic_cluster.transport_socket.clone())
                         .with_cluster_name(dynamic_cluster.name)
                         .with_bind_device_options(dynamic_cluster.bind_device_options.clone())
-                        .with_lb_policy(dynamic_cluster.load_balancing_policy)
+                        .with_lb_policy(dynamic_cluster.load_balancing_policy.clone())
                         .prepare();
                     cla.build().map(|cla| dynamic_cluster.change_load_assignment(Some(cla)))?;
                     Ok(cluster.clone())
@@ -187,7 +194,7 @@ pub fn change_cluster_load_assignment(name: &str, cla: &PartialClusterLoadAssign
                         .with_transport_socket(static_cluster.transport_socket.clone())
                         .with_cluster_name(static_cluster.name)
                         .with_bind_device_options(BindDeviceOptions::default())
-                        .with_lb_policy(orion_configuration::config::cluster::LbPolicy::RoundRobin)
+                        .with_lb_policy(LbPolicy::Standard(StandardLbPolicy::RoundRobin))
                         .prepare();
                     cla.build().map(|cla|static_cluster.change_load_assignment(cla))?;
                     Ok(cluster.clone())
@@ -285,7 +292,7 @@ pub fn get_all_clusters() -> Vec<ClusterConfig> {
     CLUSTERS_MAP.get_clone().0.values().by_ref().filter_map(|cluster| ClusterConfig::try_from(cluster).ok()).collect()
 }
 
-pub fn get_http_connection(cluster_id: ClusterID, context: RoutingContext) -> Result<HttpChannel> {
+pub fn get_http_connection(cluster_id: ClusterID, context: RoutingContext) -> Result<HttpChannels> {
     with_cluster(cluster_id, |cluster| cluster.get_http_connection(context))
 }
 

@@ -24,7 +24,7 @@ use crate::{
     clusters::retry_policy::RetryCondition,
     event_error::{EventError, EventKind, TryInferFrom},
     listeners::{
-        http_connection_manager::{RequestHandler, TransactionHandler},
+        http_connection_manager::{http_modifiers::strip_trailers_headers, RequestHandler, TransactionHandler},
         synthetic_http_response::SyntheticHttpResponse,
     },
     secrets::{TlsConfigurator, WantsToBuildClient},
@@ -100,9 +100,29 @@ impl ClientContext {
 }
 
 #[derive(Clone, Debug)]
+pub enum HttpChannels {
+    Single(HttpChannel),
+    MultiWithFailover { channel: HttpChannel, failover_channels: Vec<HttpChannel> },
+}
+impl HttpChannels {
+    pub fn channel(&self) -> &HttpChannel {
+        match self {
+            HttpChannels::Single(channel) | HttpChannels::MultiWithFailover { channel, .. } => channel,
+        }
+    }
+    pub fn upstream_authority(&self) -> &Authority {
+        &self.channel().upstream_authority
+    }
+    pub fn cluster_name(&self) -> &'static str {
+        self.channel().cluster_name
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct HttpChannel {
     pub client: HttpChannelClient,
     pub http_version: Codec,
+    pub enable_trailers: bool,
     pub upstream_authority: Authority, // upstream authority
     pub cluster_name: &'static str,
 }
@@ -240,6 +260,14 @@ impl HttpChannelBuilder {
         let authority = self.authority.clone().ok_or_else(|| Error::from("Authority is mandatory"))?;
         let client_builder = self.configure_hyper_client();
 
+        // enable_trailers is only valid for HTTP1 and the flag is used to
+        // include the TE and Trailer headers if they were missing from the
+        // original request
+        let enable_trailers = match self.http_protocol_options.codec {
+            Codec::Http1 => self.http_protocol_options.http1_options.enable_trailers,
+            Codec::Http2 => false,
+        };
+
         if let Some(tls_context) = self.tls {
             // Build TLS client inline to avoid ownership issues
             let mut builder =
@@ -271,6 +299,7 @@ impl HttpChannelBuilder {
                     Arc::new(LocalObject::new(client_builder, http_connector)),
                 )),
                 http_version: self.http_protocol_options.codec,
+                enable_trailers,
                 upstream_authority: authority,
                 cluster_name: self.cluster_name.unwrap_or_default(),
             })
@@ -286,6 +315,7 @@ impl HttpChannelBuilder {
             Ok(HttpChannel {
                 client: HttpChannelClient::Plain(Arc::new(LocalObject::new(client_builder, connector))),
                 http_version: self.http_protocol_options.codec,
+                enable_trailers,
                 upstream_authority: authority,
                 cluster_name: self.cluster_name.unwrap_or_default(),
             })
@@ -306,6 +336,7 @@ impl HttpChannelBuilder {
                     //client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
                     client: HttpChannelClient::Unix(uri, Arc::new(client_builder.build(UnixConnector))),
                     http_version: self.http_protocol_options.codec,
+                    enable_trailers: false,
                     upstream_authority: authority,
                     cluster_name: self.cluster_name.unwrap_or_default(),
                 })
@@ -404,6 +435,69 @@ fn update_upstream_stats(event: PoolEvent, tag: &dyn Any, keys: &[&PoolKey]) {
     }
 }
 
+impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for &HttpChannels {
+    async fn to_response(
+        self,
+        trans_handler: &TransactionHandler,
+        request: RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>,
+    ) -> Result<Response<crate::PolyBody>> {
+        match self {
+            HttpChannels::Single(channel) => channel.to_response(trans_handler, request).await,
+            HttpChannels::MultiWithFailover { channel, failover_channels } => {
+                let RequestExt { req, ctx } = request;
+                let RequestContext { route_timeout, .. } = ctx;
+                let (parts, body) = req.into_parts();
+                let BodyWithMetrics { inner, guard, state } = body;
+                let collected = inner.collect().await.map_err(Error::from)?;
+                let replay_body = http_body_util::Full::new(collected.to_bytes());
+                let total_attempts = 1 + failover_channels.len();
+                let mut last_error: Option<Error> = None;
+                let mut last_response: Option<Response<PolyBody>> = None;
+                for (attempt, channel) in std::iter::once(channel).chain(failover_channels.iter()).enumerate() {
+                    let has_more = attempt + 1 < total_attempts;
+                    let cloned_body = BodyWithMetrics {
+                        inner: replay_body.clone().into(),
+                        guard: guard.clone(),
+                        state: state.clone(),
+                    };
+                    let rebuilt_req = Request::from_parts(parts.clone(), cloned_body);
+                    let attempt_ctx = RequestContext { route_timeout, retry_policy: None };
+                    let attempt_request = RequestExt::with_context(attempt_ctx, rebuilt_req);
+                    match channel.to_response(trans_handler, attempt_request).await {
+                        Ok(response) => {
+                            if has_more {
+                                debug!(
+                                    attempt,
+                                    cluster = channel.cluster_name,
+                                    upstream = %channel.upstream_authority,
+                                    "Retrying with alternative upstream endpoint"
+                                );
+                                last_response = Some(response);
+                                continue;
+                            }
+                            return Ok(response);
+                        },
+                        Err(err) => {
+                            debug!(
+                                attempt,
+                                cluster = channel.cluster_name,
+                                upstream = %channel.upstream_authority,
+                                error = %err,
+                                "Failed to forward request upstream"
+                            );
+                            last_error = Some(err);
+                        },
+                    }
+                }
+                if let Some(response) = last_response {
+                    return Ok(response);
+                }
+                Err(last_error.unwrap_or_else(|| Error::new("Failed to forward request to any upstream channel")))
+            },
+        }
+    }
+}
+
 impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for &HttpChannel {
     async fn to_response(
         self,
@@ -481,7 +575,7 @@ impl HttpChannel {
         &self,
         retry_policy: Option<&RetryPolicy>,
         sender: &Client<C, BodyWithMetrics<PolyBody>>,
-        req: Request<BodyWithMetrics<PolyBody>>,
+        mut req: Request<BodyWithMetrics<PolyBody>>,
         cluster_name: &'static str,
     ) -> (StdResult<Response<Incoming>, Error>, Duration)
     where
@@ -517,6 +611,9 @@ impl HttpChannel {
             _ => {
                 with_metric!(clusters::UPSTREAM_RQ_TOTAL, add, 1, thread_id, &[KeyValue::new("cluster", cluster_name)]);
                 let start_time = Instant::now();
+                if !self.enable_trailers {
+                    strip_trailers_headers(self.http_version, req.headers_mut());
+                }
                 let resp = sender.request(req).await.map_err(Error::from);
                 (resp, start_time.elapsed())
             },

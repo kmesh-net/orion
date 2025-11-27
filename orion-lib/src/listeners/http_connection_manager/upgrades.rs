@@ -20,7 +20,7 @@ use crate::{
     body::{body_with_metrics::BodyWithMetrics, response_flags::ResponseFlags},
     event_error::EventKind,
     listeners::synthetic_http_response::SyntheticHttpResponse,
-    transport::{policy::RequestExt, HttpChannel},
+    transport::{policy::RequestExt, HttpChannels},
     PolyBody, Result,
 };
 use orion_format::types::ResponseFlags as FmtResponseFlags;
@@ -73,7 +73,7 @@ pub fn is_websocket_enabled_by_hcm(hcm_enabled_upgrades: &[UpgradeType]) -> bool
 pub async fn handle_websocket_upgrade(
     trans_handler: &TransactionHandler,
     mut request: Request<BodyWithMetrics<PolyBody>>,
-    svc_channel: &HttpChannel,
+    svc_channel: &HttpChannels,
 ) -> Result<Response<PolyBody>> {
     let version = request.version();
     match version {

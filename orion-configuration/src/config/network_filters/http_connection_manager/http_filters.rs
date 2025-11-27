@@ -20,10 +20,12 @@ use compact_str::CompactString;
 use http_rbac::HttpRbac;
 pub mod local_rate_limit;
 use local_rate_limit::LocalRateLimit;
+pub mod ext_proc;
 pub mod filter_registry;
 pub mod peer_metadata;
 pub mod router;
 pub mod set_filter_state;
+pub use ext_proc::{ExtProcPerRoute, ExternalProcessor};
 
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -41,6 +43,7 @@ pub enum FilterConfigOverride {
     // in Envoy this is a seperate type, RbacPerRoute, but it only has one field named rbac with the full config.
     // so we replace it with an option to be more rusty
     Rbac(Option<HttpRbac>),
+    ExternalProcessor(ExtProcPerRoute),
 }
 
 impl From<FilterConfigOverride> for FilterOverride {
@@ -68,6 +71,7 @@ pub enum HttpFilterType {
     PeerMetadata(peer_metadata::PeerMetadataConfig),
     /// Envoy set filter state filter (parsed but may not be executed)
     SetFilterState(set_filter_state::SetFilterStateConfig),
+    ExternalProcessor(ExternalProcessor),
 }
 
 #[cfg(feature = "envoy-conversions")]
@@ -79,7 +83,9 @@ use super::is_default;
 mod envoy_conversions {
     #![allow(deprecated)]
     use super::filter_registry::ensure_filters_registered;
-    use super::{FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, HttpRbac};
+    use super::{
+        ext_proc::ExtProcPerRoute, FilterConfigOverride, FilterOverride, HttpFilter, HttpFilterType, HttpRbac,
+    };
     use crate::config::common::*;
     use compact_str::CompactString;
     use orion_data_plane_api::envoy_data_plane_api::{
@@ -87,6 +93,9 @@ mod envoy_conversions {
             config::route::v3::FilterConfig as EnvoyFilterConfig,
             extensions::filters::{
                 http::{
+                    ext_proc::v3::{
+                        ExtProcPerRoute as EnvoyExtProcPerRoute, ExternalProcessor as EnvoyExternalProcessor,
+                    },
                     local_ratelimit::v3::LocalRateLimit as EnvoyLocalRateLimit,
                     rbac::v3::{Rbac as EnvoyRbac, RbacPerRoute as EnvoyRbacPerRoute},
                     router::v3::Router as EnvoyRouter,
@@ -143,6 +152,7 @@ mod envoy_conversions {
                 SupportedEnvoyFilter::Router(_) => {
                     Err(GenericError::from_msg("router filter has to be the last filter in the chain"))
                 },
+                SupportedEnvoyFilter::ExternalProcessor(ext_proc) => ext_proc.try_into().map(Self::ExternalProcessor),
                 SupportedEnvoyFilter::Ignored => Ok(Self::Ingored),
                 SupportedEnvoyFilter::PeerMetadata(config) => Ok(Self::PeerMetadata(config)),
                 SupportedEnvoyFilter::SetFilterState(config) => Ok(Self::SetFilterState(config)),
@@ -159,6 +169,7 @@ mod envoy_conversions {
         Ignored,
         PeerMetadata(super::peer_metadata::PeerMetadataConfig),
         SetFilterState(super::set_filter_state::SetFilterStateConfig),
+        ExternalProcessor(EnvoyExternalProcessor),
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilter {
@@ -204,6 +215,9 @@ mod envoy_conversions {
                     "type.googleapis.com/envoy.extensions.filters.http.router.v3.Router" => {
                         EnvoyRouter::decode(typed_config.value.as_slice()).map(Self::Router)
                     },
+                    "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor" => {
+                        EnvoyExternalProcessor::decode(typed_config.value.as_slice()).map(Self::ExternalProcessor)
+                    },
                     "type.googleapis.com/udpa.type.v1.TypedStruct"
                     | "type.googleapis.com/stats.PluginConfig"
                     | "type.googleapis.com/envoy.extensions.filters.http.grpc_stats.v3.FilterConfig"
@@ -235,6 +249,7 @@ mod envoy_conversions {
     pub enum SupportedEnvoyFilterOverride {
         LocalRateLimit(EnvoyLocalRateLimit),
         Rbac(EnvoyRbacPerRoute),
+        ExternalProcessor(EnvoyExtProcPerRoute),
     }
 
     impl TryFrom<Any> for SupportedEnvoyFilterOverride {
@@ -246,6 +261,9 @@ mod envoy_conversions {
                 },
                 "type.googleapis.com/envoy.extensions.filters.http.rbac.v3.RBACPerRoute" => {
                     EnvoyRbacPerRoute::decode(typed_config.value.as_slice()).map(Self::Rbac)
+                },
+                "type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExtProcPerRoute" => {
+                    EnvoyExtProcPerRoute::decode(typed_config.value.as_slice()).map(Self::ExternalProcessor)
                 },
                 _ => {
                     return Err(GenericError::unsupported_variant(format!(
@@ -293,6 +311,9 @@ mod envoy_conversions {
                 SupportedEnvoyFilterOverride::LocalRateLimit(envoy) => envoy.try_into().map(Self::LocalRateLimit),
                 SupportedEnvoyFilterOverride::Rbac(EnvoyRbacPerRoute { rbac }) => {
                     rbac.map(HttpRbac::try_from).transpose().map(Self::Rbac)
+                },
+                SupportedEnvoyFilterOverride::ExternalProcessor(envoy) => {
+                    ExtProcPerRoute::try_from(envoy).map(Self::ExternalProcessor)
                 },
             }
         }

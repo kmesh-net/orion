@@ -59,6 +59,7 @@ pub enum EventKind {
     RbacAccessDenied(CompactString),
     RateLimited,
     ViaUpstream,
+    ExtProcError,
 }
 
 impl EventKind {
@@ -86,6 +87,7 @@ impl EventKind {
             },
             EventKind::RateLimited => Some(ResponseCodeDetails("rate_limited")),
             EventKind::ViaUpstream => Some(ResponseCodeDetails("via_upstream")),
+            EventKind::ExtProcError => Some(ResponseCodeDetails("ext_proc_error")),
         }
     }
 

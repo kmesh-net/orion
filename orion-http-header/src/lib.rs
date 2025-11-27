@@ -91,3 +91,11 @@ custom_header!(
 custom_header!(
     /// The `x-envoy-internal` header is used to indicate internal requests in Envoy
     X_ENVOY_INTERNAL, "x-envoy-internal");
+
+custom_header!(
+    /// The `x-envoy-original-dst-host` header is used to store the original destination host
+    X_ENVOY_ORIGINAL_DST_HOST, "x-envoy-original-dst-host");
+
+custom_header!(
+    /// The `lb-header` header is used for load balancing decisions
+    LB_HEADER, "lb-header");
