@@ -28,7 +28,7 @@ orion-data-plane-api = { workspace = true, optional = true }
 orion-error.workspace = true
 orion-format.workspace = true
 orion-interner.workspace = true
-prost = "0.14.1"
+prost = "0.14.2"
 prost-types = "0.14.1"
 regex.workspace = true
 serde = { workspace = true, features = ["rc"] }
