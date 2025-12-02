@@ -15,7 +15,11 @@
 //
 //
 
-use orion_configuration::{config::Config, options::Options};
+use compact_str::CompactString;
+use orion_configuration::{
+    config::{bootstrap::Node, Config},
+    options::Options,
+};
 use orion_lib::{Result, RUNTIME_CONFIG};
 
 #[macro_use]
@@ -30,7 +34,7 @@ pub fn run() -> Result<()> {
     let mut tracing_manager = proxy_tracing::TracingManager::new();
 
     let options = Options::parse_options();
-    let Config { runtime, logging, access_logging, bootstrap } = Config::new(&options)?;
+    let Config { runtime, logging, access_logging, mut bootstrap } = Config::new(&options)?;
 
     RUNTIME_CONFIG.set(runtime).map_err(|_| "runtime config was somehow set before we had a chance to set it")?;
 
@@ -39,6 +43,19 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     if !(caps::has_cap(None, caps::CapSet::Permitted, caps::Capability::CAP_NET_RAW)?) {
         tracing::warn!("CAP_NET_RAW is NOT available, SO_BINDTODEVICE will not work");
+    }
+    if let Ok(pod_name) = std::env::var("POD_NAME") {
+        if let Some(node) = bootstrap.node.as_mut() {
+            node.id = CompactString::from(pod_name);
+        } else {
+            bootstrap.node = Some(Node { id: CompactString::from(pod_name), ..Default::default() });
+        }
+
+        let pod_namespace = std::env::var("POD_NAMESPACE").unwrap_or("default".to_owned());
+        bootstrap.node.as_mut().map(|node| {
+            node.cluster_id = CompactString::from(pod_namespace);
+            node
+        });
     }
 
     proxy::run_orion(bootstrap, access_logging);
