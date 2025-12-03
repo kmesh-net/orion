@@ -15,7 +15,7 @@
 //
 //
 
-use multimap::MultiMap;
+use ahash::{HashMap, HashMapExt};
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, warn};
 
@@ -57,8 +57,7 @@ impl ListenerInfo {
 pub struct ListenersManager {
     listener_configuration_channel: mpsc::Receiver<ListenerConfigurationChange>,
     route_configuration_channel: mpsc::Receiver<RouteConfigurationChange>,
-    listener_handles: MultiMap<String, ListenerInfo>,
-    version_counter: u64,
+    listener_handles: HashMap<String, ListenerInfo>,
 }
 
 impl ListenersManager {
@@ -69,8 +68,7 @@ impl ListenersManager {
         ListenersManager {
             listener_configuration_channel,
             route_configuration_channel,
-            listener_handles: MultiMap::new(),
-            version_counter: 0,
+            listener_handles: HashMap::new(),
         }
     }
 
@@ -82,8 +80,8 @@ impl ListenersManager {
             tokio::select! {
                 Some(listener_configuration_change) = self.listener_configuration_channel.recv() => {
                     match listener_configuration_change {
-                        ListenerConfigurationChange::Added(boxed) => {
-                            let (factory, listener_conf) = *boxed;
+                        ListenerConfigurationChange::Added(added_listener) => {
+                            let (factory, listener_conf) = *added_listener;
                             let listener = factory.clone()
                                 .make_listener(tx_route_updates.subscribe(), tx_secret_updates.subscribe())?;
                             if let Err(e) = self.start_listener(listener, listener_conf) {
@@ -132,33 +130,36 @@ impl ListenersManager {
             info!("Internal listener {}", listener_name);
         }
 
-        self.version_counter += 1;
-        let version = self.version_counter;
-
         let listener_name_for_async = listener_name.clone();
 
-        let join_handle = tokio::spawn(async move {
-            let error = listener.start().await;
-            info!("Listener {} version {} exited: {}", listener_name_for_async, version, error);
-        });
+        let listener_info = if let Some(old_listener) = self.listener_handles.remove(&listener_name) {
+            old_listener.handle.abort();
+            let version = old_listener.version + 1;
+            let join_handle = tokio::spawn(async move {
+                let error = listener.start().await;
+                info!("Listener {} version {} exited: {}", listener_name_for_async, version, error);
+            });
 
-        let listener_info = ListenerInfo::new(join_handle, listener_conf, version);
+            ListenerInfo::new(join_handle, listener_conf, version)
+        } else {
+            let join_handle = tokio::spawn(async move {
+                let error = listener.start().await;
+                info!("Listener {} version {} exited: {}", listener_name_for_async, 1, error);
+            });
+            ListenerInfo::new(join_handle, listener_conf, 1)
+        };
+
+        info!("Started listener {} version {}", listener_name, listener_info.version,);
+
         self.listener_handles.insert(listener_name.clone(), listener_info);
-
-        let version_count = self.listener_handles.get_vec(&listener_name).map(|v| v.len()).unwrap_or(0);
-        info!("Started version {} of listener {} ({} total active version(s))", version, listener_name, version_count);
 
         Ok(())
     }
 
     pub fn stop_listener(&mut self, listener_name: &str) -> Result<()> {
-        if let Some(listeners) = self.listener_handles.get_vec_mut(listener_name) {
-            info!("Stopping all {} version(s) of listener {}", listeners.len(), listener_name);
-            for listener_info in listeners.drain(..) {
-                info!("Stopping listener {} version {}", listener_name, listener_info.version);
-                listener_info.handle.abort();
-            }
-            self.listener_handles.remove(listener_name);
+        if let Some(listener) = self.listener_handles.remove(listener_name) {
+            info!("Stopping listener listener {} {}", listener_name, listener.version);
+            listener.handle.abort();
         } else {
             info!("No listeners found with name {}", listener_name);
         }
