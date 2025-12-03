@@ -1157,7 +1157,7 @@ mod envoy_conversions {
                 response_headers_to_remove,
                 tracing,
                 per_request_buffer_limit_bytes,
-                stat_prefix,
+                stat_prefix: _,
                 action,
                 ..
             } = envoy;
@@ -1172,8 +1172,7 @@ mod envoy_conversions {
                 // response_headers_to_add,
                 // response_headers_to_remove,
                 tracing,
-                per_request_buffer_limit_bytes,
-                stat_prefix
+                per_request_buffer_limit_bytes //stat_prefix
             )?;
             let response_headers_to_add = convert_vec!(response_headers_to_add)?;
             let request_headers_to_add = convert_vec!(request_headers_to_add)?;
