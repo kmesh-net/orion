@@ -238,7 +238,7 @@ impl ExternalProcessor {
         let process_headers = modes.should_process_headers();
         let process_body = modes.should_process_body();
         let process_trailers = modes.should_process_trailers();
-
+        debug!("Processing ext_proc");
         if !process_headers && !process_body && !process_trailers {
             return FilterDecision::Continue;
         }
@@ -246,7 +246,7 @@ impl ExternalProcessor {
         let mut ext_proc_headers = None;
 
         if process_headers {
-            debug!(target: "ext_proc", "request processing headers");
+            debug!("ext_proc request processing headers");
             ext_proc_headers = Some(self.filter_header_map(request.headers()));
         }
 

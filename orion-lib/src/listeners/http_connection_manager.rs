@@ -75,7 +75,7 @@ use std::time::Instant;
 use std::{fmt, future::Future, result::Result as StdResult, sync::Arc};
 use tokio::sync::mpsc::Permit;
 use tokio::sync::watch;
-use tracing::debug;
+use tracing::{debug, info};
 use upgrades as upgrade_utils;
 
 use crate::event_error::{EventKind, UpstreamTransportEventError};
@@ -561,6 +561,8 @@ impl TransactionHandler {
         let listener_name = manager.listener_name;
 
         // apply the request header modifiers
+        //
+        //
         http_modifiers::apply_prerouting_functions(
             &mut request,
             downstream_metadata.connection.peer_address(),
@@ -779,6 +781,8 @@ impl
         let mut request: Request<BodyWithMetrics<PolyBody>> = request.map(BodyWithMetrics::map_into::<PolyBody>);
         let mut active_filters: Vec<HttpFilterValue> = Vec::new();
 
+        info!("Processing route {self:#?}");
+
         loop {
             if let Some(ref chosen_route) = cached_route {
                 if processed_routes.contains(&chosen_route.route.route_match) {
@@ -791,6 +795,7 @@ impl
                 if let Some(route_filters) = route_filters {
                     let mut is_reroute = false;
                     for filter in route_filters {
+                        debug!("Applying filter {filter:#?}");
                         if filter.disabled {
                             continue;
                         }

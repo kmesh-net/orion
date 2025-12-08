@@ -611,7 +611,8 @@ mod envoy_conversions {
                     None => Ok(()),
                     Some(x) => match (x, &matching_filter.filter) {
                         (FilterConfigOverride::LocalRateLimit(_), HttpFilterType::RateLimit(_))
-                        | (FilterConfigOverride::Rbac(_), HttpFilterType::Rbac(_)) => Ok(()),
+                        | (FilterConfigOverride::Rbac(_), HttpFilterType::Rbac(_))
+                        | (FilterConfigOverride::ExternalProcessor(_), HttpFilterType::ExternalProcessor(_)) => Ok(()),
                         (_, _) => Err(GenericError::from_msg(format!(
                             "can't override http filter \"{name}\" with a different filter type"
                         ))),

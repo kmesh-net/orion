@@ -38,7 +38,7 @@ use rustls::{
     version::{TLS12, TLS13},
     ClientConfig, RootCertStore, ServerConfig,
 };
-use rustls_platform_verifier::Verifier;
+
 use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
 use tracing::{debug, warn};
 
@@ -50,7 +50,7 @@ pub fn get_crypto_key_provider() -> Result<&'static dyn KeyProvider> {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct IgnoreCertVerifier(pub Verifier);
+pub struct IgnoreCertVerifier();
 
 impl ServerCertVerifier for IgnoreCertVerifier {
     fn verify_server_cert(
@@ -66,24 +66,38 @@ impl ServerCertVerifier for IgnoreCertVerifier {
 
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> StdResult<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        self.0.verify_tls12_signature(message, cert, dss)
+        return Ok(rustls::client::danger::HandshakeSignatureValid::assertion());
     }
 
     fn verify_tls13_signature(
         &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> StdResult<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        self.0.verify_tls13_signature(message, cert, dss)
+        return Ok(rustls::client::danger::HandshakeSignatureValid::assertion());
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.supported_verify_schemes()
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA1,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+            rustls::SignatureScheme::ED25519,
+            rustls::SignatureScheme::ED448,
+        ]
     }
 }
 
@@ -396,8 +410,11 @@ impl TryFrom<(TlsClientConfig, &SecretManager)> for TlsConfigurator<ClientConfig
             None => (None, None),
         };
 
-        let Some(certificate_store) = certificate_store else {
-            return Err("UpstreamContext : no TLS validation options found".into());
+        let certificate_store = if let Some(certificate_store) = certificate_store {
+            certificate_store
+        } else {
+            warn!("UpstreamContext : no TLS validation options found");
+            Arc::new(RootCertStore::empty())
         };
         let ctx_builder = TlsContextBuilder::with_supported_versions(supported_versions).with_client_certificate_store(
             certificate_store_secret_id.map(CompactString::into_string),
@@ -408,8 +425,12 @@ impl TryFrom<(TlsClientConfig, &SecretManager)> for TlsConfigurator<ClientConfig
             ctx_builder.with_client_certificate(secret_id.map(CompactString::into_string), Arc::new(client_certificate))
         } else {
             ctx_builder.with_no_client_auth()
+        };
+
+        if sni.is_empty() {
+            debug!("Empty SNI ")
         }
-        .with_sni(sni.into_string());
+        let ctx_builder = ctx_builder.with_sni(sni.into_string());
 
         let config = ctx_builder.build()?;
 
