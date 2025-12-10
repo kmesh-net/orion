@@ -47,7 +47,7 @@ bytes               = "1"
 compact_str         = { version = "0.9", features = ["serde"] }
 exponential-backoff = "2.1"
 futures             = "0.3"
-http                = "1.3"
+http                = "1.4"
 http-body           = "1.0"
 http-body-util      = "0.1.3"
 num_cpus            = "1"
