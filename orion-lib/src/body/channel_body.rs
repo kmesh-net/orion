@@ -99,6 +99,7 @@ type FrameResult = Result<Frame<Bytes>, Box<dyn std::error::Error + Send + Sync>
 pub struct FrameBridge {
     body_stream: Pin<Box<dyn Stream<Item = FrameResult> + Send>>,
     injector: Option<mpsc::Sender<FrameResult>>,
+    is_empty_body: bool,
 }
 
 impl std::fmt::Debug for FrameBridge {
@@ -109,7 +110,7 @@ impl std::fmt::Debug for FrameBridge {
 
 impl Default for FrameBridge {
     fn default() -> Self {
-        Self { body_stream: Box::pin(futures::stream::empty()), injector: None }
+        Self { body_stream: Box::pin(futures::stream::empty()), injector: None, is_empty_body: true }
     }
 }
 
@@ -119,11 +120,13 @@ impl FrameBridge {
         B: Body<Data = Bytes> + Send + 'static,
         B::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
     {
+        let end_of_stream = body.is_end_stream();
+
         // Convert the body into a stream using http_body_util and map errors to Box
         let body_stream: Pin<Box<dyn Stream<Item = FrameResult> + Send>> =
             Box::pin(http_body_util::BodyStream::new(body).map(|result| result.map_err(Into::into)));
 
-        Self { body_stream, injector: Some(injector) }
+        Self { body_stream, injector: Some(injector), is_empty_body: end_of_stream }
     }
 
     /// Close the `FrameBridge` to prevent further frame injections.
@@ -236,6 +239,11 @@ impl FrameBridge {
         };
 
         Some(cloned)
+    }
+
+    /// Check if the `FrameBridge` has been constructed with an empty body.
+    pub fn is_empty_body(&self) -> bool {
+        self.is_empty_body
     }
 }
 
