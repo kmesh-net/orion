@@ -40,7 +40,7 @@ use hyper::{body::Incoming, service::Service, Request, Response};
 use opentelemetry::global::BoxedSpan;
 use opentelemetry::trace::{Span, Status};
 use opentelemetry::KeyValue;
-use orion_configuration::config::{ConfigSource, ConfigSourceSpecifier, GenericError};
+use orion_configuration::config::{ConfigSource, ConfigSourceSpecifier};
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use orion_tracing::span_state::SpanState;
 use orion_tracing::{attributes::HTTP_RESPONSE_STATUS_CODE, with_client_span, with_server_span};
@@ -69,7 +69,7 @@ use orion_metrics::{metrics::http, with_metric};
 use parking_lot::Mutex;
 use route::MatchedRequest;
 use scopeguard::defer;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::thread::ThreadId;
 use std::time::Instant;
 use std::{fmt, future::Future, result::Result as StdResult, sync::Arc};
@@ -774,23 +774,19 @@ impl
             Arc<DownstreamMetadata>,
         ),
     ) -> Result<Response<PolyBody>> {
-        let mut processed_routes: HashSet<RouteMatch> = HashSet::new();
         let mut cached_route = match_request_route(&request, &self);
         let mut request: Request<BodyWithMetrics<PolyBody>> = request.map(BodyWithMetrics::map_into::<PolyBody>);
         let mut active_filters: Vec<HttpFilterValue> = Vec::new();
-
+        let mut filter_idx = 0;
         loop {
             if let Some(ref chosen_route) = cached_route {
-                if processed_routes.contains(&chosen_route.route.route_match) {
-                    // we are in routing loop, processing the same route twice is not permitted
-                    return Err(GenericError::from_msg("Routing loop detected").into());
-                }
-
                 let guard = connection_manager.http_filters_per_route.load();
                 let route_filters = guard.get(&chosen_route.route.route_match);
                 if let Some(route_filters) = route_filters {
-                    let mut is_reroute = false;
-                    for filter in route_filters {
+                    let mut reroute = false;
+                    while filter_idx < route_filters.len() {
+                        let filter = &route_filters[filter_idx];
+                        filter_idx += 1;
                         if filter.disabled {
                             continue;
                         }
@@ -800,7 +796,7 @@ impl
                             active_filters.push(filter_value);
                             if matches!(filter_res, FilterDecision::Reroute) {
                                 // stop processing filters and re-evaluate the route
-                                is_reroute = true;
+                                reroute = true;
                                 break;
                             }
                             if let FilterDecision::DirectResponse(response) = filter_res {
@@ -808,11 +804,10 @@ impl
                             }
                         }
                     }
-                    if !is_reroute {
+                    if !reroute {
                         break;
                     }
-                    active_filters.clear();
-                    processed_routes.insert(chosen_route.route.route_match.clone());
+                    debug!("rerouting enabled!");
                     cached_route = match_request_route(&request, &self);
                 } else {
                     // there are no filters to process
@@ -859,7 +854,9 @@ impl
                 },
             }?;
 
-            for filter in &mut active_filters {
+            // Filters on response are invoked in reverse order (they are
+            // encoder filters according to Envoy semantics)
+            for filter in &mut active_filters.iter_mut().rev() {
                 let filter_res = filter.apply_response(&mut response).await;
                 if let FilterDecision::DirectResponse(direct_response) = filter_res {
                     response = direct_response;
