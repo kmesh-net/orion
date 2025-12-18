@@ -23,6 +23,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::debug;
 
 type ReciverFrameStream = ReceiverStream<Result<Frame<Bytes>, Box<dyn std::error::Error + Send + Sync>>>;
 
@@ -251,7 +252,9 @@ impl Stream for FrameBridge {
     type Item = Result<Frame<Bytes>, Box<dyn std::error::Error + Send + Sync>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.body_stream.as_mut().poll_next(cx)
+        let next = self.body_stream.as_mut().poll_next(cx);
+        debug!(target = "ext_proc", "Calling body stream {next:?}");
+        next
     }
 }
 

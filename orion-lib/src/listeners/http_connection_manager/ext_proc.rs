@@ -798,6 +798,7 @@ impl ExternalProcessingWorker<kind::Processing> {
         let mut response_body_to_ext_proc_complete = false;
 
         'transaction_loop: loop {
+            debug!(target: "ext_proc","transaction loop self.request_processing.streaming_body_enabled {} self.response_processing.streaming_body_enabled {}", self.request_processing.streaming_body_enabled, self.response_processing.streaming_body_enabled);
             let streaming_enabled =
                 self.request_processing.streaming_body_enabled || self.response_processing.streaming_body_enabled;
             let outbound_req_enabled =
@@ -805,8 +806,8 @@ impl ExternalProcessingWorker<kind::Processing> {
             let outbound_resp_enabled =
                 self.response_processing.streaming_body_enabled && !response_body_to_ext_proc_complete;
 
-            debug!(target: "ext_proc", "----- select! [ process_task:{} inbound:true outbound_req:{outbound_req_enabled} outbound_resp:{outbound_resp_enabled} timeout:{} ] -----",
-                !streaming_enabled, self.timeout_state.active);
+            debug!(target: "ext_proc", "----- select! [ process_task:{}, streaming_enabled: {} outbound_req:{outbound_req_enabled} outbound_resp:{outbound_resp_enabled} timeout:{} ] -----",
+                !streaming_enabled, streaming_enabled,self.timeout_state.active);
 
             tokio::select! {
                 outbound_processing_request = processing_request_channel.recv(), if !streaming_enabled => {
@@ -968,8 +969,9 @@ impl ExternalProcessingWorker<kind::Processing> {
                     }
                 },
 
-                outbound_request_body_frame = self.request_processing.frame_bridge.next(), if outbound_req_enabled => {
-                    debug!(target: "ext_proc", "outbound request body frame: {outbound_request_body_frame:?}");
+                outbound_request_body_frame = self.request_processing.frame_bridge.next() => {
+                    debug!(target: "ext_proc", "outbound request body frame: {outbound_request_body_frame:?} {outbound_req_enabled}");
+
                     match outbound_request_body_frame {
                         Some(Ok(frame)) => {
                             let body_mode = self.overridable_modes.request.body_mode();
@@ -1315,9 +1317,18 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
         // Create a channel to send requests to the gRPC stream.
         let (request_sender, mut request_receiver) = mpsc::channel::<ProcessingRequest>(4);
         let request_stream = async_stream::stream! {
+            info!(target: "ext_proc", "Yielding first request {first_request:?}");
             yield first_request;
-            while let Some(message) = request_receiver.recv().await {
-                yield message
+
+            loop  {
+                let msg  = request_receiver.recv().await;
+                info!(target: "ext_proc", "Yielding more {msg:?}");
+                match msg{
+                    Some(message) => {
+                        yield message
+                    },
+                    None => return
+                }
             }
         };
         let response_stream = match grpc_service_specifier {
@@ -1327,12 +1338,15 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     Error::from(format!("Failed to resolve cluster '{cluster_name}' for external processor"))
                 })?;
                 let grpc_service = clusters_manager::get_grpc_connection(cluster_id, RoutingContext::None)?;
+                info!(target: "ext_proc", "Got service for cluster id {cluster_id} {grpc_service:?}");
                 let mut client = ExternalProcessorClient::new(grpc_service);
-                client
+                let stream = client
                     .process(request_stream)
                     .await
                     .map_err(|e| Error::from(format!("Failed to establish external processor stream: {e}")))?
-                    .into_inner()
+                    .into_inner();
+                info!(target: "ext_proc", "Got stream from external processor client {cluster_id} {stream:?}");
+                stream
             },
             GrpcServiceSpecifier::GoogleGrpc(google_grpc) => {
                 let mut client =
@@ -1346,7 +1360,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     .into_inner()
             },
         };
-
+        info!(target: "ext_proc", "But are we returning ?");
         Ok::<_, Error>(BidiStream { external_sender: request_sender, inbound_responses: response_stream })
     }
 
@@ -1357,13 +1371,16 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
             let first_request = pending_request.take().ok_or_else(|| {
                 Error::from("Internal error: attempted to establish bidi stream with external processor without a ProcessingRequest")
             })?;
+            info!(target: "ext_proc", "get bidi_stream first request {first_request:?}");
             let stream = Self::connect(&self.config.grpc_service_specifier, first_request).await?;
+            info!(target: "ext_proc", "We are stuck");
             Ok(self.bidi_stream.insert(stream))
         }
     }
 
     async fn forward_to_external_processor(&mut self, mut request: ProcessingRequest) {
         request.protocol_config = self.handshake.take();
+        info!(target: "ext_proc", "We are stuck {request:?}");
         let mut request_opt = Some(request);
 
         let stream = match self.get_bidi_stream(&mut request_opt).await {
@@ -1376,6 +1393,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
             },
             Ok(stream) => stream,
         };
+        info!(target: "ext_proc", "We have stream {request_opt:?}");
         let send_outcome = match request_opt {
             Some(request) => Some(stream.external_sender.send(request).await),
             None => None,
@@ -1402,6 +1420,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
             },
             _ => {
                 // enable timeout, if not in observability mode
+                info!(target: "ext_proc", "Send outcome {send_outcome:?}");
                 self.timeout_state.active = !self.config.observability_mode;
             },
         }

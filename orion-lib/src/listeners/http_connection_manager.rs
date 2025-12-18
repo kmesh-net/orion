@@ -23,6 +23,7 @@
 // https://rust-lang.github.io/rust-clippy/master/index.html#mutable_key_type
 #![allow(clippy::mutable_key_type)]
 
+mod ag_ext_proc;
 mod direct_response;
 mod ext_proc;
 pub mod http_modifiers;
