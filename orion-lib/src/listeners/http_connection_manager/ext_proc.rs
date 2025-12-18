@@ -72,7 +72,7 @@ use orion_data_plane_api::envoy_data_plane_api::{
         },
     },
     google,
-    tonic::{codec::Streaming, Status},
+    tonic::Status,
 };
 use orion_format::types::ResponseFlags as FmtResponseFlags;
 use pingora_timeout::fast_timeout;
@@ -82,7 +82,7 @@ use std::future::ready;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{mpsc, oneshot};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 const EXT_PROC_BUFFERED_BODY_LIMIT: usize = 4 * 1024 * 1024; // this is the default limit for GRPC payload lenght
 
@@ -695,7 +695,7 @@ enum ProcessingData {
 
 struct BidiStream {
     external_sender: mpsc::Sender<ProcessingRequest>,
-    inbound_responses: Streaming<ProcessingResponse>,
+    inbound_responses: mpsc::Receiver<Result<ProcessingResponse, Status>>,
 }
 
 struct TimeoutState {
@@ -828,22 +828,22 @@ impl ExternalProcessingWorker<kind::Processing> {
                 },
 
                 inbound_processing_response = if let Some(stream) = self.bidi_stream.as_mut() {
-                        Either::Left(stream.inbound_responses.message())
+                        Either::Left(stream.inbound_responses.recv())
                     } else {
-                        Either::Right(std::future::pending::<Result<Option<ProcessingResponse>, Status>>())
+                        Either::Right(std::future::pending::<Option<Result<ProcessingResponse, Status>>>())
                     } => {
 
                     debug!(target: "ext_proc", "<= inbound processing response: {inbound_processing_response:?}");
 
                     match inbound_processing_response {
-                        Ok(Some(ProcessingResponse { override_message_timeout: Some(extended_timeout), ..})) => {
+                        Some(Ok(ProcessingResponse { override_message_timeout: Some(extended_timeout), ..})) => {
                             debug!(target: "ext_proc", "<- timeout extension received: {extended_timeout:?}");
                             if !self.handle_timeout_extension(extended_timeout) {
                                 debug!(target: "ext_proc", "invalid timeout extension - closing stream");
                                 break 'transaction_loop;
                             }
                         },
-                        Ok(Some(ProcessingResponse { response: Some(ProcessingResponseType::ImmediateResponse(response_attempt)), ..})) => {
+                        Some(Ok(ProcessingResponse { response: Some(ProcessingResponseType::ImmediateResponse(response_attempt)), ..})) => {
                             debug!(target: "ext_proc", "<- ImmediateResponse received");
                             if self.config.disable_immediate_response {
                                 info!(target: "ext_proc", "External processor attempted to send immediate response which is disabled by config");
@@ -885,7 +885,7 @@ impl ExternalProcessingWorker<kind::Processing> {
 
                             break 'transaction_loop;
                         },
-                        Ok(Some(ProcessingResponse { mode_override, response: Some(ProcessingResponseType::RequestHeaders(headers_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { mode_override, response: Some(ProcessingResponseType::RequestHeaders(headers_response)), ..})) => {
                             debug!(target: "ext_proc", "<- RequestHeaders response received");
                             if self.config.allow_mode_override {
                                 if let Some(overrides) = mode_override {
@@ -903,7 +903,7 @@ impl ExternalProcessingWorker<kind::Processing> {
 
                             run_action!(self, self.request_processing, action, "handle_headers_response");
                         },
-                        Ok(Some(ProcessingResponse { response: Some(ProcessingResponseType::RequestBody(body_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { response: Some(ProcessingResponseType::RequestBody(body_response)), ..})) => {
                             debug!(target: "ext_proc", "<- RequestBody response received");
 
                             let action = self
@@ -912,12 +912,12 @@ impl ExternalProcessingWorker<kind::Processing> {
 
                             run_action!(self, self.request_processing, action, "body_response");
                         },
-                        Ok(Some(ProcessingResponse { response: Some(ProcessingResponseType::RequestTrailers(trailers_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { response: Some(ProcessingResponseType::RequestTrailers(trailers_response)), ..})) => {
                             debug!(target: "ext_proc", "<- RequestTrailers response received");
                             let action = self.request_processing.handle_trailers_response(trailers_response, &mut self.timeout_state.active).await;
                             run_action!(self, self.request_processing, action, "handle_trailers_response");
                         },
-                        Ok(Some(ProcessingResponse { mode_override, response: Some(ProcessingResponseType::ResponseHeaders(headers_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { mode_override, response: Some(ProcessingResponseType::ResponseHeaders(headers_response)), ..})) => {
                             debug!(target: "ext_proc", "<- ResponseHeaders response received");
                             if self.config.allow_mode_override {
                                 if let Some(overrides) = mode_override {
@@ -934,7 +934,7 @@ impl ExternalProcessingWorker<kind::Processing> {
 
                             run_action!(self, self.response_processing, action, "handle_headers_response");
                         },
-                        Ok(Some(ProcessingResponse { response: Some(ProcessingResponseType::ResponseBody(body_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { response: Some(ProcessingResponseType::ResponseBody(body_response)), ..})) => {
                             debug!(target: "ext_proc", "<- ResponseBody response received");
                             let empty_response = body_response.response.is_none();
                             let action = self.response_processing.handle_body_response(body_response, None, &mut self.timeout_state.active).await;
@@ -945,22 +945,22 @@ impl ExternalProcessingWorker<kind::Processing> {
                                 break 'transaction_loop;
                             }
                         },
-                        Ok(Some(ProcessingResponse { response: Some(ProcessingResponseType::ResponseTrailers(trailers_response)), ..})) => {
+                        Some(Ok(ProcessingResponse { response: Some(ProcessingResponseType::ResponseTrailers(trailers_response)), ..})) => {
                             debug!(target: "ext_proc", "<- ResponseTrailers response received");
                             let action = self.response_processing.handle_trailers_response(trailers_response, &mut self.timeout_state.active).await;
                             run_action!(self, self.response_processing, action, "handle_trailers_response");
                         },
-                        Ok(Some(r)) => {
+                        Some(Ok(r)) => {
                             let msg = format!("unsupported response message received: {r:?}");
                             self.recover_or_failure(ExtProcError::UnsupportedResponseType(format!("{r:?}")), &msg).await;
                             break 'transaction_loop;
                         }
-                        Ok(None) => {
+                        None => {
                             let msg = "stream closed by the external processor";
                             self.recover_or_failure(ExtProcError::UnexpectedEof, msg).await;
                             break 'transaction_loop;
                         },
-                        Err(e) => {
+                        Some(Err(e)) => {
                             let msg = format!("gRPC error received from external processor: {}", e.message());
                             self.recover_or_failure(ExtProcError::GrpcError(e.message().into()), &msg).await;
                             break 'transaction_loop;
@@ -1308,56 +1308,69 @@ impl ExternalProcessingWorker<kind::Observability> {
 }
 
 impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
-    async fn connect(
-        grpc_service_specifier: &GrpcServiceSpecifier,
-        first_request: ProcessingRequest,
-    ) -> Result<BidiStream, Error> {
-        // Create a channel to send requests to the gRPC stream.
+    fn connect(grpc_service_specifier: &GrpcServiceSpecifier, first_request: ProcessingRequest) -> BidiStream {
         let (request_sender, mut request_receiver) = mpsc::channel::<ProcessingRequest>(4);
-        let request_stream = async_stream::stream! {
-            yield first_request;
-            while let Some(message) = request_receiver.recv().await {
-                yield message
-            }
-        };
-        let response_stream = match grpc_service_specifier {
-            GrpcServiceSpecifier::Cluster(cluster_name) => {
-                let cluster_spec = ClusterSpecifier::Cluster(cluster_name.clone());
-                let cluster_id = clusters_manager::resolve_cluster(&cluster_spec).ok_or_else(|| {
-                    Error::from(format!("Failed to resolve cluster '{cluster_name}' for external processor"))
-                })?;
-                let grpc_service = clusters_manager::get_grpc_connection(cluster_id, RoutingContext::None)?;
-                let mut client = ExternalProcessorClient::new(grpc_service);
-                client
-                    .process(request_stream)
-                    .await
-                    .map_err(|e| Error::from(format!("Failed to establish external processor stream: {e}")))?
-                    .into_inner()
-            },
-            GrpcServiceSpecifier::GoogleGrpc(google_grpc) => {
-                let mut client =
-                    ExternalProcessorClient::connect(google_grpc.target_uri.clone()).await.map_err(|e| {
-                        Error::from(format!("Failed to connect to external processor (GoogleGrpc endpoint): {e}"))
-                    })?;
-                client
-                    .process(request_stream)
-                    .await
-                    .map_err(|e| Error::from(format!("Failed to establish external processor stream: {e}")))?
-                    .into_inner()
-            },
-        };
+        let (response_sender, response_receiver) = mpsc::channel::<Result<ProcessingResponse, Status>>(4);
+        let grpc_service_specifier = grpc_service_specifier.clone();
 
-        Ok::<_, Error>(BidiStream { external_sender: request_sender, inbound_responses: response_stream })
+        tokio::spawn(async move {
+            let request_stream = async_stream::stream! {
+                yield first_request;
+                while let Some(message) = request_receiver.recv().await {
+                    yield message
+                }
+            };
+            let stream_setup_result = match grpc_service_specifier {
+                GrpcServiceSpecifier::Cluster(cluster_name) => {
+                    let cluster_spec = ClusterSpecifier::Cluster(cluster_name.clone());
+                    match clusters_manager::resolve_cluster(&cluster_spec) {
+                        Some(cluster_id) => {
+                            match clusters_manager::get_grpc_connection(cluster_id, RoutingContext::None) {
+                                Ok(grpc_service) => {
+                                    let mut client = ExternalProcessorClient::new(grpc_service);
+                                    client.process(request_stream).await
+                                },
+                                Err(e) => Err(Status::unavailable(format!("Failed to get gRPC connection: {e}"))),
+                            }
+                        },
+                        None => Err(Status::unavailable(format!(
+                            "Failed to resolve cluster '{cluster_name}' for external processor"
+                        ))),
+                    }
+                },
+                GrpcServiceSpecifier::GoogleGrpc(google_grpc) => {
+                    match ExternalProcessorClient::connect(google_grpc.target_uri.clone()).await {
+                        Ok(mut client) => client.process(request_stream).await,
+                        Err(e) => Err(Status::unavailable(format!("Failed to connect: {e}"))),
+                    }
+                },
+            };
+            match stream_setup_result {
+                Ok(response_stream) => {
+                    let mut stream = response_stream.into_inner();
+                    while let Some(processing_response) = stream.message().await.transpose() {
+                        if response_sender.send(processing_response).await.is_err() {
+                            break;
+                        }
+                    }
+                },
+                Err(status) => {
+                    let _ = response_sender.send(Err(status)).await;
+                },
+            }
+        });
+
+        BidiStream { external_sender: request_sender, inbound_responses: response_receiver }
     }
 
-    async fn get_bidi_stream(&mut self, pending_request: &mut Option<ProcessingRequest>) -> Result<&BidiStream, Error> {
+    fn get_bidi_stream(&mut self, pending_request: &mut Option<ProcessingRequest>) -> Result<&BidiStream, Error> {
         if let Some(ref stream) = self.bidi_stream {
             Ok(stream)
         } else {
             let first_request = pending_request.take().ok_or_else(|| {
                 Error::from("Internal error: attempted to establish bidi stream with external processor without a ProcessingRequest")
             })?;
-            let stream = Self::connect(&self.config.grpc_service_specifier, first_request).await?;
+            let stream = Self::connect(&self.config.grpc_service_specifier, first_request);
             Ok(self.bidi_stream.insert(stream))
         }
     }
@@ -1366,7 +1379,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
         request.protocol_config = self.handshake.take();
         let mut request_opt = Some(request);
 
-        let stream = match self.get_bidi_stream(&mut request_opt).await {
+        let stream = match self.get_bidi_stream(&mut request_opt) {
             Err(err) => {
                 self.response_processing
                     .status_error(format!("External processor: {err:?}").as_str(), self.config.failure_mode_allow);
