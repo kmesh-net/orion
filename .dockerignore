@@ -116,8 +116,6 @@ docs/pics/
 docs/videos/
 docs/performance/
 
-# Tools and local scripts not needed in image
-tools/
 
 # Coverage / profiling
 coverage/

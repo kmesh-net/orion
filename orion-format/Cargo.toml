@@ -33,7 +33,7 @@ uuid           = { version = "1.18.1", features = ["v4"] }
 [features]
 dhat-heap = []
 
-[[bench]]
+[[benches]]
 harness = false
 name    = "benchmark"
 
