@@ -787,7 +787,6 @@ impl
                 let guard = connection_manager.http_filters_per_route.load();
                 let route_filters = guard.get(&chosen_route.route.route_match);
                 if let Some(route_filters) = route_filters {
-
                     let mut reroute = false;
                     while filter_idx < route_filters.len() {
                         let filter = &route_filters[filter_idx];

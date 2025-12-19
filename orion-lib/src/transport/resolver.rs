@@ -23,6 +23,7 @@ use std::{fmt::Display, future::pending, io, net::SocketAddr};
 use hickory_resolver::{name_server::TokioConnectionProvider, IntoName, TokioResolver};
 
 use once_cell::sync::Lazy;
+use tracing::debug;
 
 #[allow(clippy::expect_used)]
 static GLOBAL_DNS_RESOLVER: Lazy<TokioResolver> = Lazy::new(|| {
@@ -90,6 +91,9 @@ static GLOBAL_DNS_RESOLVER: Lazy<TokioResolver> = Lazy::new(|| {
 pub async fn resolve<N: IntoName + Display + 'static>(host: N, port: u16) -> io::Result<Vec<SocketAddr>> {
     // Now we use the global resolver to perform a lookup_ip.
     let name = host.to_string();
+    if let Ok(addr) = format!("{name}:{port}").parse::<SocketAddr>() {
+        return Ok(vec![addr]);
+    }
     let result = GLOBAL_DNS_RESOLVER.lookup_ip(host).await;
     // map the result into what we want...
     result
