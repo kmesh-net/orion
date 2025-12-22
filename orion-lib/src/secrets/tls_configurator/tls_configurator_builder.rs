@@ -22,7 +22,7 @@ use rustls::{
     client::WebPkiServerVerifier, pki_types::CertificateDer, server::WebPkiClientVerifier, sign::CertifiedKey,
     ClientConfig, RootCertStore, ServerConfig, SupportedProtocolVersion,
 };
-use rustls_platform_verifier::Verifier;
+
 use tracing::{debug, warn};
 
 use super::configurator::{get_crypto_key_provider, ClientCert, RelaxedResolvesServerCertUsingSni, ServerCert};
@@ -322,20 +322,12 @@ impl TlsContextBuilder<WantsToBuildClient> {
     pub fn build(&self) -> Result<ClientConfig> {
         let builder = ClientConfig::builder_with_protocol_versions(&self.state.supported_versions.clone());
         warn!("TLS Client Context Builder {}", self.state.certificate_store.len());
-        let builder = if self.state.certificate_store.is_empty() {
+        let builder = if !self.state.certificate_store.is_empty() {
             let verifier = WebPkiServerVerifier::builder(Arc::clone(&self.state.certificate_store)).build()?;
             builder.with_webpki_verifier(verifier)
         } else {
             warn!("TLS Client Context Builder using dangerous configuration to ignore server certificates");
-            if let Some(crypto_provider) = rustls::crypto::CryptoProvider::get_default().cloned() {
-                if let Ok(verifier) = Verifier::new(crypto_provider) {
-                    builder.dangerous().with_custom_certificate_verifier(Arc::new(IgnoreCertVerifier(verifier)))
-                } else {
-                    return Err(format!("Can't build the verifier").into());
-                }
-            } else {
-                return Err(format!("Can't get the default crypto provider").into());
-            }
+            builder.dangerous().with_custom_certificate_verifier(Arc::new(IgnoreCertVerifier()))
         };
 
         if let Some(ClientCert { key, certs: auth_certs }) = self.state.client_certificate.as_deref() {

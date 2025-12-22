@@ -229,17 +229,18 @@ mod envoy_conversions {
         fn try_from(value: EnvoyHttpProtocolOptions) -> Result<Self, Self::Error> {
             let EnvoyHttpProtocolOptions {
                 common_http_protocol_options,
-                upstream_http_protocol_options,
+                upstream_http_protocol_options: _,
                 http_filters,
                 header_validation_config,
                 upstream_protocol_options,
             } = value;
             unsupported_field!(
                 // common_http_protocol_options,
-                upstream_http_protocol_options,
+                // upstream_http_protocol_options,
                 http_filters,
                 header_validation_config // upstream_protocol_options
             )?;
+
             let upstream_protocol_options = upstream_protocol_options
                 .map(UpstreamHttpProtocolOptions::try_from)
                 .transpose()

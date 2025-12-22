@@ -1,0 +1,44 @@
+FROM rust:1.91.1 AS orion-builder
+
+#RUN rustup component add rustfmt
+
+WORKDIR /tmp/orion
+
+RUN <<EOF
+apt update
+apt install -y protobuf-compiler
+EOF
+
+COPY ./hyper-util-fork ./hyper-util-fork
+COPY ./orion-configuration ./orion-configuration
+COPY ./orion-data-plane-api ./orion-data-plane-api
+COPY ./orion-error ./orion-error
+COPY ./orion-format ./orion-format
+COPY ./orion-interner ./orion-interner
+COPY ./orion-http-header ./orion-http-header
+COPY ./orion-lib ./orion-lib
+COPY ./orion-metrics ./orion-metrics
+COPY ./orion-proxy ./orion-proxy
+COPY ./orion-xds ./orion-xds
+COPY ./orion-tracing ./orion-tracing
+COPY ./tools ./tools
+COPY ./proto ./proto
+
+COPY ./envoy-data-plane-api ./envoy-data-plane-api
+
+COPY ./Cargo.toml ./Cargo.toml
+COPY ./Cargo.lock ./Cargo.lock
+
+RUN cargo build --release
+
+### Split into two files; one to build and one to actually run it
+###https://docs.docker.com/develop/develop-images/multistage-build/
+
+FROM debian:trixie-slim
+RUN <<EOF
+apt update
+apt upgrade -y
+EOF
+
+COPY --from=orion-builder /tmp/orion/target/release/orion /orion
+ENTRYPOINT ["/orion"]

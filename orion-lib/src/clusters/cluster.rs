@@ -56,12 +56,19 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 
         let health_check = cluster.health_check;
         debug!("Cluster {} type {:?} ", cluster.name, cluster.discovery_settings);
+
+        let server_name = if let Ok(Some(server_name)) = transport_socket
+            .tls_configurator()
+            .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
+            .transpose()
+        {
+            Some(server_name)
+        } else {
+            None
+        };
+
         match cluster.discovery_settings {
             ClusterDiscoveryType::Static(cla) => {
-                let server_name = transport_socket
-                    .tls_configurator()
-                    .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
-                    .transpose()?;
                 let cluster_name = cla.cluster_name.clone();
                 let pcla = PartialClusterLoadAssignment::try_from(cla)
                     .map_err(|e| Error::from(format!("Unable to create cluster load assignment {cluster_name} {e}")))?;
@@ -88,11 +95,6 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
 
             // at the moment there is no difference for us since both cluster types are using the same resolver
             ClusterDiscoveryType::StrictDns(cla) => {
-                let server_name = transport_socket
-                    .tls_configurator()
-                    .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
-                    .transpose()?;
-
                 let cla = ClusterLoadAssignmentBuilder::builder()
                     .with_cla(PartialClusterLoadAssignment::try_from(cla)?)
                     .with_cluster_name(cluster.name.to_static_str())
@@ -132,22 +134,14 @@ impl TryFrom<(ClusterConfig, &SecretManager)> for PartialClusterType {
                     config,
                 }))
             },
-            ClusterDiscoveryType::OriginalDst(_) => {
-                let server_name = transport_socket
-                    .tls_configurator()
-                    .as_ref()
-                    .map(|tls_configurator| ServerName::try_from(tls_configurator.sni()))
-                    .transpose()?;
-
-                Ok(PartialClusterType::OnDemand(OriginalDstClusterBuilder {
-                    name: cluster.name.to_static_str(),
-                    bind_device_options,
-                    transport_socket,
-                    connect_timeout: cluster.connect_timeout,
-                    server_name,
-                    config,
-                }))
-            },
+            ClusterDiscoveryType::OriginalDst(_) => Ok(PartialClusterType::OnDemand(OriginalDstClusterBuilder {
+                name: cluster.name.to_static_str(),
+                bind_device_options,
+                transport_socket,
+                connect_timeout: cluster.connect_timeout,
+                server_name,
+                config,
+            })),
         }
     }
 }

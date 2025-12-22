@@ -1,0 +1,9 @@
+runtime:
+  num_cpus: 2
+  num_runtimes: 2
+  event_interval: 31 # estimated optimal value
+  global_queue_interval: null # default
+  max_io_events_per_tick: null # default
+
+logging:
+  log_level: "info,orion_xds=debug,orion_lib=debug,orion_proxy=debug,orion_configuration=debug,ext_proc=debug"

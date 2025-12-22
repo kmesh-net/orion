@@ -206,11 +206,6 @@ pub struct OriginalDstConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TlsConfig {
-    //todo(hayley): This field is not marked as required by envoy
-    // but sni is required in our client TLS stack.
-    //  We could technically fall back to using the endpoint adress/name for the sni
-    // where no sni is configured here but that would require a major refactor.
-    // previous behaviour was to set sni to the empty string if missing.
     pub sni: CompactString,
     #[serde(skip_serializing_if = "is_default", default)]
     pub parameters: TlsParameters,
@@ -530,7 +525,7 @@ mod envoy_conversions {
                     Ok(None)
                 }?;
                 let name = CompactString::from(&name);
-                let discovery_type = extract_discovery_type(&required!(cluster_discovery_type)?)
+                let discovery_type = extract_discovery_type(&cluster_discovery_type.unwrap_or(EnvoyClusterDiscoveryType::Type(EnvoyDiscoveryType::StrictDns.into())))
                     .with_node("cluster_discovery_type")?;
                 if discovery_type == EnvoyDiscoveryType::OriginalDst {
                     let envoy_lb_policy = EnvoyLbPolicy::from_i32(lb_policy)
@@ -978,8 +973,8 @@ mod envoy_conversions {
             }
             .with_node("common_tls_context")
             .with_node("secrets")?;
-            let sni = required!(sni)?.into();
-            Ok(Self { sni, parameters, secret, validation_context })
+
+            Ok(Self { sni: CompactString::from(sni), parameters, secret, validation_context })
         }
     }
 
