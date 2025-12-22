@@ -798,6 +798,9 @@ impl ExternalProcessingWorker<kind::Processing> {
         let mut response_body_to_ext_proc_complete = false;
 
         'transaction_loop: loop {
+            debug!(target: "ext_proc", "loop request_processing.streaming_body_enabled {} self.response_processing.streaming_body_enabled {} request_body_to_ext_proc_complete {request_body_to_ext_proc_complete}",
+                self.request_processing.streaming_body_enabled, self.response_processing.streaming_body_enabled);
+
             let streaming_enabled =
                 self.request_processing.streaming_body_enabled || self.response_processing.streaming_body_enabled;
             let outbound_req_enabled =
@@ -805,8 +808,8 @@ impl ExternalProcessingWorker<kind::Processing> {
             let outbound_resp_enabled =
                 self.response_processing.streaming_body_enabled && !response_body_to_ext_proc_complete;
 
-            debug!(target: "ext_proc", "----- select! [ process_task:{} inbound:true outbound_req:{outbound_req_enabled} outbound_resp:{outbound_resp_enabled} timeout:{} ] -----",
-                !streaming_enabled, self.timeout_state.active);
+            debug!(target: "ext_proc", "----- select! [ process_task streaming_enabled:{} outbound_req:{outbound_req_enabled} outbound_resp:{outbound_resp_enabled} timeout:{} ] -----",
+                streaming_enabled, self.timeout_state.active);
 
             tokio::select! {
                 outbound_processing_request = processing_request_channel.recv(), if !streaming_enabled => {
@@ -968,8 +971,10 @@ impl ExternalProcessingWorker<kind::Processing> {
                     }
                 },
 
-                outbound_request_body_frame = self.request_processing.frame_bridge.next(), if outbound_req_enabled => {
-                    debug!(target: "ext_proc", "outbound request body frame: {outbound_request_body_frame:?}");
+                outbound_request_body_frame = self.request_processing.frame_bridge.next() => {
+
+                    debug!(target: "ext_proc", "outbound request body frame: {outbound_request_body_frame:?} {outbound_req_enabled}");
+
                     match outbound_request_body_frame {
                         Some(Ok(frame)) => {
                             let body_mode = self.overridable_modes.request.body_mode();
