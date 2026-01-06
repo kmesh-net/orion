@@ -1,0 +1,29 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main" ]  
+
+env:
+  IMAGE_NAME: orion
+  VERSION: 0.1.0
+  
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v5
+    - name: Build the Docker image
+      run: docker build . --file docker/Dockerfile --tag $IMAGE_NAME:latest
+    - name: Log in to registry
+      run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+    - name: Push image
+      run: |
+        IMAGE_ID=ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME        
+        docker tag $IMAGE_NAME:latest $IMAGE_ID:$VERSION
+        docker push $IMAGE_ID:$VERSION      
