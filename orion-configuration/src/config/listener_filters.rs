@@ -173,6 +173,8 @@ mod envoy_conversions {
                     enable_ja3_fingerprinting,
                     initial_read_buffer_size: _istio_ignore,
                     enable_ja4_fingerprinting,
+                    close_connection_on_client_hello_parsing_errors: _,
+                    max_client_hello_size: _,
                 }) => {
                     // both fields are optional, and unsupported, but serde_yaml requires that at least one field is populated
                     // so allow for enable_ja3_fingerprinting: false
@@ -207,6 +209,7 @@ mod envoy_conversions {
                 pass_through_tlvs,
                 disallowed_versions,
                 stat_prefix,
+                tlv_location: _,
             } = value;
             unsupported_field!(rules)?;
             let stat_prefix = if stat_prefix.is_empty() { None } else { Some(stat_prefix) };

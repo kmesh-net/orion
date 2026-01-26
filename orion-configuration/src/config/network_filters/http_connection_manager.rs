@@ -681,6 +681,8 @@ mod envoy_conversions {
                 strip_port_mode,
                 http1_safe_max_connection_duration,
                 append_local_overload,
+                stream_flush_timeout: _,
+                forward_client_cert_matcher: _,
             } = envoy;
             unsupported_field!(
                 // codec_type,
@@ -900,6 +902,7 @@ mod envoy_conversions {
                 ignore_path_parameters_in_path_matching,
                 typed_per_filter_config,
                 metadata,
+                vhost_header: _,
             } = envoy;
             unsupported_field!(
                 // name,

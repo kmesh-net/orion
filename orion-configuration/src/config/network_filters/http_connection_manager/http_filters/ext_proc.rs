@@ -281,6 +281,8 @@ mod envoy_conversions {
                 response_attributes,
                 allowed_override_modes,
                 on_processing_response,
+                processing_request_modifier: _,
+                status_on_error: _,
             } = value;
 
             unsupported_field!(
@@ -378,6 +380,8 @@ mod envoy_conversions {
                 config,
                 per_stream_buffer_limit_bytes,
                 channel_args,
+                channel_credentials_plugin: _,
+                call_credentials_plugin: _,
             } = value;
 
             unsupported_field!(
@@ -451,6 +455,7 @@ mod envoy_conversions {
                 Ok(EnvoyBodySendMode::Buffered) => Ok(Self::Buffered),
                 Ok(EnvoyBodySendMode::BufferedPartial) => Ok(Self::BufferedPartial),
                 Ok(EnvoyBodySendMode::FullDuplexStreamed) => Ok(Self::FullDuplexStreamed),
+                Ok(EnvoyBodySendMode::Grpc) => Ok(Self::FullDuplexStreamed),
                 Err(_) => Err(GenericError::from_msg(format!("unknown body send mode: {value}"))),
             }
         }
@@ -581,6 +586,7 @@ mod envoy_conversions {
                 request_attributes,
                 response_attributes,
                 failure_mode_allow,
+                processing_request_modifier: _,
             } = value;
 
             unsupported_field!(

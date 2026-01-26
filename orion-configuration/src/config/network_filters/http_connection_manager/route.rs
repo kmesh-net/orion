@@ -1010,7 +1010,7 @@ mod envoy_conversions {
     impl TryFrom<EnvoyDirectResponseAction> for DirectResponseAction {
         type Error = GenericError;
         fn try_from(value: EnvoyDirectResponseAction) -> Result<Self, Self::Error> {
-            let EnvoyDirectResponseAction { status, body } = value;
+            let EnvoyDirectResponseAction { status, body, body_format: _ } = value;
             let status = http_status_from(required!(status)?).with_node("status")?;
             let body = if let Some(source) = body.map(DataSource::try_from).transpose().with_node("body")? {
                 let data = source
@@ -1057,6 +1057,8 @@ mod envoy_conversions {
                 max_stream_duration: _,
                 cluster_specifier,
                 host_rewrite_specifier,
+                path_rewrite: _,
+                flush_timeout: _,
             } = value;
             unsupported_field!(
                 // cluster_not_found_response_code,
@@ -1135,6 +1137,7 @@ mod envoy_conversions {
                         regex.try_into().map(AuthorityRewriteSpecifier::Regex)
                     },
                     EnvoyHostRewriteSpecifier::AutoHostRewrite(_) => unreachable!(),
+                    EnvoyHostRewriteSpecifier::HostRewrite(_) => unreachable!(),
                 }
                 .map(Some),
                 None => Ok(None),
@@ -1237,6 +1240,7 @@ mod envoy_conversions {
                 dynamic_metadata,
                 path_specifier,
                 filter_state,
+                cookies: _,
             } = value;
             unsupported_field!(
                 // case_sensitive,

@@ -441,6 +441,7 @@ mod envoy_conversions {
                 listener_specifier,
                 bypass_overload_manager: _,
                 fcds_config,
+                tcp_keepalive: _,
             } = envoy;
             unsupported_field!(
                 // name,

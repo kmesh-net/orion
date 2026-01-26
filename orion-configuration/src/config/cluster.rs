@@ -405,6 +405,7 @@ mod envoy_conversions {
                 lb_config,
                 dns_jitter,
                 lrs_report_endpoint_metrics,
+                transport_socket_matcher: _,
             } = envoy;
             let name = required!(name)?;
             (|| -> Result<Self, GenericError> {

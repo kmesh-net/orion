@@ -388,7 +388,14 @@ fn create_header_mutation(headers: Vec<(&str, &str)>) -> Option<HeaderMutation> 
 #[inline]
 fn create_body_mutation(body: Vec<u8>, end_of_stream: Option<bool>) -> BodyMutation {
     if let Some(end_of_stream) = end_of_stream {
-        BodyMutation { mutation: Some(Mutation::StreamedResponse(StreamedBodyResponse { body, end_of_stream })) }
+        BodyMutation {
+            mutation: Some(Mutation::StreamedResponse(StreamedBodyResponse {
+                body,
+                end_of_stream,
+                end_of_stream_without_message: false,
+                grpc_message_compressed: false,
+            })),
+        }
     } else {
         BodyMutation { mutation: Some(Mutation::Body(body)) }
     }
@@ -427,9 +434,7 @@ fn create_immediate_response(
 
     ProcessingResponse {
         response: Some(ProcessingResponseType::ImmediateResponse(immediate_response)),
-        mode_override: None,
-        dynamic_metadata: None,
-        override_message_timeout: None,
+        ..Default::default()
     }
 }
 
@@ -466,7 +471,7 @@ fn create_headers_response<M: MsgKind>(
         Some(ProcessingResponseType::RequestHeaders(header_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 pub async fn create_collected_body_with_trailers(frames: Vec<&str>, trailers: Option<http::HeaderMap>) -> PolyBody {
@@ -538,7 +543,7 @@ fn create_body_response<M: MsgKind>(
         Some(ProcessingResponseType::RequestBody(body_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 fn create_trailers_response<M: MsgKind>(trailers: Vec<Option<(&str, &str)>>) -> ProcessingResponse {
@@ -550,7 +555,7 @@ fn create_trailers_response<M: MsgKind>(trailers: Vec<Option<(&str, &str)>>) -> 
     } else {
         Some(ProcessingResponseType::RequestTrailers(trailers_response))
     };
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 static HEADER_PROCESSING_MODE: [HeaderProcessingMode; 3] =
@@ -726,6 +731,7 @@ fn validate_mock_server_configuration<M: MsgKind + ModeSelector>(
                 }
             },
             ProcessingResponseType::ImmediateResponse(_) => return false,
+            ProcessingResponseType::StreamedImmediateResponse(_) => return false,
         }
     }
     true
@@ -3943,7 +3949,7 @@ fn create_body_response_with_clear_body<M: MsgKind>(
         Some(ProcessingResponseType::RequestBody(body_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 #[tokio::test]
@@ -4052,7 +4058,7 @@ fn create_headers_response_with_clear_body<M: MsgKind>(
         Some(ProcessingResponseType::RequestHeaders(header_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 #[tokio::test]
