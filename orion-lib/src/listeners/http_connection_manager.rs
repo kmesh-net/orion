@@ -832,6 +832,17 @@ impl
             let websocket_enabled_by_default =
                 upgrade_utils::is_websocket_enabled_by_hcm(&connection_manager.enabled_upgrades);
 
+            let req_headers = request.headers_mut();
+            if self.most_specific_header_mutations_wins {
+                self.request_header_modifier.modify(req_headers);
+                chosen_route.vh.request_header_modifier.modify(req_headers);
+                chosen_route.route.request_header_modifier.modify(req_headers);
+            } else {
+                chosen_route.route.request_header_modifier.modify(req_headers);
+                chosen_route.vh.request_header_modifier.modify(req_headers);
+                self.request_header_modifier.modify(req_headers);
+            }
+
             let mut response = match &chosen_route.route.action {
                 Action::DirectResponse(dr) => dr.to_response(trans_handler, (request, &chosen_route.route.name)).await,
                 Action::Redirect(rd) => {

@@ -844,7 +844,7 @@ mod envoy_conversions {
                 disable_stateful_session_resumption,
                 session_timeout,
                 ocsp_staple_policy,
-                full_scan_certs_on_sni_mismatch,
+                full_scan_certs_on_sni_mismatch: _,
                 session_ticket_keys_type,
                 prefer_client_ciphers,
             } = value;
@@ -855,7 +855,7 @@ mod envoy_conversions {
                 disable_stateful_session_resumption,
                 session_timeout,
                 ocsp_staple_policy,
-                full_scan_certs_on_sni_mismatch,
+                //full_scan_certs_on_sni_mismatch,
                 session_ticket_keys_type,
                 prefer_client_ciphers
             )?;

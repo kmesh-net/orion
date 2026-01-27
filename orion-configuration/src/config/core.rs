@@ -26,6 +26,7 @@ use std::{
     hash::{Hash, Hasher},
     io::{BufRead, BufReader, Read},
 };
+use tracing::debug;
 base64_serde_type!(Base64Standard, STANDARD);
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -78,8 +79,13 @@ impl<'a> DataSourceReader<'a> {
             DataSource::InlineString(s) => Self::InlineBytes(s.as_bytes()),
             DataSource::InlineBytes(b) => Self::InlineBytes(b.as_slice()),
             DataSource::Path(p) => {
+                let file = std::fs::File::open(p).map_err(|e| DataSourceReadError::IoError(p.clone(), e))?;
+                if let Ok(metadata) = file.metadata() {
+                    debug!("Checking file {p} with size {}", metadata.len())
+                }
                 let reader =
                     BufReader::new(std::fs::File::open(p).map_err(|e| DataSourceReadError::IoError(p.clone(), e))?);
+
                 Self::Path(reader)
             },
         })

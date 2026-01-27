@@ -61,7 +61,7 @@ pub fn run_orion(bootstrap: Bootstrap, access_log_config: Option<AccessLogConfig
     });
 
     // launch the runtimes...
-    let res = launch_runtimes(bootstrap, access_log_config, ct).with_context_msg("failed to launch runtimes");
+    let res = launch_runtimes(bootstrap, access_log_config, ct);
     if let Err(err) = res {
         warn!("Error running orion: {err}");
     }
@@ -137,8 +137,7 @@ fn launch_runtimes(
     let ads_cluster_names: Vec<String> = bootstrap.get_ads_configs().iter().map(ToString::to_string).collect();
     let node = bootstrap.node.clone().unwrap_or_else(|| Node { id: "".into(), cluster_id: "".into(), metadata: None });
 
-    let (secret_manager, listener_factories, clusters) =
-        get_listeners_and_clusters(bootstrap.clone()).with_context_msg("Failed to get listeners and clusters")?;
+    let (secret_manager, listener_factories, clusters) = get_listeners_and_clusters(bootstrap.clone())?;
     let secret_manager = Arc::new(RwLock::new(secret_manager));
 
     if listener_factories.is_empty() && ads_cluster_names.is_empty() {
