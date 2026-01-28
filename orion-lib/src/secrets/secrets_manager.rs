@@ -104,9 +104,8 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
         let mut cert_reader = certificate.certificate_chain().into_buf_read()?;
         let key_reader = certificate.private_key();
         debug!("Reading from file {key_reader:?}");
-        let mut key_reader = key_reader.into_buf_read()?;
 
-        let rsa_key = rsa_private_keys(&mut key_reader)
+        let rsa_key = rsa_private_keys(&mut (key_reader.into_buf_read()?))
             .map(|f| {
                 if f.is_err() {
                     debug!("Problem with reading private key {f:?}");
@@ -118,7 +117,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
             .map(|f| f.map_err(|e| format!("Can't parse private key: {e}")))
             .verify_single();
 
-        let ec_key = ec_private_keys(&mut key_reader)
+        let ec_key = ec_private_keys(&mut (key_reader.into_buf_read()?))
             .map(|f| {
                 if f.is_err() {
                     debug!("Problem with reading private key {f:?}");
@@ -130,7 +129,7 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
             .map(|f| f.map_err(|e| format!("Can't parse private key: {e}")))
             .verify_single();
 
-        let pkcs_key = pkcs8_private_keys(&mut key_reader)
+        let pkcs_key = pkcs8_private_keys(&mut (key_reader.into_buf_read()?))
             .map(|f| {
                 if f.is_err() {
                     debug!("Problem with reading private key {f:?}");
