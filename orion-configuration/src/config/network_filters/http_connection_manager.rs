@@ -149,7 +149,9 @@ impl MatchHost {
         }
 
         if value.chars().filter(|c| *c == '*').count() > 1 {
-            return Err(GenericError::from_msg("only one wildcard supported at the beginning or at the end"));
+            return Err(GenericError::from_msg(format!(
+                "only one wildcard supported at the beginning or at the end {value}",
+            )));
         }
 
         if let Some(host) = value.strip_prefix('*') {
@@ -161,7 +163,9 @@ impl MatchHost {
         }
 
         if value.contains('*') {
-            return Err(GenericError::from_msg("only one wildcard supported at the beginning or at the end"));
+            return Err(GenericError::from_msg(format!(
+                "only one wildcard supported at the beginning or at the end {value}",
+            )));
         }
 
         Ok(Self::Exact(value))

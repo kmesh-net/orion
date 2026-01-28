@@ -235,7 +235,7 @@ impl XdsConfigurationHandler {
     ) -> Result<()> {
         match resource {
             XdsResourcePayload::Listener(id, listener) => {
-                debug!("Got update for listener {id} {:?}", listener);
+                debug!("Got update for listener {id} {:#?}", listener);
                 let factory =
                     ListenerFactory::try_from(ConversionContext::new((listener.clone(), &*self.secret_manager.read())));
 
