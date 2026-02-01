@@ -69,7 +69,7 @@ thread_local = "1.1.9"
 tokio-rustls = "0.26"
 tower-service = "0.3.3"
 traceparent = "0.0.3"
-tracing-appender = "0.2.3"
+tracing-appender = "0.2.4"
 twox-hash = "2.1.2"
 typed-builder = "0.23.1"
 uuid = { version = "1.18.1", features = ["v4"] }
