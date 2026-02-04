@@ -19,7 +19,7 @@ When submitting PRs please keep refactoring commits separate from functional cha
 
 ### Test policy
 
-All PRs *must* be passing all tests. Ideally any PR submitted should have more than 85% code coverage, but this is not mandated. When tests are failing, especially on previous branches this is often due to checked in testing keys for the TLS tests. See **Updating Security Related Tests**.
+All PRs *must* be passing all tests. Ideally any PR submitted should have more than 85% code coverage, but this is not mandated.
 
 ## Performing a Release, for Maintainers
 
@@ -39,12 +39,6 @@ Releases are somewhat automated. The github action, `publish`, watches for any t
 After approximately 45 minutes it should be published. This may fail.
 
 **TBD**: add instructions to skip already published crates
-
-## Updating Security Related Tests
-
-### All TLS tests are failing
-
-TBD: add notes on updating certificates in test directories
 
 ## FAQ
 
