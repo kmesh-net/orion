@@ -36,10 +36,6 @@ Releases are somewhat automated. The github action, `publish`, watches for any t
 1. Generate release notes
 1. `Publish Release`, this will kick off the publish workflow
 
-After approximately 45 minutes it should be published. This may fail.
-
-**TBD**: add instructions to skip already published crates
-
 ## FAQ
 
 - Why are there so few maintainers?
