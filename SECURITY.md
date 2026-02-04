@@ -8,9 +8,7 @@ issue. For example, if the most recent release is 0.1.5, we would provide a fix 
 release, but we might not backport the fix to earlier major versions.
 
 Orion Proxy is a high-performance L7 proxy implemented in Rust, designed to support Envoy-compatible
-configurations as well as AI-native networking scenarios. When security issues potentially affect
-Envoy or other projects in the ecosystem, we coordinate with the respective communities to ensure
-responsible disclosure and aligned responses.
+configurations as well as Cloud and AI native networking scenarios.
 
 ## Reporting a Vulnerability
 
