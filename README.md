@@ -5,6 +5,80 @@
 
 -->
 
+## Orion Architecture
+
+Orion Proxy is designed as a high-performance L7 proxy compatible with Envoy's xDS API while delivering superior performance through Rust's zero-cost abstractions and memory safety guarantees.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Control Plane                             │
+│                  (Istio / Envoy Control Plane)                   │
+└────────────────────────┬────────────────────────────────────────┘
+                         │ xDS Protocol (gRPC)
+                         │ (LDS/RDS/CDS/EDS)
+                         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Orion Proxy (Rust)                          │
+│                                                                   │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │              xDS Configuration Manager                      │ │
+│  │  • Dynamic listener/route/cluster configuration            │ │
+│  │  • Real-time updates from control plane                    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│                            ▼                                     │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │                  Core Proxy Engine                          │ │
+│  │                                                              │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐ │ │
+│  │  │   Listener   │  │    Router     │  │ Cluster Manager │ │ │
+│  │  │   Manager    │  │    (L7)       │  │  (Load Balance) │ │ │
+│  │  └──────────────┘  └──────────────┘  └──────────────────┘ │ │
+│  │                                                              │ │
+│  │  ┌────────────────────────────────────────────────────────┐│ │
+│  │  │              Transport Layer                            ││ │
+│  │  │  • HTTP/1.1, HTTP/2, TCP                                ││ │
+│  │  │  • TLS/mTLS (rustls)                                    ││ │
+│  │  │  • Proxy Protocol, TLV Filter (Kmesh compatible)        ││ │
+│  │  └────────────────────────────────────────────────────────┘│ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                            │                                     │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │         Observability & Admin Interface                     │ │
+│  │  • Prometheus Metrics                                       │ │
+│  │  • Distributed Tracing (OpenTelemetry)                      │ │
+│  │  • Admin API (config dump, stats)                           │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                         │
+                         │ Proxied Traffic
+                         ▼
+                  ┌──────────────┐
+                  │   Upstream   │
+                  │   Services   │
+                  └──────────────┘
+```
+
+### Core Components
+
+- **xDS Client**: Subscribes to and processes Envoy xDS APIs (LDS, RDS, CDS, EDS) for dynamic configuration updates
+- **Configuration Manager**: Manages runtime configuration, converts Envoy protobuf definitions to Orion's internal representation
+- **Listener Manager**: Handles incoming connections, applies listener filters (TLV, Proxy Protocol, TLS Inspector)
+- **Router (L7)**: HTTP routing, header manipulation, retries, timeouts, and traffic shifting
+- **Cluster Manager**: Manages upstream clusters, implements load balancing algorithms (round-robin, least-request, random)
+- **Transport Layer**: High-performance async I/O using Tokio, supports HTTP/1.1, HTTP/2, and raw TCP
+- **TLS Engine**: Powered by rustls for memory-safe TLS/mTLS, client certificate validation
+- **Observability**: Prometheus metrics export, OpenTelemetry tracing integration
+- **Admin Interface**: HTTP API for runtime configuration inspection, metrics, and health checks
+
+### Key Design Principles
+
+- **Zero-Copy I/O**: Minimizes memory allocations and copies through Rust's ownership system and `Bytes` buffers
+- **Async Runtime**: Built on Tokio for efficient handling of thousands of concurrent connections
+- **Memory Safety**: Eliminates entire classes of bugs (use-after-free, data races) through Rust's type system
+- **Envoy Compatibility**: Direct protobuf compatibility with Envoy xDS APIs for seamless integration with Istio and other control planes
+- **Cloud & AI Native**: Optimized for modern workloads including AI inference services with high throughput requirements
+
 ## Introduction
 
 Orion Proxy is a high performance and memory safe implementation of popular [Envoy Proxy](https://www.envoyproxy.io/). Orion Proxy is implemented in Rust using high-quality open source components. 
