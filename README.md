@@ -63,7 +63,6 @@ Orion Proxy is designed as a high-performance L7 proxy compatible with Envoy's x
 - **Async Runtime**: Built on Tokio for efficient handling of thousands of concurrent connections
 - **Memory Safety**: Eliminates entire classes of bugs (use-after-free, data races) through Rust's type system
 - **Envoy Compatibility**: Direct protobuf compatibility with Envoy xDS APIs for seamless integration with Istio and other control planes
-- **Cloud & AI Native**: Optimized for modern workloads including AI inference services with high throughput requirements
 
 ## Quick Start
 
