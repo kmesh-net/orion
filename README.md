@@ -18,6 +18,23 @@ Rust programming language allows to avoid a whole lot of bugs related to memory 
 
 Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer to [Performance](docs/performance/performance.md) to see performance figures and for more details how we tested Orion Proxy.
 
+<table>
+  <tr>
+    <th colspan="2" align="center">HTTP Benchmark Results</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/pics/performance/baseline/wrk-reqsec.png" alt="HTTP Requests per Second"/><br/><p align="center"><b>Requests per Second</b></p></td>
+    <td width="50%"><img src="docs/pics/performance/baseline/wrk-latency.png" alt="HTTP Latency"/><br/><p align="center"><b>Latency (microseconds)</b></p></td>
+  </tr>
+  <tr>
+    <th colspan="2" align="center">HTTPS Benchmark Results</th>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/pics/performance/tls/wrk-reqsec.png" alt="HTTPS Requests per Second"/><br/><p align="center"><b>Requests per Second</b></p></td>
+    <td width="50%"><img src="docs/pics/performance/tls/wrk-latency.png" alt="HTTPS Latency"/><br/><p align="center"><b>Latency (microseconds)</b></p></td>
+  </tr>
+</table>
+
 **Compatibility**
 
 Orion Proxy configuration is generated from Envoy's xDS protobuf definitions. Orion Proxy aims to be a drop in replacement for Envoy.
