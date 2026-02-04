@@ -4,11 +4,13 @@
 
 The Orion Proxy team fully supports the most recent minor release train and will consider patches to
 prior versions depending on prevalence of the affected version(s) and severity of the reported
-issue. For example, if the most recent release is 0.3.1, we would provide a fix in a 0.3.x
-release, but we might not backport the fix to 0.2.x.
+issue. For example, if the most recent release is 0.1.5, we would provide a fix in a 0.1.x
+release, but we might not backport the fix to earlier major versions.
 
-As Orion Proxy aims to be a drop-in replacement for Envoy Proxy, we coordinate with the Envoy
-community on security issues that may affect both projects.
+Orion Proxy is a high-performance L7 proxy implemented in Rust, designed to support Envoy-compatible
+configurations as well as AI-native networking scenarios. When security issues potentially affect
+Envoy or other projects in the ecosystem, we coordinate with the respective communities to ensure
+responsible disclosure and aligned responses.
 
 ## Reporting a Vulnerability
 
