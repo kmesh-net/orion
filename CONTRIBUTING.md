@@ -21,21 +21,6 @@ When submitting PRs please keep refactoring commits separate from functional cha
 
 All PRs *must* be passing all tests. Ideally any PR submitted should have more than 85% code coverage, but this is not mandated. When tests are failing, especially on previous branches this is often due to checked in testing keys for the TLS tests. See **Updating Security Related Tests**.
 
-## Releases
-
-Orion Proxy tries to follow semver versioning semantics. Major versions will not break APIs in a current major revision. If changes are being made to the current `main` branch, double check the current status of the Major release. Until `1.x.x`, all `0.x.x` minor releases are treated as major releases with breaking changes allowed. Releases are performed on an ad-hoc/on-demand basis.
-
-*Maintainers*: If changes are needed to previous releases, then there should exist a `release/x.x`. If this does not exist, then go to the previous most recent tag (release) and create a new branch at that tag `release/x.x`, for example the branch `release/0.1`:
-
-```shell
-> git fetch origin
-> git checkout v0.1.5
-> git branch release/0.1
-> git push --set-upstream origin release/0.1
-```
-
-Previous release can fail due to time-lapse, please see **Updating Security Related Tests**.
-
 ## Performing a Release, for Maintainers
 
 Releases are somewhat automated. The github action, `publish`, watches for any tags on the project. It then attempts to perform a release of all the libraries, this does not always work, for various reasons.
