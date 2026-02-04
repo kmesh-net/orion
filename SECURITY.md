@@ -20,7 +20,6 @@ time-frame and mutually agreeable embargo date, taking into account the work nee
 
   * Identify affected versions
   * Prepare a fix and regression test
-  * Coordinate response with the Envoy community (if the issue affects Envoy as well)
   * Coordinate response with downstream projects in the Kmesh ecosystem
 
 After testing a fix and upon the end of the embargo date we will:
