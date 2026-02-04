@@ -29,29 +29,3 @@ After testing a fix and upon the end of the embargo date we will:
 * Publish fixed releases on crates.io and deprecate prior releases as appropriate
 * Publish release notes and security advisories on the [GitHub Releases](https://github.com/kmesh-net/orion/releases) page
 * Notify the Kmesh community via official communication channels
-
-## Security-Related Configuration
-
-Orion Proxy inherits Envoy's security model. When deploying Orion, please pay attention to:
-
-* **TLS Configuration**: Ensure proper certificate validation and cipher suite selection
-* **Access Logging**: Sensitive data may be logged; review log configurations
-* **Resource Limits**: Configure appropriate timeouts and resource limits to prevent DoS
-* **Network Policies**: Restrict management ports (admin, metrics) to trusted networks only
-
-For deployment best practices, see our [documentation](https://github.com/kmesh-net/orion/tree/main/docs).
-
-## Security Audits
-
-We welcome security audits and assessments from the community. If you are interested in conducting
-a security audit of Orion Proxy, please reach out to the maintainers via GitHub discussions.
-
-**Please note that at this time, the Orion Proxy project is not able to offer a bug bounty.**
-
-## Past Security Advisories
-
-Security advisories for Orion Proxy will be published at:
-* [GitHub Security Advisories](https://github.com/kmesh-net/orion/security/advisories)
-* [RustSec Advisory Database](https://rustsec.org/advisories/)
-
-As of this writing, no security advisories have been published for Orion Proxy.
