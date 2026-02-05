@@ -65,7 +65,7 @@ caps = "0.5"
 affinity = "0.1.2"
 
 [dev-dependencies]
-axum-test              = "18.2.1"
+axum-test              = "18.4.1"
 orion-data-plane-api.workspace = true
 tracing-test.workspace = true
 
