@@ -161,7 +161,7 @@ pub trait ClusterOps {
     fn get_routing_requirements(&self) -> RoutingRequirement;
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[enum_dispatch(ClusterOps)]
 pub enum ClusterType {
     Static(StaticCluster),

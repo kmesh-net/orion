@@ -322,7 +322,7 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyHttp1ProtocolOptions) -> Result<Self, Self::Error> {
             let EnvoyHttp1ProtocolOptions {
-                allow_absolute_url,
+                allow_absolute_url: _,
                 accept_http_10,
                 default_host_for_http_10,
                 header_key_format,
@@ -335,7 +335,6 @@ mod envoy_conversions {
                 ignore_http_11_upgrade,
             } = value;
             unsupported_field!(
-                allow_absolute_url,
                 accept_http_10,
                 default_host_for_http_10,
                 header_key_format,

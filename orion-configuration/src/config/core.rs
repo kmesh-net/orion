@@ -261,7 +261,8 @@ pub mod envoy_conversions {
     };
     use regex::{Regex, RegexBuilder};
     use serde::{Deserialize, Serialize};
-    use std::net::SocketAddr;
+    use std::net::{IpAddr, SocketAddr};
+    use std::str::FromStr;
 
     pub struct CidrRange(IpNet);
 
@@ -287,9 +288,15 @@ pub mod envoy_conversions {
     impl Address {
         pub fn into_socket_addr(self) -> Result<SocketAddr, GenericError> {
             match self {
-                Self::Socket(hostname, port) => format!("{hostname}:{port}")
-                    .parse()
-                    .map_err(|e| GenericError::from_msg_with_cause("Cannot convert pipe address to socket address", e)),
+                Self::Socket(hostname, port) => {
+                    if let Ok(ip_addr) = IpAddr::from_str(&hostname) {
+                        Ok(SocketAddr::new(ip_addr, port))
+                    } else {
+                        format!("{hostname}:{port}").parse().map_err(|e| {
+                            GenericError::from_msg_with_cause("Cannot convert ip address to socket address", e)
+                        })
+                    }
+                },
                 Self::Internal(_) => Err(GenericError::from_msg("Cannot convert internal address to socket address")),
                 Self::Pipe(_, _) => Err(GenericError::from_msg("Cannot convert pipe address to socket address")),
             }

@@ -286,7 +286,7 @@ async fn run_services(config: ProxyConfiguration) -> Result<()> {
     let mut set: JoinSet<Result<()>> = JoinSet::new();
 
     // spawn XDS configuration service...
-    spawn_xds_client(
+    configure_initial_resources_and_spawn_xds_client(
         &mut set,
         bootstrap.clone(),
         node,
@@ -327,7 +327,7 @@ async fn run_services(config: ProxyConfiguration) -> Result<()> {
     Ok(())
 }
 
-fn spawn_xds_client(
+fn configure_initial_resources_and_spawn_xds_client(
     set: &mut JoinSet<Result<()>>,
     bootstrap: Bootstrap,
     node: Node,
@@ -337,9 +337,21 @@ fn spawn_xds_client(
     clusters: Vec<orion_lib::PartialClusterType>,
     ads_cluster_names: Vec<String>,
 ) {
+    //TODO: this needs to be fixed
+    // If there are errors in configure_initial_resources especially in clusters, Orion will end up being partially configured
+
     set.spawn(async move {
-        let initial_clusters =
-            configure_initial_resources(bootstrap, listener_factories, clusters, configuration_senders.clone()).await?;
+        let maybe_initial_clusters =
+            configure_initial_resources(bootstrap, listener_factories, clusters, configuration_senders.clone()).await;
+
+        let Ok(initial_clusters) = maybe_initial_clusters else {
+            warn!("Initial clusters have errors {maybe_initial_clusters:?}");
+            warn!("The application will exit in 10 secs");
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+            interval.tick().await;
+            std::process::exit(1)
+        };
+
         if !ads_cluster_names.is_empty() {
             let mut xds_handler = XdsConfigurationHandler::new(secret_manager, configuration_senders);
             _ = xds_handler.run_loop(node, initial_clusters, ads_cluster_names).await;
