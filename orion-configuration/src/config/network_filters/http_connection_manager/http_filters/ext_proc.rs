@@ -197,11 +197,11 @@ impl HeaderMutationRules {
                     return *allow_routing;
                 }
                 if header.starts_with(':') {
-                    if !allow_system {
-                        return false;
-                    }
                     if matches!(header, ":authority" | ":scheme" | ":method") {
                         return *allow_routing;
+                    }
+                    if !allow_system {
+                        return false;
                     }
                 }
                 if header.starts_with("x-envoy-") {
@@ -310,13 +310,23 @@ mod envoy_conversions {
                 on_processing_response
             )?;
 
-            let grpc_service: GrpcService = required!(grpc_service)?.try_into().with_node("grpc_service")?;
+            let grpc_service: GrpcService =
+                GrpcService::try_from(required!(grpc_service)?).with_node("grpc_service")?;
             let message_timeout = message_timeout.map(duration_from_envoy).transpose().with_node("message_timeout")?;
             let max_message_timeout =
                 max_message_timeout.map(duration_from_envoy).transpose().with_node("max_message_timeout")?;
-            let processing_mode = processing_mode.map(TryInto::try_into).transpose().with_node("processing_mode")?;
-            let mutation_rules = mutation_rules.map(TryInto::try_into).transpose().with_node("mutation_rules")?;
-            let forward_rules = forward_rules.map(TryInto::try_into).transpose().with_node("forward_rules")?;
+            let processing_mode = processing_mode
+                .map(ProcessingMode::try_from)
+                .transpose()
+                .with_node("processing_mode")?
+                .or(Some(ProcessingMode::default()));
+            let mutation_rules = mutation_rules
+                .map(HeaderMutationRules::try_from)
+                .transpose()
+                .with_node("mutation_rules")?
+                .or(Some(HeaderMutationRules::default()));
+            let forward_rules =
+                forward_rules.map(HeaderForwardingRules::try_from).transpose().with_node("forward_rules")?;
             let deferred_close_timeout =
                 deferred_close_timeout.map(duration_from_envoy).transpose().with_node("deferred_close_timeout")?;
             let allowed_override_modes = convert_vec!(allowed_override_modes)?;

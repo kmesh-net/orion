@@ -196,6 +196,8 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                 }
 
                 // send the request to the upstream service channel and wait for the response...
+
+                debug!("Sending request {upstream_request:?} to channel {svc_channel:?}");
                 let resp = svc_channel
                     .to_response(
                         trans_handler,
@@ -205,6 +207,7 @@ impl<'a> RequestHandler<(MatchedRequest<'a>, &HttpConnectionManager)> for &Route
                         ),
                     )
                     .await;
+                debug!("Processing response {resp:?}");
                 match resp {
                     Err(err) => {
                         let err = err.into_inner();

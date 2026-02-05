@@ -29,7 +29,8 @@ use crate::{body::response_flags::ResponseFlags, listeners::synthetic_http_respo
 use bytes::Bytes;
 use http_body::Frame;
 use orion_configuration::config::network_filters::http_connection_manager::http_filters::ext_proc::{
-    BodyProcessingMode, HeaderProcessingMode, ProcessingMode, RouteCacheAction, TrailerProcessingMode,
+    BodyProcessingMode, HeaderMutationRules, HeaderProcessingMode, ProcessingMode, RouteCacheAction,
+    TrailerProcessingMode,
 };
 use orion_data_plane_api::envoy_data_plane_api::envoy::service::ext_proc::v3::common_response::ResponseStatus;
 use orion_data_plane_api::envoy_data_plane_api::envoy::service::ext_proc::v3::HttpTrailers;
@@ -430,7 +431,7 @@ impl<Msg: kind::MsgKind + OverridableModeSelector> Processing<kind::Processing, 
             // update the local version of trailers, if required if let Some(trailers) = self.body_context.trailers.as_mut() {
             debug!(target: "ext_proc", "handle_trailers_response: mutating trailers...");
             if let Some(ref trailers_updates) = trailers_response.header_mutation {
-                let _ = apply_trailer_mutations(&mut trailers, trailers_updates, None);
+                let _ = apply_trailer_mutations(&mut trailers, trailers_updates, &HeaderMutationRules::default());
             }
 
             _ = self.frame_bridge.inject_frame(Ok(Frame::trailers(trailers))).await;

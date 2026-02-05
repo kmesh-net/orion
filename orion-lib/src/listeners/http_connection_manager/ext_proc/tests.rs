@@ -236,7 +236,7 @@ impl<M: MsgKind> Mock<M> {
             header_map.insert(http::HeaderName::from_static(key), http::HeaderValue::from_static(value));
         }
         if let Some(mutation) = header_mutation.as_ref() {
-            apply_header_mutations(&mut header_map, mutation, None).unwrap();
+            apply_header_mutations(&mut header_map, mutation, &HeaderMutationRules::default()).unwrap();
         }
         header_map
     }
@@ -263,7 +263,7 @@ impl<M: MsgKind> Mock<M> {
             trailer_map.insert(http::HeaderName::from_static(key), http::HeaderValue::from_static(value));
         }
         if let Some(mutation) = trailer_mutation.as_ref() {
-            apply_header_mutations(&mut trailer_map, mutation, None).unwrap();
+            apply_header_mutations(&mut trailer_map, mutation, &HeaderMutationRules::default()).unwrap();
         }
         trailer_map
     }
