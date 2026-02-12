@@ -1101,6 +1101,7 @@ async fn test_request_header_mutation_pseudo_headers() {
     let mut config = create_default_config_for_ext_proc_filter(server_addr, processing_mode.clone());
     config.observability_mode = false;
     config.failure_mode_allow = false;
+    config.mutation_rules = Some(HeaderMutationRules { policy: orion_configuration::config::network_filters::http_connection_manager::http_filters::ext_proc::MutationPolicy::Standard{ allow_routing: true, allow_envoy: true, allow_system: true }, overrides: None, disallow_is_error: false });
     let mut ext_proc = ExternalProcessor::from(config);
 
     let mut request = build_request_from_mock(&Mock::<RequestMsg> {

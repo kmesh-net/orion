@@ -279,7 +279,7 @@ impl HttpChannelBuilder {
             builder = if let Some(server_name) = self.server_name {
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             } else {
-                let server_name = ServerName::try_from("orion.proxy").expect("Expect this to work");
+                let server_name = ServerName::try_from(authority.host().to_owned()).expect("Expect this to work");
                 debug!("Server name is not configured in bootstrap.. using default name {:?}", server_name);
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             };
