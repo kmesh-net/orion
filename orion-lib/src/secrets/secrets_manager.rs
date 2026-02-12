@@ -17,6 +17,7 @@
 
 use crate::Result;
 use compact_str::{CompactString, ToCompactString};
+
 use orion_configuration::{
     config::secret::{Secret, TlsCertificate, Type, ValidationContext},
     VerifySingleIter,
@@ -26,7 +27,7 @@ use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer, ServerName},
     RootCertStore,
 };
-use rustls_pemfile::{certs, pkcs8_private_keys};
+use rustls_pemfile::{certs, ec_private_keys, pkcs8_private_keys, rsa_private_keys};
 use std::sync::Arc;
 use tracing::{debug, warn};
 
@@ -101,10 +102,55 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
 
     fn try_from(certificate: &TlsCertificate) -> Result<Self> {
         let mut cert_reader = certificate.certificate_chain().into_buf_read()?;
-        let mut key_reader = certificate.private_key().into_buf_read()?;
-        let key = pkcs8_private_keys(&mut key_reader)
+        let key_reader = certificate.private_key();
+        debug!("Reading from file {key_reader:?}");
+
+        let rsa_key = rsa_private_keys(&mut (key_reader.into_buf_read()?))
+            .map(|f| {
+                if f.is_err() {
+                    debug!("Problem with reading private key {f:?}");
+                } else {
+                    debug!("Private key is {f:?}");
+                }
+                f
+            })
             .map(|f| f.map_err(|e| format!("Can't parse private key: {e}")))
-            .verify_single()??;
+            .verify_single();
+
+        let ec_key = ec_private_keys(&mut (key_reader.into_buf_read()?))
+            .map(|f| {
+                if f.is_err() {
+                    debug!("Problem with reading private key {f:?}");
+                } else {
+                    debug!("Private key is {f:?}");
+                }
+                f
+            })
+            .map(|f| f.map_err(|e| format!("Can't parse private key: {e}")))
+            .verify_single();
+
+        let pkcs_key = pkcs8_private_keys(&mut (key_reader.into_buf_read()?))
+            .map(|f| {
+                if f.is_err() {
+                    debug!("Problem with reading private key {f:?}");
+                } else {
+                    debug!("Private key is {f:?}");
+                }
+                f
+            })
+            .map(|f| f.map_err(|e| format!("Can't parse private key: {e}")))
+            .verify_single();
+
+        let keys = (pkcs_key, rsa_key, ec_key);
+        let key = match keys {
+            (Ok(Ok(key)), Err(_), Err(_)) => Arc::new(PrivateKeyDer::Pkcs8(key)),
+            (Err(_), Ok(Ok(key)), Err(_)) => Arc::new(PrivateKeyDer::Pkcs1(key)),
+            (Err(_), Err(_), Ok(Ok(key))) => Arc::new(PrivateKeyDer::Sec1(key)),
+            _ => {
+                warn!("Problem when parsing private keys {keys:?}");
+                return Err("Got no keys".into());
+            },
+        };
 
         let certificates = certs(&mut cert_reader)
             .map(|f| f.map_err(|e| format!("Can't parse certificate {e:?}").into()))
@@ -136,7 +182,6 @@ impl TryFrom<&TlsCertificate> for CertificateSecret {
 
         debug!("Certificate Subject's common name {common_name:?}");
 
-        let key = Arc::new(PrivateKeyDer::Pkcs8(key));
         Ok(CertificateSecret { name: server_name, key, certs: Arc::new(certificates), config: certificate.clone() })
     }
 }

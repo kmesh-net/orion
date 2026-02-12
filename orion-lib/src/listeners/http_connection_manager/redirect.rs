@@ -32,6 +32,7 @@ use orion_configuration::config::network_filters::http_connection_manager::route
 use orion_error::Context;
 use orion_format::context::UpstreamContext;
 use std::str::FromStr;
+use tracing::debug;
 
 impl<'a> RequestHandler<(Request<BodyWithMetrics<PolyBody>>, RouteMatchResult, &'a str)> for &RedirectAction {
     async fn to_response(
@@ -88,7 +89,7 @@ impl<'a> RequestHandler<(Request<BodyWithMetrics<PolyBody>>, RouteMatchResult, &
             None
         };
 
-        let scheme = self.scheme_rewrite_specifier.clone().or(orig_scheme);
+        let scheme = self.scheme_rewrite_specifier.clone().or(orig_scheme).or(Some(Scheme::HTTP));
 
         // if this replacement yields a query, it will always overwrite the existing query
         let path_and_query = if let Some(prs) = self.path_rewrite_specifier.as_ref() {
@@ -111,9 +112,11 @@ impl<'a> RequestHandler<(Request<BodyWithMetrics<PolyBody>>, RouteMatchResult, &
             parts.path_and_query = path_and_query;
             parts
         })
-        .with_context_msg("failed to reconstruct uri after applying redirect params")?;
+        .with_context_msg("failed to reconstruct uri after applying redirect params");
+        debug!("Redirecting to {new_uri:?}");
+
         let redirect_target =
-            HeaderValue::from_str(&new_uri.to_string()).with_context_msg("couldn't convert uri to header value")?;
+            HeaderValue::from_str(&new_uri?.to_string()).with_context_msg("couldn't convert uri to header value")?;
         rsp.headers_mut().and_then(|hm| hm.insert(LOCATION, redirect_target));
         rsp.body(PolyBody::default()).map_err(Error::from)
     }

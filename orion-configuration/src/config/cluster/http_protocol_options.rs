@@ -233,6 +233,10 @@ mod envoy_conversions {
                 http_filters,
                 header_validation_config,
                 upstream_protocol_options,
+                outlier_detection: _,
+                request_mirror_policies: _,
+                hash_policy: _,
+                retry_policy: _,
             } = value;
             unsupported_field!(
                 // common_http_protocol_options,
@@ -318,7 +322,7 @@ mod envoy_conversions {
         type Error = GenericError;
         fn try_from(value: EnvoyHttp1ProtocolOptions) -> Result<Self, Self::Error> {
             let EnvoyHttp1ProtocolOptions {
-                allow_absolute_url,
+                allow_absolute_url: _,
                 accept_http_10,
                 default_host_for_http_10,
                 header_key_format,
@@ -331,7 +335,6 @@ mod envoy_conversions {
                 ignore_http_11_upgrade,
             } = value;
             unsupported_field!(
-                allow_absolute_url,
                 accept_http_10,
                 default_host_for_http_10,
                 header_key_format,
@@ -369,6 +372,7 @@ mod envoy_conversions {
                 connection_keepalive,
                 use_oghttp2_codec,
                 max_metadata_size,
+                enable_huffman_encoding: _,
             } = value;
             unsupported_field!(
                 hpack_table_size,

@@ -67,6 +67,8 @@ mod envoy_conversions {
                 config,
                 per_stream_buffer_limit_bytes,
                 channel_args,
+                channel_credentials_plugin: _,
+                call_credentials_plugin: _,
             } = value;
             unsupported_field!(
                 // target_uri,

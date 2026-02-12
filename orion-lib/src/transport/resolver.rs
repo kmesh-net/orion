@@ -23,9 +23,7 @@ use std::{fmt::Display, future::pending, io, net::SocketAddr};
 use hickory_resolver::{name_server::TokioConnectionProvider, IntoName, TokioResolver};
 
 use once_cell::sync::Lazy;
-use tracing::debug;
 
-#[allow(clippy::expect_used)]
 static GLOBAL_DNS_RESOLVER: Lazy<TokioResolver> = Lazy::new(|| {
     use std::sync::{Arc, Condvar, Mutex};
     use std::thread;

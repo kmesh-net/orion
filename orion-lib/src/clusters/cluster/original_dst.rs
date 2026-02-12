@@ -136,6 +136,21 @@ pub struct OriginalDstCluster {
     pub config: orion_configuration::config::cluster::Cluster,
 }
 
+impl std::fmt::Debug for OriginalDstCluster {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OriginalDstCluster")
+            .field("name", &self.name)
+            .field("http_config", &self.http_config)
+            .field("transport_socket", &self.transport_socket)
+            .field("bind_device_options", &self.bind_device_options)
+            .field("endpoints", &self.endpoints.len())
+            .field("routing_requirements", &self.routing_requirements)
+            .field("upstream_port_override", &self.upstream_port_override)
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 impl ClusterOps for OriginalDstCluster {
     fn get_name(&self) -> &'static str {
         self.name

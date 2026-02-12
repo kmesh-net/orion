@@ -271,16 +271,14 @@ mod config_dump_tests {
                                 name: CompactString::from("route_config1"),
                                 most_specific_header_mutations_wins: false,
                                 response_header_modifier: HeaderModifier::default(),
-                                request_headers_to_add: vec![],
-                                request_headers_to_remove: vec![],
+                                request_header_modifier: HeaderModifier::default(),
                                 virtual_hosts: vec![VirtualHost {
                                     name: CompactString::from("vh1"),
                                     domains: vec![],
                                     routes: vec![Route {
                                         name: "test_route".to_owned(),
                                         response_header_modifier: HeaderModifier::default(),
-                                        request_headers_to_add: vec![],
-                                        request_headers_to_remove: vec![],
+                                        request_header_modifier: HeaderModifier::default(),
                                         route_match: RouteMatch::default(),
                                         typed_per_filter_config: HashMap::new(),
                                         action: Action::DirectResponse(
@@ -291,8 +289,7 @@ mod config_dump_tests {
                                         ),
                                     }],
                                     response_header_modifier: HeaderModifier::default(),
-                                    request_headers_to_add: vec![],
-                                    request_headers_to_remove: vec![],
+                                    request_header_modifier: HeaderModifier::default(),
                                     retry_policy: None,
                                 }],
                             }),

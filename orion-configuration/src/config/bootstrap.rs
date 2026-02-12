@@ -400,6 +400,7 @@ mod envoy_conversions {
                 address,
                 socket_options,
                 ignore_global_conn_limit: _,
+                allow_paths: _,
             } = envoy;
             unsupported_field!(access_log_path, socket_options)?;
             let address = match required!(address)?

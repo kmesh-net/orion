@@ -36,6 +36,7 @@ mod envoy_conversions {
                 respect_expected_rq_timeout,
                 suppress_grpc_request_failure_code_stats,
                 upstream_http_filters,
+                reject_connect_request_early_data: _,
             } = value;
             unsupported_field!(
                 //note: docs say this field defaults to true. So depending on our behaviour we might have to check this is instead set to
