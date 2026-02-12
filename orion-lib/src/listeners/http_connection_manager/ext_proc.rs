@@ -516,12 +516,14 @@ impl ExternalProcessor {
                     None,
                 );
             },
-            Err(e) => self.on_filter_error(
-                format!("External processor response processing: {e:?}").as_str(),
-                Some(e.into()),
-                response.version(),
-                None,
-            ),
+            Err(e) => {
+                return self.on_filter_error(
+                    format!("External processor response processing: {e:?}").as_str(),
+                    Some(e.into()),
+                    response.version(),
+                    None,
+                )
+            },
         };
 
         debug!(target: "ext_proc", "apply_response completed: {res:?}!");
@@ -1325,7 +1327,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     yield message
                 }
             };
-            let stream_setup_result = match grpc_service_specifier {
+            let stream_setup_result = match grpc_service_specifier.clone() {
                 GrpcServiceSpecifier::Cluster(cluster_name) => {
                     let cluster_spec = ClusterSpecifier::Cluster(cluster_name.clone());
                     match clusters_manager::resolve_cluster(&cluster_spec) {
@@ -1333,7 +1335,10 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                             debug!(target: "ext_proc","Cluster ID {cluster_id}");
                             match clusters_manager::get_grpc_connection(cluster_id, RoutingContext::None) {
                                 Ok(grpc_service) => {
-                                    let mut client = ExternalProcessorClient::new(grpc_service);
+                                    let mut client = ExternalProcessorClient::new(tower::timeout::Timeout::new(
+                                        grpc_service,
+                                        Duration::from_millis(500),
+                                    ));
                                     client.process(request_stream).await
                                 },
                                 Err(e) => Err(Status::unavailable(format!("Failed to get gRPC connection: {e}"))),
@@ -1361,6 +1366,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     }
                 },
                 Err(status) => {
+                    debug!(target: "ext_proc","Unable to create stream to cluster {grpc_service_specifier:?}");
                     let _ = response_sender.send(Err(status)).await;
                 },
             }

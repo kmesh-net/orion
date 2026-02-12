@@ -57,12 +57,16 @@ use orion_metrics::{metrics::clusters, with_metric};
 
 use pingora_timeout::fast_timeout::fast_timeout;
 use pretty_duration::pretty_duration;
-use rustls::{pki_types::ServerName, ClientConfig};
+use rustls::{
+    pki_types::{DnsName, ServerName},
+    ClientConfig,
+};
 use scopeguard::defer;
 use smol_str::ToSmolStr;
 use std::{
     io::ErrorKind,
     mem,
+    net::IpAddr,
     result::Result as StdResult,
     sync::Arc,
     thread::ThreadId,
@@ -279,7 +283,17 @@ impl HttpChannelBuilder {
             builder = if let Some(server_name) = self.server_name {
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             } else {
-                let server_name = ServerName::try_from(authority.host().to_owned()).expect("Expect this to work");
+                let server_name =
+                    if let Ok(ip_addr) = authority.host().parse::<IpAddr>() {
+                        let ip_addr = rustls::pki_types::IpAddr::from(ip_addr);
+                        ServerName::IpAddress(ip_addr)
+                    } else {
+                        let name = authority.host().to_owned();
+                        ServerName::DnsName(DnsName::try_from(name).unwrap_or(
+                            DnsName::try_from_str("default.orion-proxy.com").expect("We expect this to work"),
+                        ))
+                    };
+
                 debug!("Server name is not configured in bootstrap.. using default name {:?}", server_name);
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             };
