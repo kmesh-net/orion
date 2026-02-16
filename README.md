@@ -4,19 +4,22 @@
 [![LICENSE](https://img.shields.io/github/license/kmesh-net/orion)](/LICENSE) [![codecov](https://codecov.io/gh/kmesh-net/kmesh/graph/badge.svg?token=0EGQ84FGDU)](https://img.shields.io/github/license/kmesh-net/orion) [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkmesh-net%2Forion.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkmesh-net%2Forion?ref=badge_shield)
 -->
 
-## Introduction
+# Introduction
 
 Orion Proxy is a high performance and memory safe implementation of popular [Envoy Proxy](https://www.envoyproxy.io/). Orion Proxy is implemented in Rust using high-quality open source components.
 
-### Key Features
 
-**Memory Safety**
+## Key features
 
-Rust programming language allows to avoid a whole lot of bugs related to memory management and data races making Orion Proxy a very robust and secure application.
 
-**Performance**
+### Memory Safety
 
-Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer to [Performance](docs/performance/performance.md) to see performance figures and for more details how we tested Orion Proxy.
+Rust programming language allows Orion Proxy implementation to avoid a whole set of bugs related to memory management and data races making Orion Proxy a very robust and secure application.  
+
+
+### Performance
+
+Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer to [Performance](docs/performance/performance.md) to see more performance figures and more details on how Orion Proxy was tested.
 
 <table>
   <tr>
@@ -35,15 +38,21 @@ Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer t
   </tr>
 </table>
 
-**Compatibility**
+### Use Cases and Compatibility
 
-Orion Proxy configuration is generated from Envoy's xDS protobuf definitions. Orion Proxy aims to be a drop in replacement for Envoy.
+Orion Proxy configuration is generated from Envoy's xDS protobuf definitions. Orion Proxy aims to be a drop in replacement for Envoy for the most common or popular use-cases. 
+
+**Kubernetes Gateway** - Orion Proxy can be used as Kubernetes Gateway API and Orion Proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
+**Kubernetes Gateway for Inference Flows** - Orion Proxy can also be used to route Inference Flows and it is passing Gateway API Inference Extension conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_INFERENCE_EXTENSION_CONFORMANCE.md) on how to run inference extension conformance tests with Orion Proxy.
 
 ## Architecture
 
 Orion Proxy is designed as a high-performance L7 proxy compatible with Envoy's xDS API while delivering superior performance through Rust's zero-cost abstractions and memory safety guarantees.
 
-<img src="docs/pics/architecture/orion_architecture.png" alt="Orion Architecture" style="zoom: 80%;" />
+Orion Proxy has been built on a share-nothing principle. In the default configuration, Orion Proxy tries to create and pin one instance of Tokio Runtime per CPU/Thread, so the spawned tasks and actions are always executed in the local context minimizing cross CPU communication.
+Other modes are available through configuration settings.
+
+![Architecture](docs/pics/orion.architecture.drawio.png)
 
 ### Core Components
 
@@ -64,8 +73,6 @@ Orion Proxy is designed as a high-performance L7 proxy compatible with Envoy's x
 - **Memory Safety**: Eliminates entire classes of bugs (use-after-free, data races) through Rust's type system
 - **Envoy Compatibility**: Direct protobuf compatibility with Envoy xDS APIs for seamless integration with Istio and other control planes
 
-## Quick Start
-
 ### Building
 
 ```console
@@ -75,6 +82,12 @@ git submodule init
 git submodule update --force
 cargo build
 ```
+
+### Kubernetes Integration
+A great use case for Orion Proxy is to use Orion Proxy as Gateway API Service in Kubernetes environments.
+
+Orion Proxy can be used as Kubernetes Gateway API and Orion Proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
+
 
 ### Running
 
@@ -99,24 +112,15 @@ curl -v http://localhost:8000/direct-response # Should return HTTP 200 with "meo
 
 For detailed Docker configuration options, see [docker/README.md](docker/README.md).
 
-## CPU/Thread Limit Configuration
+## Orion Configuration 
 
-Orion can be configured to use a specific number of CPU cores/threads by setting the `ORION_CPU_LIMIT` environment variable. This is especially useful in containerized environments where access to `/sys/fs` may be restricted.
+Orion has two levels of configuration options. 
 
-### Kubernetes Example (Downward API)
+**Runtime configuration** allows controlling how Orion uses the CPUs of the operating system. Orion exposes tuning parameters allowing fine-tuning how Orion's worker threads are pinned to CPUs/Threads.
 
-Add the following to your container spec to set `ORION_CPU_LIMIT` to the container's CPU limit:
+**Bootstrap configuration** is the same as for Envoy bootstrap configuration.
 
-```yaml
-env:
-    - name: ORION_CPU_LIMIT
-      valueFrom:
-          resourceFieldRef:
-              resource: limits.cpu
-              divisor: "1"
-```
-
-Orion will automatically use this value to determine the number of threads/cores.
+See [example config file](orion-proxy/conf/orion-runtime.yaml) for more details.
 
 ## Testing with Backend Servers
 
@@ -166,5 +170,6 @@ For detailed information, see [examples/tlv-filter-demo/README.md](examples/tlv-
 ## License
 
 Orion Proxy is licensed under the [Apache License, Version 2.0](./LICENSE).
+
 
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fkmesh-net%2Forion.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fkmesh-net%2Forion?ref=badge_large)
