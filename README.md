@@ -83,7 +83,7 @@ git submodule update --force
 cargo build
 ```
 
-### Kubernetes 
+### Kubernetes Integration
 A great use case for Orion Proxy is to use Orion Proxy as Gateway API Service in Kubernetes environments.
 
 Orion Proxy can be used as Kubernetes Gateway API and Orion Proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
@@ -117,6 +117,7 @@ For detailed Docker configuration options, see [docker/README.md](docker/README.
 Orion has two levels of configuration options. 
 
 **Runtime configuration** allows controlling how Orion uses the CPUs of the operating system. Orion exposes tuning parameters allowing fine-tuning how Orion's worker threads are pinned to CPUs/Threads.
+
 **Bootstrap configuration** is the same as for Envoy bootstrap configuration.
 
 See [example config file](orion-proxy/conf/orion-runtime.yaml) for more details.
