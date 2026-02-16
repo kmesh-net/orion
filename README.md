@@ -19,7 +19,7 @@ Rust programming language allows Orion Proxy implementation to avoid a whole set
 
 ### Performance
 
-Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer to [Performance](docs/performance/performance.md) to see more performance figures and more details how we tested Orion Proxy.
+Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer to [Performance](docs/performance/performance.md) to see more performance figures and more details on how Orion Proxy was tested.
 
 <table>
   <tr>
@@ -42,14 +42,14 @@ Orion Proxy offers 2x-4x better throughput and latency than Envoy Proxy. Refer t
 
 Orion Proxy configuration is generated from Envoy's xDS protobuf definitions. Orion Proxy aims to be a drop in replacement for Envoy for the most common or popular use-cases. 
 
-**Kubernetes Gateway** - Orion Proxy can be used as Kubernetes Gateway API and Orion-proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
+**Kubernetes Gateway** - Orion Proxy can be used as Kubernetes Gateway API and Orion Proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
 **Kubernetes Gateway for Inference Flows** - Orion Proxy can also be used to route Inference Flows and it is passing Gateway API Inference Extension conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_INFERENCE_EXTENSION_CONFORMANCE.md) on how to run inference extension conformance tests with Orion Proxy.
 
 ## Architecture
 
 Orion Proxy is designed as a high-performance L7 proxy compatible with Envoy's xDS API while delivering superior performance through Rust's zero-cost abstractions and memory safety guarantees.
 
-Orion Proxy has been built on a share nothing principle. In the default configuration, Orion Proxy tries to create one instance of Tokio Runtime per CPU/Thread and pin it so the spawned tasks and actions are always executed in the local context minimizing cross CPU communication.
+Orion Proxy has been built on a share-nothing principle. In the default configuration, Orion Proxy tries to create and pin one instance of Tokio Runtime per CPU/Thread, so the spawned tasks and actions are always executed in the local context minimizing cross CPU communication.
 Other modes are available through configuration settings.
 
 ![Architecture](docs/pics/orion.architecture.drawio.png)
@@ -83,6 +83,12 @@ git submodule update --force
 cargo build
 ```
 
+### Kubernetes 
+A great use case for Orion Proxy is to use Orion Proxy as Gateway API Service in Kubernetes environments.
+
+Orion Proxy can be used as Kubernetes Gateway API and Orion Proxy is passing basic conformance tests. See [Kubvernor documentation](https://github.com/kubvernor/kubvernor/blob/main/conformance/GATEWAY_API_CONFORMANCE.md) on how to run conformance tests with Orion Proxy.
+
+
 ### Running
 
 ```console
@@ -108,25 +114,12 @@ For detailed Docker configuration options, see [docker/README.md](docker/README.
 
 ## Orion Configuration 
 
-Orion has two level of configuration options. 
-Orion runtime configuration allows controlling how Orion is using CPUs of the operating systems. Orion has sophisticated tuning parameters allowing fine-tuning how Orion's worker threads are pinned to CPUs/Threads.
-Orion bootstrap configuration is the same as for Envoy bootstrap configuration.
-See [example config file](orion/conf/orion-runtime.yaml) for more details.
+Orion has two levels of configuration options. 
 
-### Kubernetes Example (Downward API)
+**Runtime configuration** allows controlling how Orion uses the CPUs of the operating system. Orion exposes tuning parameters allowing fine-tuning how Orion's worker threads are pinned to CPUs/Threads.
+**Bootstrap configuration** is the same as for Envoy bootstrap configuration.
 
-Add the following to your container spec to set `ORION_CPU_LIMIT` to the container's CPU limit:
-
-```yaml
-env:
-    - name: ORION_CPU_LIMIT
-      valueFrom:
-          resourceFieldRef:
-              resource: limits.cpu
-              divisor: "1"
-```
-
-Orion will automatically use this value to determine the number of threads/cores.
+See [example config file](orion-proxy/conf/orion-runtime.yaml) for more details.
 
 ## Testing with Backend Servers
 
