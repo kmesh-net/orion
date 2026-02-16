@@ -31,6 +31,7 @@ use crate::{
     thread_local::{LocalBuilder, LocalObject},
     Error, PolyBody, Result,
 };
+use bytes::Bytes;
 use http::{
     uri::{Authority, Parts},
     HeaderValue, Response, Version,
@@ -50,22 +51,28 @@ use orion_configuration::config::{
     network_filters::http_connection_manager::RetryPolicy,
     transport::BindDeviceOptions,
 };
+use orion_data_plane_api::envoy_data_plane_api::prost::Message;
 use orion_format::types::{ResponseFlagsLong, ResponseFlagsShort};
 use orion_metrics::{metrics::clusters, with_metric};
+
 use pingora_timeout::fast_timeout::fast_timeout;
 use pretty_duration::pretty_duration;
-use rustls::{pki_types::ServerName, ClientConfig};
+use rustls::{
+    pki_types::{DnsName, ServerName},
+    ClientConfig,
+};
 use scopeguard::defer;
 use smol_str::ToSmolStr;
 use std::{
     io::ErrorKind,
     mem,
+    net::IpAddr,
     result::Result as StdResult,
     sync::Arc,
     thread::ThreadId,
     time::{Duration, Instant},
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 #[cfg(feature = "metrics")]
 use {
@@ -276,8 +283,18 @@ impl HttpChannelBuilder {
             builder = if let Some(server_name) = self.server_name {
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             } else {
-                let server_name = ServerName::try_from(authority.host().to_owned())?;
-                debug!("Server name is not configured in bootstrap.. using endpoint authority {:?}", server_name);
+                let server_name =
+                    if let Ok(ip_addr) = authority.host().parse::<IpAddr>() {
+                        let ip_addr = rustls::pki_types::IpAddr::from(ip_addr);
+                        ServerName::IpAddress(ip_addr)
+                    } else {
+                        let name = authority.host().to_owned();
+                        ServerName::DnsName(DnsName::try_from(name).unwrap_or(
+                            DnsName::try_from_str("default.orion-proxy.com").expect("We expect this to work"),
+                        ))
+                    };
+
+                debug!("Server name is not configured in bootstrap.. using default name {:?}", server_name);
                 builder.with_server_name_resolver(FixedServerNameResolver::new(server_name))
             };
 
@@ -449,7 +466,11 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
                 let (parts, body) = req.into_parts();
                 let BodyWithMetrics { inner, guard, state } = body;
                 let collected = inner.collect().await.map_err(Error::from)?;
-                let replay_body = http_body_util::Full::new(collected.to_bytes());
+                let bytes = collected.to_bytes();
+                let slice = bytes.encode_to_vec();
+                let displayable_body = String::from_utf8_lossy(slice.as_slice());
+                let replay_body = http_body_util::Full::new(bytes);
+
                 let total_attempts = 1 + failover_channels.len();
                 let mut last_error: Option<Error> = None;
                 let mut last_response: Option<Response<PolyBody>> = None;
@@ -463,8 +484,26 @@ impl<'a> RequestHandler<RequestExt<'a, Request<BodyWithMetrics<PolyBody>>>> for 
                     let rebuilt_req = Request::from_parts(parts.clone(), cloned_body);
                     let attempt_ctx = RequestContext { route_timeout, retry_policy: None };
                     let attempt_request = RequestExt::with_context(attempt_ctx, rebuilt_req);
+                    trace!("Sending rebuilt request {channel:?}\n{:?}\nBody\n {displayable_body}", parts.clone());
                     match channel.to_response(trans_handler, attempt_request).await {
                         Ok(response) => {
+                            let (parts, body) = response.into_parts();
+                            let maybe_body = body.collect().await;
+                            let response = if let Ok(body) = maybe_body {
+                                let bytes = body.to_bytes();
+                                let slice = bytes.encode_to_vec();
+                                let displayable_body = String::from_utf8_lossy(slice.as_slice());
+                                trace!("Got respose\n{parts:?}\n{displayable_body}");
+                                let replay_body = PolyBody::Full(http_body_util::Full::new(bytes));
+                                Response::from_parts(parts.clone(), replay_body)
+                            } else {
+                                debug!("Got respose no body \n{parts:?}\n{maybe_body:?}");
+                                Response::from_parts(
+                                    parts.clone(),
+                                    PolyBody::Full(http_body_util::Full::new(Bytes::new())),
+                                )
+                            };
+
                             if has_more {
                                 debug!(
                                     attempt,

@@ -30,7 +30,7 @@ pub struct ExternalProcessingWorkerConfig {
     pub observability_mode: bool,
     pub failure_mode_allow: bool,
     pub disable_immediate_response: bool,
-    pub mutation_rules: Option<HeaderMutationRules>,
+    pub mutation_rules: HeaderMutationRules,
     pub processing_mode: ProcessingMode,
     pub allowed_override_modes: Vec<ProcessingMode>,
     pub allow_mode_override: bool,

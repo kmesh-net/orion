@@ -15,7 +15,7 @@
 //
 //
 
-use std::{fmt::Display, sync::Arc, time::Duration};
+use std::{fmt::Display, str::FromStr, sync::Arc, time::Duration};
 
 use compact_str::CompactString;
 use http::uri::Authority;
@@ -324,7 +324,12 @@ impl LbEndpointBuilder {
 
         let address = match address {
             Address::Socket(hostname, port) => {
-                let authority = http::uri::Authority::try_from(format!("{hostname}:{port}"))?;
+                let authority = if let Ok(std::net::IpAddr::V6(_)) = std::net::IpAddr::from_str(&hostname) {
+                    http::uri::Authority::try_from(format!("[{hostname}]:{port}"))?
+                } else {
+                    http::uri::Authority::try_from(format!("{hostname}:{port}"))?
+                };
+                debug!("Socket address {authority:?}");
                 let mut builder = HttpChannelBuilder::new(bind_device_options.clone().clone())
                     .with_timeout(self.connect_timeout)
                     .with_address(address.clone())

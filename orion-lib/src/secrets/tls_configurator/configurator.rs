@@ -166,7 +166,8 @@ impl TryFrom<CertificateSecret> for ServerCert {
         if let Some(name) = name {
             Ok(ServerCert { name, key: Arc::new(key.clone_key()), certs })
         } else {
-            Err("secret doesn't contain server name".into())
+            warn!("Secret doesn't contain server name");
+            Ok(ServerCert { name: CompactString::default(), key: Arc::new(key.clone_key()), certs })
         }
     }
 }

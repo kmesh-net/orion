@@ -57,6 +57,9 @@ mod envoy_conversions {
                 cluster_specifier,
                 backoff_options,
                 proxy_protocol_tlvs,
+                max_downstream_connection_duration_jitter_percentage: _,
+                upstream_connect_mode: _,
+                max_early_data_bytes: _,
             } = value;
             unsupported_field!(
                 // stat_prefix,

@@ -57,7 +57,8 @@ use orion_configuration::config::{
     cluster::ClusterSpecifier,
     network_filters::http_connection_manager::http_filters::{
         ext_proc::{
-            ExternalProcessor as ExternalProcessorConfig, GrpcServiceSpecifier, HeaderForwardingRules, ProcessingMode,
+            ExternalProcessor as ExternalProcessorConfig, GrpcServiceSpecifier, HeaderForwardingRules,
+            HeaderMutationRules, ProcessingMode,
         },
         ExtProcPerRoute,
     },
@@ -168,7 +169,7 @@ impl From<(ExternalProcessorConfig, Option<ExtProcPerRoute>)> for ExternalProces
             observability_mode: config.observability_mode,
             failure_mode_allow,
             disable_immediate_response: config.disable_immediate_response,
-            mutation_rules: config.mutation_rules,
+            mutation_rules: config.mutation_rules.unwrap_or(HeaderMutationRules::default()),
             processing_mode,
             allowed_override_modes: config.allowed_override_modes,
             allow_mode_override: config.allow_mode_override,
@@ -341,7 +342,7 @@ impl ExternalProcessor {
                     if let Err(e) = apply_request_header_mutations(
                         request,
                         &headers_modifications,
-                        self.worker_config.mutation_rules.as_ref(),
+                        &self.worker_config.mutation_rules,
                     ) {
                         return self.on_filter_error(
                             "Invalid header modifications received from external processor",
@@ -470,6 +471,8 @@ impl ExternalProcessor {
             );
         };
 
+        debug!(target: "ext_proc", "waiting for response from the worker");
+
         let res = match response_rx.await {
             Ok(ProcessingStatus::HaltedOnError) => {
                 debug!(target: "ext_proc", "apply_response: HaltedOnError...");
@@ -486,7 +489,7 @@ impl ExternalProcessor {
                     if let Err(e) = apply_response_header_mutations(
                         response,
                         &headers_modifications,
-                        self.worker_config.mutation_rules.as_ref(),
+                        &self.worker_config.mutation_rules,
                     ) {
                         return self.on_filter_error(
                             "Invalid header modifications received from external processor",
@@ -513,12 +516,14 @@ impl ExternalProcessor {
                     None,
                 );
             },
-            Err(e) => self.on_filter_error(
-                format!("External processor response processing: {e:?}").as_str(),
-                Some(e.into()),
-                response.version(),
-                None,
-            ),
+            Err(e) => {
+                return self.on_filter_error(
+                    format!("External processor response processing: {e:?}").as_str(),
+                    Some(e.into()),
+                    response.version(),
+                    None,
+                )
+            },
         };
 
         debug!(target: "ext_proc", "apply_response completed: {res:?}!");
@@ -543,6 +548,7 @@ impl ExternalProcessor {
         let processing_message = ProcessingTask { data, reply_channel: response_tx, http_version: ver };
 
         let worker_channel = self.get_worker_channel();
+        debug!(target: "ext_proc", "send processing data {worker_channel:?}");
         worker_channel.send(processing_message).await.map(|()| response_rx)
     }
 
@@ -1313,6 +1319,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
         let (response_sender, response_receiver) = mpsc::channel::<Result<ProcessingResponse, Status>>(4);
         let grpc_service_specifier = grpc_service_specifier.clone();
 
+        debug!(target: "ext_proc","Cluster specifier {grpc_service_specifier:?}");
         tokio::spawn(async move {
             let request_stream = async_stream::stream! {
                 yield first_request;
@@ -1320,14 +1327,18 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     yield message
                 }
             };
-            let stream_setup_result = match grpc_service_specifier {
+            let stream_setup_result = match grpc_service_specifier.clone() {
                 GrpcServiceSpecifier::Cluster(cluster_name) => {
                     let cluster_spec = ClusterSpecifier::Cluster(cluster_name.clone());
                     match clusters_manager::resolve_cluster(&cluster_spec) {
                         Some(cluster_id) => {
+                            debug!(target: "ext_proc","Cluster ID {cluster_id}");
                             match clusters_manager::get_grpc_connection(cluster_id, RoutingContext::None) {
                                 Ok(grpc_service) => {
-                                    let mut client = ExternalProcessorClient::new(grpc_service);
+                                    let mut client = ExternalProcessorClient::new(tower::timeout::Timeout::new(
+                                        grpc_service,
+                                        Duration::from_millis(500),
+                                    ));
                                     client.process(request_stream).await
                                 },
                                 Err(e) => Err(Status::unavailable(format!("Failed to get gRPC connection: {e}"))),
@@ -1355,6 +1366,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
                     }
                 },
                 Err(status) => {
+                    debug!(target: "ext_proc","Unable to create stream to cluster {grpc_service_specifier:?}");
                     let _ = response_sender.send(Err(status)).await;
                 },
             }
@@ -1463,8 +1475,7 @@ impl<S: kind::Mode + Default> ExternalProcessingWorker<S> {
         let mut response = Response::new(PolyBody::from(body));
         *response.status_mut() = status;
         if let Some(header_mutation) = &response_attempt.headers {
-            let _ =
-                apply_response_header_mutations(&mut response, header_mutation, self.config.mutation_rules.as_ref());
+            let _ = apply_response_header_mutations(&mut response, header_mutation, &self.config.mutation_rules);
         }
         if let Some(grpc_status) = &response_attempt.grpc_status {
             if let Ok(status_value) = http::HeaderValue::from_str(&grpc_status.status.to_string()) {

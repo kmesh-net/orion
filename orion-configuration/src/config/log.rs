@@ -33,6 +33,7 @@ impl Serialize for RotationConfig {
             Rotation::MINUTELY => "minutely",
             Rotation::HOURLY => "hourly",
             Rotation::DAILY => "daily",
+            Rotation::WEEKLY => "weekly",
             Rotation::NEVER => "never",
         };
         serializer.serialize_str(s)
@@ -49,6 +50,7 @@ impl<'de> Deserialize<'de> for RotationConfig {
             "minutely" | "MINUTELY" => Rotation::MINUTELY,
             "hourly" | "HOURLY" => Rotation::HOURLY,
             "daily" | "DAILY" => Rotation::DAILY,
+            "weekly" | "WEEKLY" => Rotation::WEEKLY,
             "never" | "NEVER" => Rotation::NEVER,
             _ => return Err(serde::de::Error::custom(format!("invalid rotation: {s}"))),
         };

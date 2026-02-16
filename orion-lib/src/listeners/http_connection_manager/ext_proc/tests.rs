@@ -236,7 +236,7 @@ impl<M: MsgKind> Mock<M> {
             header_map.insert(http::HeaderName::from_static(key), http::HeaderValue::from_static(value));
         }
         if let Some(mutation) = header_mutation.as_ref() {
-            apply_header_mutations(&mut header_map, mutation, None).unwrap();
+            apply_header_mutations(&mut header_map, mutation, &HeaderMutationRules::default()).unwrap();
         }
         header_map
     }
@@ -263,7 +263,7 @@ impl<M: MsgKind> Mock<M> {
             trailer_map.insert(http::HeaderName::from_static(key), http::HeaderValue::from_static(value));
         }
         if let Some(mutation) = trailer_mutation.as_ref() {
-            apply_header_mutations(&mut trailer_map, mutation, None).unwrap();
+            apply_header_mutations(&mut trailer_map, mutation, &HeaderMutationRules::default()).unwrap();
         }
         trailer_map
     }
@@ -388,7 +388,14 @@ fn create_header_mutation(headers: Vec<(&str, &str)>) -> Option<HeaderMutation> 
 #[inline]
 fn create_body_mutation(body: Vec<u8>, end_of_stream: Option<bool>) -> BodyMutation {
     if let Some(end_of_stream) = end_of_stream {
-        BodyMutation { mutation: Some(Mutation::StreamedResponse(StreamedBodyResponse { body, end_of_stream })) }
+        BodyMutation {
+            mutation: Some(Mutation::StreamedResponse(StreamedBodyResponse {
+                body,
+                end_of_stream,
+                end_of_stream_without_message: false,
+                grpc_message_compressed: false,
+            })),
+        }
     } else {
         BodyMutation { mutation: Some(Mutation::Body(body)) }
     }
@@ -427,9 +434,7 @@ fn create_immediate_response(
 
     ProcessingResponse {
         response: Some(ProcessingResponseType::ImmediateResponse(immediate_response)),
-        mode_override: None,
-        dynamic_metadata: None,
-        override_message_timeout: None,
+        ..Default::default()
     }
 }
 
@@ -466,7 +471,7 @@ fn create_headers_response<M: MsgKind>(
         Some(ProcessingResponseType::RequestHeaders(header_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 pub async fn create_collected_body_with_trailers(frames: Vec<&str>, trailers: Option<http::HeaderMap>) -> PolyBody {
@@ -538,7 +543,7 @@ fn create_body_response<M: MsgKind>(
         Some(ProcessingResponseType::RequestBody(body_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 fn create_trailers_response<M: MsgKind>(trailers: Vec<Option<(&str, &str)>>) -> ProcessingResponse {
@@ -550,7 +555,7 @@ fn create_trailers_response<M: MsgKind>(trailers: Vec<Option<(&str, &str)>>) -> 
     } else {
         Some(ProcessingResponseType::RequestTrailers(trailers_response))
     };
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 static HEADER_PROCESSING_MODE: [HeaderProcessingMode; 3] =
@@ -726,6 +731,7 @@ fn validate_mock_server_configuration<M: MsgKind + ModeSelector>(
                 }
             },
             ProcessingResponseType::ImmediateResponse(_) => return false,
+            ProcessingResponseType::StreamedImmediateResponse(_) => return false,
         }
     }
     true
@@ -1095,6 +1101,7 @@ async fn test_request_header_mutation_pseudo_headers() {
     let mut config = create_default_config_for_ext_proc_filter(server_addr, processing_mode.clone());
     config.observability_mode = false;
     config.failure_mode_allow = false;
+    config.mutation_rules = Some(HeaderMutationRules { policy: orion_configuration::config::network_filters::http_connection_manager::http_filters::ext_proc::MutationPolicy::Standard{ allow_routing: true, allow_envoy: true, allow_system: true }, overrides: None, disallow_is_error: false });
     let mut ext_proc = ExternalProcessor::from(config);
 
     let mut request = build_request_from_mock(&Mock::<RequestMsg> {
@@ -3943,7 +3950,7 @@ fn create_body_response_with_clear_body<M: MsgKind>(
         Some(ProcessingResponseType::RequestBody(body_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 #[tokio::test]
@@ -4052,7 +4059,7 @@ fn create_headers_response_with_clear_body<M: MsgKind>(
         Some(ProcessingResponseType::RequestHeaders(header_response))
     };
 
-    ProcessingResponse { response, mode_override: None, dynamic_metadata: None, override_message_timeout: None }
+    ProcessingResponse { response, ..Default::default() }
 }
 
 #[tokio::test]

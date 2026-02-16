@@ -1,0 +1,86 @@
+bootstrap:
+  static_resources:
+    listeners:
+    - name: listener_http
+      address: 0.0.0.0:8000
+      filter_chains:
+      - filterchain_match:
+          destination_port: 8000
+          transport_protocol: ''
+          application_protocols: []
+        filter_chain_match_hash: 8654156998859986331
+        name: filter_chain_http
+        terminal_filter:
+          type: HTTP
+          codec_type: HTTP1
+          route_specifier:
+            name: basic_http_route
+            virtual_hosts:
+            - name: backend
+              domains:
+              - '*'
+              routes:
+              - match:
+                  prefix: /direct-response
+                  headers:
+                  - name: :method
+                    exact: GET
+                direct_response:
+                  status: 200
+                  inline_string: meow! 🐱
+              - match:
+                  prefix: /
+                  headers:
+                  - name: :method
+                    exact: GET
+                route:
+                  cluster_specifier: cluster_http_1
+                  upgrade_config: {}
+              - match:
+                  prefix: /
+                  headers:
+                  - name: :method
+                    exact: POST
+                route:
+                  cluster_specifier: cluster_http_2
+                  upgrade_config: {}
+          xff_num_trusted_hops: 0
+          generate_request_id: true
+          tracing: null
+      bind_device_options:
+        bind_device: null
+        bind_address: null
+        bind_to_port: null
+    clusters:
+    - name: cluster_http_1
+      discovery: static
+      discovery_settings:
+        endpoints:
+        - Pipe:
+          - /tmp/orion_pipe1.sock
+          - 0
+        - Pipe:
+          - /tmp/orion_pipe1.sock
+          - 0
+        cluster_name: cluster_http_1
+      bind_device_options:
+        bind_device: null
+        bind_address: null
+        bind_to_port: null
+      connect_timeout: 250ms
+    - name: cluster_http_2
+      discovery: static
+      discovery_settings:
+        endpoints:
+        - Pipe:
+          - /tmp/orion_pipe1.sock
+          - 0
+        - Pipe:
+          - /tmp/orion_pipe1.sock
+          - 0
+        cluster_name: cluster_http_2
+      bind_device_options:
+        bind_device: null
+        bind_address: null
+        bind_to_port: null
+      connect_timeout: 250ms

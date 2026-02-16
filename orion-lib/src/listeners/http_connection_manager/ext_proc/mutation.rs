@@ -93,7 +93,7 @@ impl<'a> From<&'a HeaderMutation> for PseudoHeaders<'a> {
 pub fn apply_request_header_mutations<B>(
     req: &mut Request<B>,
     mutation: &HeaderMutation,
-    mutation_rules: Option<&HeaderMutationRules>,
+    mutation_rules: &HeaderMutationRules,
 ) -> Result<(), Error> {
     let pseudo_headers = PseudoHeaders::from(mutation);
 
@@ -103,7 +103,7 @@ pub fn apply_request_header_mutations<B>(
         if let Some(method_opt) = pseudo_headers.method {
             // NOTE: if mutation rules is not specified, we allow any modification. This is not the
             // same behavior as envoy, but is more permissive for users who don't set mutation rules.
-            if mutation_rules.map(|r| r.is_modification_permitted(PSEUDO_HEADER_METHOD)).unwrap_or(true) {
+            if mutation_rules.is_modification_permitted(PSEUDO_HEADER_METHOD) {
                 match try_extract_header_value_as_str(method_opt) {
                     Some(Ok(method)) => {
                         if let Ok(new_method) = http::Method::from_bytes(method.as_bytes()) {
@@ -125,7 +125,7 @@ pub fn apply_request_header_mutations<B>(
             let mut parts = req.uri().clone().into_parts();
 
             if let Some(scheme_opt) = pseudo_headers.scheme {
-                if mutation_rules.map(|r| r.is_modification_permitted(PSEUDO_HEADER_SCHEME)).unwrap_or(true) {
+                if mutation_rules.is_modification_permitted(PSEUDO_HEADER_SCHEME) {
                     match try_extract_header_value_as_str(scheme_opt) {
                         Some(Ok(scheme)) => {
                             if let Ok(scheme) = Scheme::try_from(scheme) {
@@ -143,7 +143,7 @@ pub fn apply_request_header_mutations<B>(
             }
 
             if let Some(authority_opt) = pseudo_headers.authority {
-                if mutation_rules.map(|r| r.is_modification_permitted(PSEUDO_HEADER_AUTHORITY)).unwrap_or(true) {
+                if mutation_rules.is_modification_permitted(PSEUDO_HEADER_AUTHORITY) {
                     match try_extract_header_value_as_str(authority_opt) {
                         Some(Ok(authority)) => {
                             if let Ok(authority) = Authority::try_from(authority) {
@@ -161,7 +161,7 @@ pub fn apply_request_header_mutations<B>(
             }
 
             if let Some(path_opt) = pseudo_headers.path {
-                if mutation_rules.map(|r| r.is_modification_permitted(PSEUDO_HEADER_PATH)).unwrap_or(true) {
+                if mutation_rules.is_modification_permitted(PSEUDO_HEADER_PATH) {
                     match try_extract_header_value_as_str(path_opt) {
                         Some(Ok(path)) => {
                             if let Ok(path_and_query) = PathAndQuery::try_from(path) {
@@ -191,13 +191,13 @@ pub fn apply_request_header_mutations<B>(
 pub fn apply_response_header_mutations<B>(
     resp: &mut Response<B>,
     mutation: &HeaderMutation,
-    mutation_rules: Option<&HeaderMutationRules>,
+    mutation_rules: &HeaderMutationRules,
 ) -> Result<(), Error> {
     let pseudo_headers = PseudoHeaders::from(mutation);
 
     // Handle :status pseudo-header
     if let Some(status_opt) = pseudo_headers.status {
-        if mutation_rules.map(|r| r.is_modification_permitted(PSEUDO_HEADER_STATUS)).unwrap_or(true) {
+        if mutation_rules.is_modification_permitted(PSEUDO_HEADER_STATUS) {
             match try_extract_header_value_as_str(status_opt) {
                 Some(Ok(status_str)) => {
                     if let Ok(status_code) = status_str.parse::<u16>() {
@@ -226,44 +226,39 @@ pub fn apply_response_header_mutations<B>(
 pub fn apply_trailer_mutations(
     trailers: &mut http::HeaderMap,
     mutation: &HeaderMutation,
-    mutation_rules: Option<&HeaderMutationRules>,
+    mutation_rules: &HeaderMutationRules,
 ) -> Result<(), Error> {
     apply_header_mutations(trailers, mutation, mutation_rules)
 }
 
+#[allow(deprecated)]
 pub fn apply_header_mutations(
     headers: &mut http::HeaderMap,
     mutation: &HeaderMutation,
-    mutation_rules: Option<&HeaderMutationRules>,
+    mutation_rules: &HeaderMutationRules,
 ) -> Result<(), Error> {
     for header_to_remove in &mutation.remove_headers {
-        if let Some(rules) = mutation_rules {
-            if !rules.is_modification_permitted(header_to_remove) {
-                if rules.disallow_is_error {
-                    return Err(Error::from(format!(
-                        "Header removal not permitted by configuration: {header_to_remove}"
-                    )));
-                }
-                continue;
+        if !mutation_rules.is_modification_permitted(header_to_remove) {
+            if mutation_rules.disallow_is_error {
+                return Err(Error::from(format!("Header removal not permitted by configuration: {header_to_remove}")));
             }
+            continue;
         }
+
         if let Ok(header_name) = http::HeaderName::from_bytes(header_to_remove.as_bytes()) {
             headers.remove(&header_name);
         }
     }
     for header_to_set in &mutation.set_headers {
         let Some(header) = &header_to_set.header else { continue };
-        if let Some(rules) = mutation_rules {
-            if !rules.is_modification_permitted(&header.key) {
-                if rules.disallow_is_error {
-                    return Err(Error::from(format!(
-                        "Header modification not permitted by configuration: {}",
-                        header.key
-                    )));
-                }
-                continue;
+
+        if !mutation_rules.is_modification_permitted(&header.key) {
+            if mutation_rules.disallow_is_error {
+                return Err(Error::from(format!("Header modification not permitted by configuration: {}", header.key)));
             }
+            continue;
         }
+
         let Ok(header_name) = http::HeaderName::from_bytes(header.key.as_bytes()) else { continue };
         let header_value = if header.raw_value.is_empty() {
             http::HeaderValue::from_str(&header.value)
@@ -273,7 +268,13 @@ pub fn apply_header_mutations(
         let Ok(header_value) = header_value else { continue };
         match header_to_set.append_action() {
             HeaderAppendAction::AppendIfExistsOrAdd => {
-                headers.append(header_name, header_value);
+                // apparently append is needed/used for ext_proc and ext_auth
+                // otherwise, it might end up duplicating the headers when they are echoed from ext_proc service
+                if let Some(true) = header_to_set.append.map(|b| b.value) {
+                    headers.append(header_name, header_value);
+                } else {
+                    headers.insert(header_name, header_value);
+                }
             },
             HeaderAppendAction::AddIfAbsent => {
                 if !headers.contains_key(&header_name) {
