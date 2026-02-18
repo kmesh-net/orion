@@ -29,6 +29,7 @@ use http_filters::{FilterOverride, HttpFilter};
 use route::{Action, RouteMatch};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr, time::Duration};
+use tracing::info;
 
 use crate::config::{
     common::*,
@@ -219,7 +220,12 @@ impl MatchHost {
     pub fn eval_lpm_request<B>(&self, req: &http::Request<B>) -> Option<MatchHostScoreLPM> {
         if let Some(header_value) = req.headers().get(http::header::HOST) {
             let host = header_value.to_str().ok()?;
-            self.eval_lpm_host(host)
+            if let Ok(authority) = http::uri::Authority::from_str(host) {
+                self.eval_lpm_host(authority.host())
+            } else {
+                info!("Host header value is not a valid authority ..{host}");
+                self.eval_lpm_host(host)
+            }
         } else {
             self.eval_lpm_host(req.uri().host()?)
         }

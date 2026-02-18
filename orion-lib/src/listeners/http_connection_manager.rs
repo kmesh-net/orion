@@ -1259,11 +1259,12 @@ mod tests {
         assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), Some(&vh3));
 
         let request = Request::builder().header("host", "blah.domain3.com:8000").body(()).unwrap();
-        assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), None);
+        assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), Some(&vh3));
 
         let request = Request::builder().header("host", "domain2.com:8000").body(()).unwrap();
-        assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), None);
+        assert_eq!(select_virtual_host(&request, &[vh1.clone(), vh2.clone(), vh3.clone()]), Some(&vh2));
 
+        // in theory this is an invalid domain...
         let domains2 = vec!["domain2.com:8000"].into_iter().flat_map(MatchHost::try_from).collect();
         let vh2 = VirtualHost { domains: domains2, ..Default::default() };
         let request = Request::builder().header("host", "domain2.com").body(()).unwrap();
