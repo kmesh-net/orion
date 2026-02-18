@@ -30,8 +30,8 @@ use crate::options::Options;
 pub struct Runtime {
     #[serde(default = "non_zero_num_cpus")]
     pub num_cpus: NonZeroUsize,
-    #[serde(default = "one")]
-    pub num_runtimes: NonZeroU32,
+    #[serde(default = "non_zero_num_cpus")]
+    pub num_runtimes: NonZeroUsize,
     #[serde(default = "one")]
     pub num_service_threads: NonZeroU32,
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -68,7 +68,7 @@ impl Runtime {
 
             num_runtimes: var("ORION_GATEWAY_RUNTIMES")
                 .ok()
-                .and_then(|v| v.parse::<NonZeroU32>().ok())
+                .and_then(|v| v.parse::<NonZeroUsize>().ok())
                 .or(opt.num_runtimes)
                 .unwrap_or(self.num_runtimes),
 
@@ -212,7 +212,7 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             num_cpus: non_zero_num_cpus(),
-            num_runtimes: one(),
+            num_runtimes: non_zero_num_cpus(),
             num_service_threads: one(),
             global_queue_interval: None,
             event_interval: None,
