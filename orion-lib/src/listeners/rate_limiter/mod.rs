@@ -63,7 +63,7 @@ impl From<LocalRateLimitConfig> for LocalRateLimit {
             let max_tokens = token_bucket.max_tokens;
             let tokens_per_fill = token_bucket.tokens_per_fill;
             let fill_interval = token_bucket.fill_interval;
-            let adjusted_fill_interval = fill_interval.checked_mul(runtime_config().num_runtimes.into());
+            let adjusted_fill_interval = fill_interval.checked_mul(runtime_config().num_runtimes.get() as u32);
             let fill_interval = if let Some(value) = adjusted_fill_interval {
                 value
             } else {
