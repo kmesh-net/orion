@@ -39,7 +39,7 @@ pub struct Options {
     #[arg(help = "Number of CPU to use", short = 'C', long = "num-cpus")]
     pub num_cpus: Option<NonZeroUsize>,
     #[arg(help = "Number of Tokio runtimes to use", short = 'R', long = "num-runtimes")]
-    pub num_runtimes: Option<NonZeroU32>,
+    pub num_runtimes: Option<NonZeroUsize>,
     #[arg(help = "Number of Service threads to use", short = 'S', long = "num-service-threads")]
     pub num_service_threads: Option<NonZeroU32>,
     #[arg(help = "Tokio global queue interval (ticks)", long = "global-queue-interval")]
