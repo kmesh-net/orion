@@ -19,6 +19,7 @@ use crate::body::channel_body::FrameBridge;
 use crate::event_error::EventKind;
 use crate::listeners::http_connection_manager::ext_proc::kind;
 use crate::listeners::http_connection_manager::ext_proc::mutation::apply_trailer_mutations;
+use crate::listeners::http_connection_manager::ext_proc::r#override::OverridableBodyMode;
 use crate::listeners::http_connection_manager::ext_proc::r#override::{
     OverridableGlobalModes, OverridableModeSelector,
 };
@@ -49,6 +50,10 @@ use tokio::sync::oneshot;
 use tracing::{debug, warn};
 
 pub struct RequestProcessing<M: kind::Mode>(Processing<M, kind::RequestMsg>);
+
+fn is_streamed_body_mode(mode: &OverridableBodyMode) -> bool {
+    matches!(mode, OverridableBodyMode::Streamed)
+}
 
 impl<M: kind::Mode> Deref for RequestProcessing<M> {
     type Target = Processing<M, kind::RequestMsg>;
@@ -540,7 +545,11 @@ impl<M: kind::Mode + Default, Msg: kind::MsgKind + OverridableModeSelector> Proc
         let send_body_or_trailers =
             override_mode.should_process_body::<Msg>() || override_mode.should_process_trailers::<Msg>();
 
-        if M::OBSERVABILITY || (self.send_body_without_waiting_for_header_response && send_body_or_trailers) {
+        if M::OBSERVABILITY
+            || (self.send_body_without_waiting_for_header_response
+                && send_body_or_trailers
+                && !is_streamed_body_mode(&override_mode.body_mode::<Msg>()))
+        {
             self.streaming_body_enabled = true;
         }
 
