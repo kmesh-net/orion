@@ -28,7 +28,7 @@ serde          = { workspace = true, features = ["rc"] }
 smol_str       = { version = "0.3.2", features = ["serde"] }
 thread_local   = "1.1.9"
 traceparent    = "0.0.3"
-uuid           = { version = "1.18.1", features = ["v4"] }
+uuid           = { version = "1.21.0", features = ["v4"] }
 
 [features]
 dhat-heap = []

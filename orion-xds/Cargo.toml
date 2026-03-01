@@ -24,7 +24,7 @@ atomic-take = "1.1.0"
 
 thiserror = "2.0.17"
 tokio-stream.workspace = true
-uuid = { version = "1.18.1", features = ["v4"] }
+uuid = { version = "1.21.0", features = ["v4"] }
 
 [dev-dependencies]
 orion-data-plane-api.workspace = true
