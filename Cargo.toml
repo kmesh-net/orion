@@ -22,7 +22,7 @@ description  = "Orion Proxy is a cloud native proxy. Orion Proxy is configurable
 edition      = "2021"
 license-file = "./LICENSE"
 rust-version = "1.86"
-version      = "0.1.0"
+version      = "0.2.0"
 
 [patch.crates-io]
 hyper-util   = { path = "./hyper-util-fork" }
