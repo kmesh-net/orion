@@ -45,7 +45,7 @@ futures-util = { version = "0.3", default-features = false }
 h2 = "0.4.12"
 hickory-resolver = { version = "0.25", features = ["system-config","tokio"] }
 hyper = { version = "1", features = ["full"] }
-hyper-rustls = { version = "0.27.7", features = ["default", "http2"] }
+hyper-rustls = { version = "0.27.9", features = ["default", "http2"] }
 if-addrs = "0.14"
 ipnet = "2.11"
 lru_time_cache = "0.11.11"
