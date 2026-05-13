@@ -298,20 +298,29 @@ impl Listener {
                                 if let Ok(s) = raw_socket.try_clone_to_owned(){
                                     let socket = socket2::Socket::from(s);
 
-                                    let maybe_v4 = match (socket.original_dst_v4(), stream.local_addr()){
-                                        (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
-                                        _ => None
+                                    #[cfg(any(target_os = "linux", target_os = "android", target_os = "fuchsia", target_os = "windows"))]
+                                    {
+                                        let maybe_v4 = match (socket.original_dst_v4(), stream.local_addr()){
+                                            (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
+                                            _ => None
 
-                                    };
+                                        };
 
-                                    let maybe_v6 = match (socket.original_dst_v6(), stream.local_addr()){
-                                        (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
-                                        _ => None
-                                    };
-                                    match (maybe_v4, maybe_v6){
-                                        (None, None) => None,
-                                        (None, Some(dst)) | (Some(dst), None) => Some(dst),
-                                        (Some(dst1), Some(_)) => Some(dst1),
+                                        let maybe_v6 = match (socket.original_dst_v6(), stream.local_addr()){
+                                            (Ok(original), Ok(local)) => original.as_socket().and_then(|o| (o!=local).then_some(o)),
+                                            _ => None
+                                        };
+                                        match (maybe_v4, maybe_v6){
+                                            (None, None) => None,
+                                            (None, Some(dst)) | (Some(dst), None) => Some(dst),
+                                            (Some(dst1), Some(_)) => Some(dst1),
+                                        }
+                                    }
+
+                                    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "fuchsia", target_os = "windows")))]
+                                    {
+                                        let _ = socket;
+                                        None
                                     }
                                 }else{
                                     warn!("Unable to obtained a cloned fd for socket... ");

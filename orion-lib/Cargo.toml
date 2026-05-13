@@ -62,7 +62,7 @@ rustls-pemfile = "2.2"
 rustls-platform-verifier = { version = "0.6" }
 rustls-webpki = "0.103"
 scopeguard = "1.2.0"
-socket2 = "0.6"
+socket2 = { version = "0.6", features = ["all"] }
 smol_str = "0.3.2"
 thread-id = "5.0.0"
 thread_local = "1.1.9"
